@@ -12,11 +12,10 @@ workflows:
 
       - name: Create IPA
         script: |
-          mkdir -p build/ios/ipa
           cd build/ios/iphoneos
           mkdir Payload
           cp -r Runner.app Payload/
-          zip -r app.ipa Payload
+          zip -r Runner.ipa Payload
 
     artifacts:
-      - build/ios/ipa/app.ipa
+      - build/ios/iphoneos/Runner.ipa  # ← dito dapat
