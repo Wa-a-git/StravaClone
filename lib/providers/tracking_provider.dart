@@ -98,7 +98,6 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     }
     state = state.copyWith(locationPermissionGranted: true);
 
-    // Get initial position for map camera
     final pos = await LocationService.getCurrentPosition();
     if (pos != null) {
       state = state.copyWith(
@@ -139,7 +138,6 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     _positionSubscription?.resume();
   }
 
-  /// Stops tracking, saves activity to Hive, returns the saved Activity.
   Future<Activity?> stop() async {
     if (state.status == TrackingStatus.idle) return null;
 
@@ -207,7 +205,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
           currentPosition: newPoint,
         );
       },
-      onError: (_) {}, // silent GPS error — UI shows last known data
+      onError: (_) {},
     );
   }
 

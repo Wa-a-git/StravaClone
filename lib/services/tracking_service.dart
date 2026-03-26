@@ -1,7 +1,7 @@
 // lib/services/tracking_service.dart
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'location_service.dart';
 import 'hive_service.dart';
 import '../models/activity.dart';
