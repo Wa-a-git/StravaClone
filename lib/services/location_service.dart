@@ -1,13 +1,29 @@
 // lib/services/location_service.dart
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 class LocationService {
-  /// Request location-when-in-use permission.
-  /// Returns true if granted.
+  /// Request location permission using geolocator (consistent with main.dart).
+  /// Returns true if granted (whileInUse or always).
   static Future<bool> requestPermission() async {
-    final status = await Permission.locationWhenInUse.request();
-    return !status.isDenied && !status.isPermanentlyDenied;
+    // Check if location services are enabled on device
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return false;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+
+    // If denied, request permission
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    // If permanently denied, cannot request — return false
+    if (permission == LocationPermission.deniedForever) {
+      return false;
+    }
+
+    // ✅ Grant if whileInUse or always
+    return permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always;
   }
 
   /// Whether the device's location service is switched on.
