@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/hive_service.dart';
 import 'screens/shell_screen.dart';
+import 'package:geolocator/geolocator.dart'; // ✅ ADDED
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +22,27 @@ void main() async {
 
   await HiveService.init();
 
+  await _requestLocationPermission(); // ✅ ADDED — triggers iOS popup on first launch
+
   runApp(const ProviderScope(child: StravaApp()));
+}
+
+// ✅ ADDED: Location permission request function
+Future<void> _requestLocationPermission() async {
+  bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  if (!serviceEnabled) return;
+
+  LocationPermission permission = await Geolocator.checkPermission();
+
+  if (permission == LocationPermission.denied) {
+    // This triggers the iOS "Allow Location Access?" popup
+    permission = await Geolocator.requestPermission();
+  }
+
+  if (permission == LocationPermission.deniedForever) {
+    // Already denied permanently — open Settings
+    await Geolocator.openAppSettings();
+  }
 }
 
 class StravaApp extends StatelessWidget {
