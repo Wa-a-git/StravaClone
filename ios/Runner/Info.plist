@@ -45,6 +45,13 @@
     <key>NSLocationAlwaysUsageDescription</key>
     <string>Strava uses your location to record your run in the background.</string>
 
+    <!-- ✅ ADDED: Background location mode — required for iOS background tracking -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>fetch</string>
+    </array>
+
     <!-- Required iOS settings -->
     <key>LSRequiresIPhoneOS</key>
     <true/>
