@@ -70,6 +70,46 @@ class HealthConnectService {
     return _sumNumeric(points) / points.length;
   }
 
+  /// Isole la session de sommeil la plus récente parmi tous les enregistrements
+  /// de stades lus. Deux stades espacés de plus de [gapHours] heures sont
+  /// considérés comme appartenant à des sessions différentes (ex : sieste de
+  /// l'après-midi vs nuit). On renvoie la session dont le réveil est le plus
+  /// tardif — c'est « la nuit » pertinente pour l'aptitude du jour.
+  List<HealthDataPoint> _latestSleepSession(
+    List<HealthDataPoint> points, {
+    double gapHours = 3,
+  }) {
+    if (points.isEmpty) return points;
+    final sorted = [...points]
+      ..sort((a, b) => a.dateFrom.compareTo(b.dateFrom));
+
+    final sessions = <List<HealthDataPoint>>[];
+    var current = <HealthDataPoint>[sorted.first];
+    var currentMaxEnd = sorted.first.dateTo;
+
+    for (var i = 1; i < sorted.length; i++) {
+      final p = sorted[i];
+      final gap = p.dateFrom.difference(currentMaxEnd).inMinutes;
+      if (gap > gapHours * 60) {
+        sessions.add(current);
+        current = <HealthDataPoint>[p];
+        currentMaxEnd = p.dateTo;
+      } else {
+        current.add(p);
+        if (p.dateTo.isAfter(currentMaxEnd)) currentMaxEnd = p.dateTo;
+      }
+    }
+    sessions.add(current);
+
+    // Session dont la fin est la plus tardive.
+    sessions.sort((a, b) {
+      final aEnd = a.map((e) => e.dateTo).reduce((x, y) => x.isAfter(y) ? x : y);
+      final bEnd = b.map((e) => e.dateTo).reduce((x, y) => x.isAfter(y) ? x : y);
+      return bEnd.compareTo(aEnd);
+    });
+    return sessions.first;
+  }
+
   /// Instantané des données santé du jour en cours.
   Future<HealthSnapshot> getTodaySnapshot() => getSnapshotForDay(DateTime.now());
 
@@ -162,8 +202,12 @@ class HealthConnectService {
         _sumNumeric(results[11] as List<HealthDataPoint>) / 1000.0;
 
     final sleepPoints = results[12] as List<HealthDataPoint>;
+    // On ne garde QUE la session de sommeil la plus récente (la nuit).
+    // Sinon une sieste de la veille s'ajouterait à la nuit et gonflerait le
+    // total (Google Health n'affiche que la session principale).
+    final mainSession = _latestSleepSession(sleepPoints);
     double deep = 0, light = 0, rem = 0, awake = 0, asleep = 0;
-    for (final p in sleepPoints) {
+    for (final p in mainSession) {
       final minutes = p.value is NumericHealthValue
           ? (p.value as NumericHealthValue).numericValue.toDouble()
           : 0.0;
