@@ -10,6 +10,7 @@ import '../providers/game_provider.dart';
 import '../services/export_service.dart';
 import '../services/game_service.dart';
 import '../widgets/arcade_fx.dart';
+import '../widgets/ui_kit.dart';
 import '../theme.dart';
 import 'shell_screen.dart';
 import 'mini_games_screen.dart';
@@ -135,25 +136,27 @@ class HomeScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildGreeting(allActivities.length),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.xl),
                   _LevelBanner(
                     profile: ref.watch(playerProfileProvider),
                     onTap: () =>
                         ref.read(shellIndexProvider.notifier).state = 1,
                   ),
-                  const SizedBox(height: 18),
-                  _PeriodSelector(
+                  const SizedBox(height: AppSpacing.xl),
+                  SegmentedTabs<HomePeriod>(
+                    values: HomePeriod.values,
                     selected: period,
+                    labelOf: (p) => p.label,
                     onChanged: (p) =>
                         ref.read(homePeriodProvider.notifier).state = p,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.xl),
                   _buildSummaryRow(count, totalDistanceKm, avgDistanceKm, avgSpeedKmh),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xxl),
                   _buildTrendChart(recentRuns),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xxl),
                   _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: AppSpacing.xxl),
                   _MiniGamesEntry(
                     onTap: () => Navigator.push(
                       context,
@@ -161,12 +164,12 @@ class HomeScreen extends ConsumerWidget {
                           builder: (_) => const MiniGamesScreen()),
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: AppSpacing.xxl),
                   if (allActivities.isNotEmpty) ...[
                     const _SectionHeader(title: 'Dernière sortie'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.md),
                     _LatestActivityCard(activity: allActivities.first),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: AppSpacing.xxl),
                   ],
                   _buildMotivationCard(allActivities.length),
                   const SizedBox(height: 32),
@@ -208,27 +211,9 @@ class HomeScreen extends ConsumerWidget {
     final dayName = weekdays[now.weekday - 1];
     final dateStr = '${now.day} ${months[now.month - 1]}';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$dayName · $dateStr',
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          count == 0 ? 'Prêt pour ta prochaine course ?' : 'Ton tableau de bord',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1.1,
-          ),
-        ),
-      ],
+    return PageHeading(
+      eyebrow: '$dayName · $dateStr',
+      title: count == 0 ? 'Prêt pour ta prochaine course ?' : 'Ton tableau de bord',
     );
   }
 
@@ -506,57 +491,6 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _PeriodSelector extends StatelessWidget {
-  final HomePeriod selected;
-  final ValueChanged<HomePeriod> onChanged;
-
-  const _PeriodSelector({required this.selected, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: HomePeriod.values.map((p) {
-          final isActive = p == selected;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onChanged(p),
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: isActive
-                      ? const LinearGradient(
-                          colors: [AppColors.arcadePink, AppColors.arcadeViolet],
-                        )
-                      : null,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  p.label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : AppColors.textSecondary,
-                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
 class _LevelBanner extends StatelessWidget {
   final PlayerProfile profile;
   final VoidCallback onTap;
@@ -565,20 +499,12 @@ class _LevelBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tier = profile.tier;
-    return GestureDetector(
+    return AppPanel(
+      accent: kNeonCyan,
+      hero: true,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: kNeonCyan.withOpacity(0.4), width: 1.2),
-          boxShadow: [
-            BoxShadow(color: kNeonCyan.withOpacity(0.14), blurRadius: 16),
-          ],
-        ),
-        child: Row(
+      child: Row(
           children: [
             // Médaillon de niveau (couleur du palier)
             Container(
@@ -665,7 +591,6 @@ class _LevelBanner extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded, color: kNeonCyan, size: 22),
           ],
         ),
-      ),
     );
   }
 }
@@ -684,10 +609,8 @@ class _MiniGamesEntry extends StatelessWidget {
           gradient: const LinearGradient(
             colors: [AppColors.arcadeViolet, AppColors.arcadePink],
           ),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(color: AppColors.arcadeViolet.withOpacity(0.4), blurRadius: 16),
-          ],
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          boxShadow: softGlow(AppColors.arcadeViolet, blur: 18, opacity: 0.28),
         ),
         child: Row(
           children: [
@@ -724,16 +647,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontFamily: kArcadeFont,
-        fontSize: 15,
-        fontWeight: FontWeight.w800,
-        color: AppColors.textPrimary,
-        letterSpacing: 0.5,
-      ),
-    );
+    return Text(title, style: AppText.screenTitle);
   }
 }
 
@@ -759,35 +673,21 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const valueStyle = TextStyle(
-      fontFamily: kArcadeFont,
-      fontSize: 18,
-      fontWeight: FontWeight.w800,
-      color: AppColors.textPrimary,
-      letterSpacing: 0.5,
-    );
+    const valueStyle = AppText.cardValue;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: iconColor.withOpacity(0.35)),
-        boxShadow: [
-          BoxShadow(color: iconColor.withOpacity(0.10), blurRadius: 10),
-        ],
-      ),
+    return AppPanel(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(10),
+              color: iconColor.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
-            child: Icon(icon, color: iconColor, size: 18),
+            child: Icon(icon, color: iconColor, size: 17),
           ),
           const SizedBox(height: 10),
           FittedBox(
@@ -824,13 +724,8 @@ class _LatestActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppPanel(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

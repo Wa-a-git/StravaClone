@@ -5,6 +5,7 @@ import '../models/activity.dart';
 import '../providers/activity_provider.dart';
 import '../services/export_service.dart';
 import '../theme.dart';
+import '../widgets/ui_kit.dart';
 import 'detail_screen.dart';
 
 class HistoryScreen extends ConsumerWidget {
@@ -137,44 +138,11 @@ class HistoryScreen extends ConsumerWidget {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.directions_run_rounded,
-              size: 40,
-              color: AppColors.arcadePink,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Aucune activité pour le moment',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Lance ta première sortie pour la voir ici.',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    return const EmptyState(
+      icon: Icons.directions_run_rounded,
+      title: 'Aucune activité pour le moment',
+      subtitle: 'Lance ta première sortie pour la voir ici.',
+      accent: kNeonPink,
     );
   }
 
@@ -189,27 +157,14 @@ class HistoryScreen extends ConsumerWidget {
     final totalElevation = activities.fold<double>(0, (sum, activity) => sum + activity.elevationGainValue);
     final activityCount = activities.length;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.arcadePink.withOpacity(0.3)),
-      ),
+    return AppPanel(
+      accent: kNeonPink,
+      hero: true,
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'RÉSUMÉ',
-            style: TextStyle(
-              fontFamily: kArcadeFont,
-              color: AppColors.arcadePink,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-              letterSpacing: 1.0,
-              shadows: [Shadow(color: AppColors.arcadePink, blurRadius: 8)],
-            ),
-          ),
+          const PanelTitle('RÉSUMÉ', color: kNeonPink),
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -549,43 +504,30 @@ class _ActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return AppPanel(
+      padding: const EdgeInsets.all(18),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141419),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF00FFFF), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF00FFFF).withOpacity(0.2),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row
-            Row(
+            // Header row : identifiant + badge à gauche, actions à droite.
+            // En Wrap pour ne jamais déborder (medal + badge + date + 3 boutons).
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 Text(
                   '#$index',
                   style: const TextStyle(
                     fontFamily: kArcadeFont,
                     fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF00FFFF),
-                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
                   ),
                 ),
-                if (medal != null) ...[
-                  const SizedBox(width: 6),
+                if (medal != null)
                   Text(medal!, style: const TextStyle(fontSize: 16)),
-                ],
-                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
@@ -595,6 +537,7 @@ class _ActivityCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.directions_run_rounded,
                           size: 13, color: Color(0xFFF55CBD)),
@@ -610,7 +553,6 @@ class _ActivityCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Spacer(),
                 Text(
                   _formatDate(activity.date),
                   style: const TextStyle(
@@ -618,7 +560,6 @@ class _ActivityCard extends StatelessWidget {
                     color: Color(0xFFAAAAAA),
                   ),
                 ),
-                const SizedBox(width: 8),
                 GestureDetector(
                   onTap: onRename,
                   child: Container(
@@ -735,7 +676,6 @@ class _ActivityCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 

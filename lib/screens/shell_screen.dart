@@ -7,6 +7,7 @@ import 'history_screen.dart';
 import 'system_screen.dart';
 import 'tracking_screen.dart';
 import 'health_dashboard_screen.dart';
+import '../theme.dart';
 
 /// Index de l'onglet courant (permet de naviguer depuis n'importe quel écran).
 final shellIndexProvider = StateProvider<int>((ref) => 0);
@@ -109,23 +110,16 @@ class _BottomNav extends StatelessWidget {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF141419),
-        border: const Border(
-          top: BorderSide(color: Color(0xFF00FFFF), width: 1.0),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          top: BorderSide(color: AppColors.border, width: 1.0),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF00FFFF).withOpacity(0.15),
-            blurRadius: 15,
-            offset: const Offset(0, -3),
-          ),
-        ],
       ),
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomPadding),
         child: SizedBox(
-          height: 60,
+          height: 64,
           child: Row(
             children: [
               // Dashboard tab
@@ -148,7 +142,7 @@ class _BottomNav extends StatelessWidget {
                 ),
               ),
 
-              // Record tab — center FAB-style
+              // Record tab — bouton central, seul élément qui "brille" de la barre.
               SizedBox(
                 width: 72,
                 child: GestureDetector(
@@ -156,23 +150,17 @@ class _BottomNav extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   child: Center(
                     child: Container(
-                      width: 52,
-                      height: 52,
+                      width: 50,
+                      height: 50,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF55CBD),
+                        color: kNeonPink,
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFF55CBD).withOpacity(0.5),
-                            blurRadius: 15,
-                            offset: const Offset(0, 0),
-                          ),
-                        ],
+                        boxShadow: softGlow(kNeonPink, blur: 16, opacity: 0.45),
                       ),
                       child: const Icon(
                         Icons.directions_run_rounded,
                         color: Colors.black,
-                        size: 26,
+                        size: 24,
                       ),
                     ),
                   ),
@@ -221,8 +209,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-    isActive ? const Color(0xFF00FFFF) : const Color(0xFF555555);
+    final color = isActive ? kNeonCyan : AppColors.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
@@ -230,16 +217,15 @@ class _NavItem extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 26),
-          const SizedBox(height: 2),
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              fontSize: 10,
-              fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+              fontSize: 10.5,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
               color: color,
-              letterSpacing: -0.2,
-              shadows: isActive ? [Shadow(color: color, blurRadius: 5)] : null,
+              letterSpacing: -0.1,
             ),
           ),
         ],

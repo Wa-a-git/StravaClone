@@ -32,9 +32,10 @@ class StravaApp extends StatelessWidget {
       title: 'Strava',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
-      // Overlay CRT (scanlines + léger vignettage) sur toute l'app
+      // Overlay CRT (scanlines + léger vignettage) — discret, garde l'identité
+      // arcade sans nuire à la lisibilité du texte courant.
       builder: (context, child) => ScanlineOverlay(
-        opacity: 0.045,
+        opacity: 0.025,
         child: child ?? const SizedBox.shrink(),
       ),
       home: const ShellScreen(),
@@ -75,13 +76,62 @@ class StravaApp extends StatelessWidget {
           foregroundColor: AppColors.textPrimary,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
           textStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textPrimary,
+          side: const BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.textSecondary,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: const BorderSide(color: AppColors.border),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.surfaceLight,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        hintStyle: const TextStyle(color: AppColors.muted),
+        labelStyle: const TextStyle(color: AppColors.textSecondary),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: const BorderSide(color: kNeonCyan),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: const BorderSide(color: AppColors.border),
         ),
       ),
       textTheme: const TextTheme(
@@ -93,9 +143,14 @@ class StravaApp extends StatelessWidget {
         selectedItemColor: AppColors.arcadePink,
         unselectedItemColor: AppColors.textSecondary,
       ),
-      snackBarTheme: const SnackBarThemeData(
+      snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.surfaceAlt,
-        contentTextStyle: TextStyle(color: AppColors.textPrimary),
+        contentTextStyle: const TextStyle(color: AppColors.textPrimary),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          side: const BorderSide(color: AppColors.border),
+        ),
       ),
     );
   }

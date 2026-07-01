@@ -14,6 +14,7 @@ import '../theme.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/health_charts.dart';
 import '../widgets/system_window.dart';
+import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'health_metric_detail_screen.dart';
 
@@ -129,23 +130,7 @@ class HealthDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        Text('Données Fitbit',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-        SizedBox(height: 8),
-        Text(
-          'Aptitude du Jour',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1.1,
-          ),
-        ),
-      ],
-    );
+    return const PageHeading(eyebrow: 'Données Fitbit', title: 'Aptitude du Jour');
   }
 
   Widget _buildQuestPanels(
@@ -1552,44 +1537,12 @@ class _HealthQuestTile extends StatelessWidget {
   }
 }
 
-// ── Cadre de panneau réutilisable ─────────────────────────────────────────────
-class _HPanel extends StatelessWidget {
-  final Widget child;
-  final Color accent;
-  const _HPanel({required this.child, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withOpacity(0.45), width: 1.2),
-        boxShadow: [BoxShadow(color: accent.withOpacity(0.12), blurRadius: 16)],
-      ),
-      child: child,
-    );
-  }
+// ── Cadre de panneau réutilisable (alias du design system, garde le nom
+// historique pour limiter le diff dans ce fichier) ────────────────────────────
+class _HPanel extends AppPanel {
+  const _HPanel({required super.child, required super.accent});
 }
 
-class _HPanelTitle extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _HPanelTitle(this.text, {this.color = kNeonCyan});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: kArcadeFont,
-        color: color,
-        fontSize: 13,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.5,
-        shadows: [Shadow(color: color.withOpacity(0.8), blurRadius: 8)],
-      ),
-    );
-  }
+class _HPanelTitle extends PanelTitle {
+  const _HPanelTitle(super.text, {super.color = kNeonCyan});
 }
