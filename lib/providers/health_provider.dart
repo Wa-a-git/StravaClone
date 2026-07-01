@@ -1,34 +1,32 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/health_snapshot.dart';
 import '../services/health_connect_service.dart';
+import '../services/health_score_service.dart';
 
 final healthConnectServiceProvider = Provider((ref) => HealthConnectService());
 
 class HealthDataState {
-  final int steps;
-  final double calories;
-  final double avgHeartRate;
+  final HealthSnapshot snapshot;
+  final HealthScores? scores;
   final bool isLoading;
   final bool hasPermission;
 
   HealthDataState({
-    this.steps = 0,
-    this.calories = 0.0,
-    this.avgHeartRate = 0.0,
+    this.snapshot = const HealthSnapshot(),
+    this.scores,
     this.isLoading = false,
     this.hasPermission = false,
   });
 
   HealthDataState copyWith({
-    int? steps,
-    double? calories,
-    double? avgHeartRate,
+    HealthSnapshot? snapshot,
+    HealthScores? scores,
     bool? isLoading,
     bool? hasPermission,
   }) {
     return HealthDataState(
-      steps: steps ?? this.steps,
-      calories: calories ?? this.calories,
-      avgHeartRate: avgHeartRate ?? this.avgHeartRate,
+      snapshot: snapshot ?? this.snapshot,
+      scores: scores ?? this.scores,
       isLoading: isLoading ?? this.isLoading,
       hasPermission: hasPermission ?? this.hasPermission,
     );
@@ -42,21 +40,19 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
 
   Future<void> fetchDailyData() async {
     state = state.copyWith(isLoading: true);
-    
+
     final hasPermission = await _service.requestPermissions();
     if (!hasPermission) {
       state = state.copyWith(isLoading: false, hasPermission: false);
       return;
     }
 
-    final steps = await _service.getDailySteps();
-    final calories = await _service.getDailyActiveCalories();
-    final heartRate = await _service.getAverageHeartRate();
+    final snapshot = await _service.getTodaySnapshot();
+    final scores = HealthScoreService.computeAll(snapshot);
 
     state = state.copyWith(
-      steps: steps,
-      calories: calories,
-      avgHeartRate: heartRate,
+      snapshot: snapshot,
+      scores: scores,
       isLoading: false,
       hasPermission: true,
     );
