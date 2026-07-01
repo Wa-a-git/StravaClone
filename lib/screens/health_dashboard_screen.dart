@@ -12,13 +12,6 @@ class HealthDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(healthDataProvider.notifier).fetchDailyData();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {

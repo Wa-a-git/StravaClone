@@ -3,6 +3,10 @@ import 'package:health/health.dart';
 class HealthConnectService {
   final Health _health = Health();
   
+  HealthConnectService() {
+    _health.configure();
+  }
+  
   // Define the types of data we want to fetch
   final List<HealthDataType> _types = [
     HealthDataType.STEPS,
