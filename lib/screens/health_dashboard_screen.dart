@@ -79,6 +79,14 @@ class HealthDashboardScreen extends ConsumerWidget {
                           .fetchDailyData(),
                     )
                   else ...[
+                    if (_wearableDataMissing(st.snapshot)) ...[
+                      _SyncHintBanner(
+                        onRefresh: () => ref
+                            .read(healthDataProvider.notifier)
+                            .fetchDailyData(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     _BioScorePanel(scores: scores, insights: st.insights),
                     const SizedBox(height: 16),
                     _SubScoresRow(scores: scores),
@@ -185,6 +193,87 @@ class HealthDashboardScreen extends ConsumerWidget {
         accent: kNeonGreen,
       );
     }
+  }
+}
+
+/// Heuristique : si aucune donnée « montre » (FC repos, HRV, SpO2, sommeil)
+/// n'est présente, c'est que le bracelet ne synchronise pas encore vers Health
+/// Connect (on ne voit que les pas du téléphone).
+bool _wearableDataMissing(HealthSnapshot s) {
+  return s.restingHeartRate <= 0 &&
+      s.hrv <= 0 &&
+      s.spo2 <= 0 &&
+      s.sleep.totalAsleepMin <= 0;
+}
+
+// ── Bannière d'aide à la synchro ──────────────────────────────────────────────
+class _SyncHintBanner extends StatelessWidget {
+  final VoidCallback onRefresh;
+  const _SyncHintBanner({required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context) {
+    const amber = Color(0xFFFFC107);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: AppColors.surface,
+        border: Border.all(color: amber.withOpacity(0.55), width: 1.2),
+        boxShadow: [BoxShadow(color: amber.withOpacity(0.10), blurRadius: 16)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.watch_rounded, color: amber, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'EN ATTENTE DE TA CHARGE 6',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: amber,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Seuls les pas du téléphone remontent pour l\'instant. Pour débloquer '
+            'la fréquence cardiaque, le sommeil, la HRV et la SpO2, active le '
+            'partage vers Health Connect dans l\'app Fitbit, puis synchronise ta montre.',
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 12.5, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onRefresh,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: amber,
+                    side: BorderSide(color: amber.withOpacity(0.6)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Réessayer la synchro',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -606,21 +695,24 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final noData = spec.value == '--';
     final series = HealthStore.series(spec.metric, 7)
         .map((e) => e.value)
         .where((v) => v > 0)
         .toList();
-    final current =
-        series.isNotEmpty ? series.last : 0.0;
+    final current = series.isNotEmpty ? series.last : 0.0;
     final baseline = HealthStore.baseline(spec.metric);
     final trend = HealthScoreService.trend(
       spec.metric,
       current,
       baseline,
       unit: '',
-      fractionDigits:
-          spec.metric == HealthMetric.distanceKm ? 1 : 0,
+      fractionDigits: spec.metric == HealthMetric.distanceKm ? 1 : 0,
     );
+
+    // Carte « en attente » : couleurs atténuées pour ne pas ressembler à un bug.
+    final accent = noData ? AppColors.muted : spec.color;
+    final valueColor = noData ? AppColors.muted : Colors.white;
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -635,14 +727,17 @@ class _MetricCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.background,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: spec.color.withOpacity(0.25)),
+          border: Border.all(
+              color: noData
+                  ? AppColors.border
+                  : spec.color.withOpacity(0.25)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(spec.icon, color: spec.color, size: 14),
+                Icon(spec.icon, color: accent, size: 14),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -656,7 +751,7 @@ class _MetricCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                TrendArrow(dir: trend.dir, good: trend.good),
+                if (!noData) TrendArrow(dir: trend.dir, good: trend.good),
               ],
             ),
             const SizedBox(height: 8),
@@ -665,9 +760,9 @@ class _MetricCard extends StatelessWidget {
               children: [
                 Text(
                   spec.value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: kArcadeFont,
-                    color: Colors.white,
+                    color: valueColor,
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
@@ -677,15 +772,22 @@ class _MetricCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(spec.unit,
                       style: TextStyle(
-                          color: spec.color,
+                          color: accent,
                           fontSize: 11,
                           fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
-            // Sparkline seulement s'il y a un historique à tracer, sinon la
-            // carte reste compacte (pas d'espace vide).
-            if (series.length >= 2) ...[
+            if (noData) ...[
+              const SizedBox(height: 4),
+              const Text('en attente',
+                  style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 9,
+                      fontStyle: FontStyle.italic)),
+            ]
+            // Sparkline seulement s'il y a un historique à tracer.
+            else if (series.length >= 2) ...[
               const SizedBox(height: 6),
               Sparkline(values: series, color: spec.color, height: 28),
             ],
