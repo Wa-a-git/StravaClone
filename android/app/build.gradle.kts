@@ -37,6 +37,10 @@ android {
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Schéma de redirection OAuth (flutter_appauth) = Client ID Google inversé.
+        manifestPlaceholders["appAuthRedirectScheme"] =
+            "com.googleusercontent.apps.899312472150-aiulhp0a3sr3ltp4vbm9o3abb0ea6l6j"
     }
 
     signingConfigs {

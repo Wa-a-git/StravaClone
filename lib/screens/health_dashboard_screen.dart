@@ -6,6 +6,7 @@ import '../models/health_snapshot.dart';
 import '../providers/health_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/game_service.dart';
+import '../services/google_health_api_service.dart';
 import '../services/health_game_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
@@ -92,6 +93,8 @@ class HealthDashboardScreen extends ConsumerWidget {
                     _SubScoresRow(scores: scores),
                     const SizedBox(height: 16),
                     const _ProfileCard(),
+                    const SizedBox(height: 16),
+                    const _GoogleHealthCard(),
                     const SizedBox(height: 16),
                     _HealthXpBanner(
                       xpToday: st.healthXpToday,
@@ -945,6 +948,113 @@ class _InsightsPanel extends StatelessWidget {
                   ],
                 ),
               )),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Carte connexion Google Health API (OAuth) ─────────────────────────────────
+class _GoogleHealthCard extends StatefulWidget {
+  const _GoogleHealthCard();
+
+  @override
+  State<_GoogleHealthCard> createState() => _GoogleHealthCardState();
+}
+
+class _GoogleHealthCardState extends State<_GoogleHealthCard> {
+  final _service = GoogleHealthApiService();
+  bool _connected = false;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _service.isConnected().then((v) {
+      if (mounted) setState(() => _connected = v);
+    });
+  }
+
+  Future<void> _toggle() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (_connected) {
+        await _service.disconnect();
+        if (mounted) setState(() => _connected = false);
+      } else {
+        final ok = await _service.connect();
+        if (mounted) setState(() => _connected = ok);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFFFC107);
+    final accent = _connected ? kNeonGreen : gold;
+    return _HPanel(
+      accent: accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_connected ? Icons.cloud_done_rounded : Icons.cloud_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 10),
+              _HPanelTitle('GOOGLE HEALTH API', color: accent),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _connected
+                ? 'Connecté ✓ — les données premium (VO2 max, préparation…) arrivent bientôt.'
+                : 'Connecte-toi pour débloquer VO2 max, préparation et historique long, au-delà de Health Connect.',
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text('Erreur : $_error',
+                style: const TextStyle(color: kNeonPink, fontSize: 11)),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton.icon(
+              onPressed: _busy ? null : _toggle,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _connected ? AppColors.surfaceLight : accent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : Icon(_connected ? Icons.link_off_rounded : Icons.link_rounded,
+                      color: _connected ? Colors.white : Colors.black, size: 18),
+              label: Text(
+                _connected ? 'Déconnecter' : 'Connecter Google Health',
+                style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: _connected ? Colors.white : Colors.black,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
         ],
       ),
     );
