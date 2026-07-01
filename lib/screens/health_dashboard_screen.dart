@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
 import '../providers/health_provider.dart';
+import '../providers/game_provider.dart';
+import '../services/game_service.dart';
+import '../services/health_game_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
 import '../theme.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/health_charts.dart';
+import '../widgets/system_window.dart';
 import 'shell_screen.dart';
 import 'health_metric_detail_screen.dart';
 
@@ -90,7 +95,15 @@ class HealthDashboardScreen extends ConsumerWidget {
                     _SleepPanel(
                         sleep: st.snapshot.sleep, score: scores.sleepScore),
                     const SizedBox(height: 16),
+                    if (st.stepsStreak > 0 || st.sleepStreak > 0) ...[
+                      _StreaksRow(
+                          stepsStreak: st.stepsStreak,
+                          sleepStreak: st.sleepStreak),
+                      const SizedBox(height: 16),
+                    ],
                     _InsightsPanel(insights: st.insights),
+                    const SizedBox(height: 16),
+                    _buildQuestPanels(context, ref, st),
                   ],
                   const SizedBox(height: 32),
                 ],
@@ -120,6 +133,58 @@ class HealthDashboardScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Widget _buildQuestPanels(
+      BuildContext context, WidgetRef ref, HealthDataState st) {
+    final now = DateTime.now();
+    final today = HealthStore.recordFor(now);
+    final weekStart = GameService.startOfWeek(now);
+    final weekRecords =
+        st.history.where((r) => !r.date.isBefore(weekStart)).toList();
+    final dayKey = GameService.dayKey(now);
+    final weekKey = GameService.weekKey(now);
+
+    return Column(
+      children: [
+        _HealthQuestsPanel(
+          title: 'QUÊTES SANTÉ — JOUR',
+          accent: kNeonGreen,
+          quests: HealthQuestService.daily(now),
+          today: today,
+          weekRecords: weekRecords,
+          keyPrefix: dayKey,
+          onClaim: (q) => _claim(context, ref, dayKey, q),
+        ),
+        const SizedBox(height: 16),
+        _HealthQuestsPanel(
+          title: 'QUÊTES SANTÉ — SEMAINE',
+          accent: kNeonPink,
+          quests: HealthQuestService.weekly(now),
+          today: today,
+          weekRecords: weekRecords,
+          keyPrefix: weekKey,
+          onClaim: (q) => _claim(context, ref, weekKey, q),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _claim(BuildContext context, WidgetRef ref, String keyPrefix,
+      HealthQuestDef q) async {
+    final uid = 'hq:$keyPrefix:${q.id}';
+    final added = await GameStore.claim(uid, q.reward);
+    if (added <= 0) return;
+    ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
+    HapticFeedback.mediumImpact();
+    if (context.mounted) {
+      await showSystemWindow(
+        context,
+        heading: 'QUÊTE SANTÉ',
+        lines: [q.title, '+$added XP'],
+        accent: kNeonGreen,
+      );
+    }
   }
 }
 
@@ -765,6 +830,259 @@ class _InsightsPanel extends StatelessWidget {
                   ],
                 ),
               )),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Streaks (séries en cours) ─────────────────────────────────────────────────
+class _StreaksRow extends StatelessWidget {
+  final int stepsStreak;
+  final int sleepStreak;
+  const _StreaksRow({required this.stepsStreak, required this.sleepStreak});
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[];
+    if (sleepStreak > 0) {
+      chips.add(_StreakChip(
+        label: 'Sommeil ≥ 7 h',
+        days: sleepStreak,
+        color: kNeonViolet,
+      ));
+    }
+    if (stepsStreak > 0) {
+      chips.add(_StreakChip(
+        label: '10k pas',
+        days: stepsStreak,
+        color: kNeonGreen,
+      ));
+    }
+    return Row(
+      children: [
+        for (int i = 0; i < chips.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(child: chips[i]),
+        ],
+      ],
+    );
+  }
+}
+
+class _StreakChip extends StatelessWidget {
+  final String label;
+  final int days;
+  final Color color;
+  const _StreakChip(
+      {required this.label, required this.days, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.local_fire_department_rounded,
+              color: Color(0xFFFFC107), size: 22),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('$days',
+                      style: TextStyle(
+                          fontFamily: kArcadeFont,
+                          color: color,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(width: 3),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 3),
+                    child: Text('j',
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 11)),
+                  ),
+                ],
+              ),
+              Text(label,
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 10)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Panneau de quêtes santé (réclamables → XP pool commun) ────────────────────
+class _HealthQuestsPanel extends StatelessWidget {
+  final String title;
+  final Color accent;
+  final List<HealthQuestDef> quests;
+  final DailyHealthRecord? today;
+  final List<DailyHealthRecord> weekRecords;
+  final String keyPrefix;
+  final void Function(HealthQuestDef) onClaim;
+
+  const _HealthQuestsPanel({
+    required this.title,
+    required this.accent,
+    required this.quests,
+    required this.today,
+    required this.weekRecords,
+    required this.keyPrefix,
+    required this.onClaim,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _HPanel(
+      accent: accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _HPanelTitle(title, color: accent),
+          const SizedBox(height: 14),
+          ...quests.map((q) {
+            final current = HealthQuestService.current(q, today, weekRecords);
+            final claimed = GameStore.isClaimed('hq:$keyPrefix:${q.id}');
+            final progress = HealthQuestProgress(
+                def: q, current: current, claimed: claimed);
+            return _HealthQuestTile(
+                progress: progress, accent: accent, onClaim: () => onClaim(q));
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _HealthQuestTile extends StatelessWidget {
+  final HealthQuestProgress progress;
+  final Color accent;
+  final VoidCallback onClaim;
+  const _HealthQuestTile(
+      {required this.progress, required this.accent, required this.onClaim});
+
+  @override
+  Widget build(BuildContext context) {
+    final q = progress.def;
+    final fmt = q.unit == 'h'
+        ? progress.current.toStringAsFixed(1)
+        : progress.current.toStringAsFixed(0);
+    final tgt = q.target.toStringAsFixed(0);
+    final canClaim = progress.completed && !progress.claimed;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: progress.claimed
+              ? AppColors.border
+              : (progress.completed ? accent : AppColors.border),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                progress.claimed
+                    ? Icons.check_circle_rounded
+                    : (progress.completed
+                        ? Icons.emoji_events_rounded
+                        : Icons.radio_button_unchecked_rounded),
+                color: progress.claimed
+                    ? kNeonGreen
+                    : (progress.completed
+                        ? const Color(0xFFFFC107)
+                        : AppColors.textSecondary),
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  q.title,
+                  style: TextStyle(
+                    color:
+                        progress.claimed ? AppColors.textSecondary : Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    decoration:
+                        progress.claimed ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ),
+              Text('+${q.reward}',
+                  style: TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Stack(
+                    children: [
+                      Container(height: 8, color: AppColors.surfaceLight),
+                      FractionallySizedBox(
+                        widthFactor: progress.ratio,
+                        child: Container(height: 8, color: accent),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text('$fmt / $tgt ${q.unit}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11)),
+            ],
+          ),
+          if (canClaim) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: ElevatedButton(
+                onPressed: onClaim,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'RÉCLAMER LA RÉCOMPENSE',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.black,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

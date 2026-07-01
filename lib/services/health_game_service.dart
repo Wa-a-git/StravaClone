@@ -62,3 +62,148 @@ class HealthGameService {
     return total;
   }
 }
+
+// ── Quêtes santé ──────────────────────────────────────────────────────────────
+enum HealthQuestMetric {
+  daySteps,
+  daySleepHours,
+  dayActiveCalories,
+  dayBioScore,
+  weekSteps,
+  weekSleepNights,
+}
+
+class HealthQuestDef {
+  final String id;
+  final String title;
+  final HealthQuestMetric metric;
+  final double target;
+  final String unit;
+  final int reward;
+  const HealthQuestDef({
+    required this.id,
+    required this.title,
+    required this.metric,
+    required this.target,
+    required this.unit,
+    required this.reward,
+  });
+
+  bool get isWeekly =>
+      metric == HealthQuestMetric.weekSteps ||
+      metric == HealthQuestMetric.weekSleepNights;
+}
+
+class HealthQuestProgress {
+  final HealthQuestDef def;
+  final double current;
+  final bool claimed;
+  const HealthQuestProgress(
+      {required this.def, required this.current, required this.claimed});
+
+  bool get completed => current >= def.target;
+  double get ratio =>
+      def.target <= 0 ? 0 : (current / def.target).clamp(0.0, 1.0);
+}
+
+// Générateurs & évaluation (statiques via classe utilitaire).
+class HealthQuestService {
+  /// 2 quêtes du jour, l'une fixe + une tournante selon le jour.
+  static List<HealthQuestDef> daily(DateTime now) {
+    final dayIndex = DateTime(now.year, now.month, now.day)
+            .millisecondsSinceEpoch ~/
+        (24 * 3600 * 1000);
+
+    HealthQuestDef rotating;
+    switch (dayIndex % 3) {
+      case 0:
+        rotating = const HealthQuestDef(
+          id: 'd_sleep',
+          title: 'Dors au moins 7 h cette nuit',
+          metric: HealthQuestMetric.daySleepHours,
+          target: 7,
+          unit: 'h',
+          reward: 80,
+        );
+        break;
+      case 1:
+        rotating = const HealthQuestDef(
+          id: 'd_cal',
+          title: 'Brûle 500 kcal actives',
+          metric: HealthQuestMetric.dayActiveCalories,
+          target: 500,
+          unit: 'kcal',
+          reward: 70,
+        );
+        break;
+      default:
+        rotating = const HealthQuestDef(
+          id: 'd_bio',
+          title: 'Atteins un Bio-Score de 75',
+          metric: HealthQuestMetric.dayBioScore,
+          target: 75,
+          unit: 'pts',
+          reward: 90,
+        );
+    }
+
+    return [
+      const HealthQuestDef(
+        id: 'd_steps',
+        title: 'Marche 10 000 pas aujourd\'hui',
+        metric: HealthQuestMetric.daySteps,
+        target: 10000,
+        unit: 'pas',
+        reward: 60,
+      ),
+      rotating,
+    ];
+  }
+
+  /// 2 quêtes hebdomadaires.
+  static List<HealthQuestDef> weekly(DateTime now) {
+    return const [
+      HealthQuestDef(
+        id: 'w_steps',
+        title: 'Cumule 60 000 pas cette semaine',
+        metric: HealthQuestMetric.weekSteps,
+        target: 60000,
+        unit: 'pas',
+        reward: 220,
+      ),
+      HealthQuestDef(
+        id: 'w_sleep',
+        title: 'Dors ≥ 7 h sur 5 nuits',
+        metric: HealthQuestMetric.weekSleepNights,
+        target: 5,
+        unit: 'nuits',
+        reward: 240,
+      ),
+    ];
+  }
+
+  /// Valeur actuelle d'une quête à partir des enregistrements.
+  static double current(
+    HealthQuestDef q,
+    DailyHealthRecord? today,
+    List<DailyHealthRecord> weekRecords,
+  ) {
+    switch (q.metric) {
+      case HealthQuestMetric.daySteps:
+        return today?.steps.toDouble() ?? 0;
+      case HealthQuestMetric.daySleepHours:
+        return (today?.totalSleepMin ?? 0) / 60.0;
+      case HealthQuestMetric.dayActiveCalories:
+        return today?.activeCalories ?? 0;
+      case HealthQuestMetric.dayBioScore:
+        return today?.bioScore.toDouble() ?? 0;
+      case HealthQuestMetric.weekSteps:
+        return weekRecords.fold<double>(0, (s, r) => s + r.steps);
+      case HealthQuestMetric.weekSleepNights:
+        return weekRecords
+            .where((r) => r.totalSleepMin >= 7 * 60)
+            .length
+            .toDouble();
+    }
+  }
+}
