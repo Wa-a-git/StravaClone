@@ -5,6 +5,51 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/daily_health_record.dart';
 
+/// Profil corporel de l'utilisateur (poids/taille/âge), saisi manuellement et
+/// persisté dans la boîte 'settings' (partagée avec GameStore).
+class HealthProfileStore {
+  static Box get _box => Hive.box('settings');
+
+  static double? get weightKg {
+    final v = _box.get('profile_weight_kg');
+    return v is num ? v.toDouble() : null;
+  }
+
+  static double? get heightCm {
+    final v = _box.get('profile_height_cm');
+    return v is num ? v.toDouble() : null;
+  }
+
+  static int? get age {
+    final v = _box.get('player_age'); // même clé que GameStore
+    return v is int ? v : null;
+  }
+
+  static Future<void> setWeight(double kg) =>
+      _box.put('profile_weight_kg', kg);
+  static Future<void> setHeight(double cm) =>
+      _box.put('profile_height_cm', cm);
+  static Future<void> setAge(int years) => _box.put('player_age', years);
+
+  /// IMC = poids / taille² (m). Null si incomplet.
+  static double? get bmi {
+    final w = weightKg, h = heightCm;
+    if (w == null || h == null || h <= 0) return null;
+    final m = h / 100.0;
+    return w / (m * m);
+  }
+
+  /// Catégorie OMS de l'IMC.
+  static String bmiCategory(double bmi) {
+    if (bmi < 18.5) return 'Maigreur';
+    if (bmi < 25) return 'Normal';
+    if (bmi < 30) return 'Surpoids';
+    return 'Obésité';
+  }
+
+  static bool get isComplete => weightKg != null && heightCm != null;
+}
+
 class HealthStore {
   static const String boxName = 'health_history';
 

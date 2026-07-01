@@ -91,6 +91,8 @@ class HealthDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     _SubScoresRow(scores: scores),
                     const SizedBox(height: 16),
+                    const _ProfileCard(),
+                    const SizedBox(height: 16),
                     _HealthXpBanner(
                       xpToday: st.healthXpToday,
                       onTap: () => ref
@@ -943,6 +945,189 @@ class _InsightsPanel extends StatelessWidget {
                   ],
                 ),
               )),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Carte profil corporel (poids / taille / IMC / âge) ────────────────────────
+class _ProfileCard extends StatefulWidget {
+  const _ProfileCard();
+
+  @override
+  State<_ProfileCard> createState() => _ProfileCardState();
+}
+
+class _ProfileCardState extends State<_ProfileCard> {
+  @override
+  Widget build(BuildContext context) {
+    final w = HealthProfileStore.weightKg;
+    final h = HealthProfileStore.heightCm;
+    final age = HealthProfileStore.age;
+    final bmi = HealthProfileStore.bmi;
+
+    return GestureDetector(
+      onTap: _edit,
+      child: _HPanel(
+        accent: kNeonViolet,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const _HPanelTitle('PROFIL CORPOREL', color: kNeonViolet),
+                const Icon(Icons.edit_rounded,
+                    color: AppColors.textSecondary, size: 16),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (!HealthProfileStore.isComplete)
+              const Text(
+                'Ajoute ton poids et ta taille pour débloquer l\'IMC et affiner tes calculs. Appuie ici.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+              )
+            else
+              Row(
+                children: [
+                  _ProfileStat(
+                      label: 'POIDS',
+                      value: w!.toStringAsFixed(0),
+                      unit: 'kg',
+                      color: kNeonCyan),
+                  _ProfileStat(
+                      label: 'TAILLE',
+                      value: h!.toStringAsFixed(0),
+                      unit: 'cm',
+                      color: kNeonGreen),
+                  _ProfileStat(
+                      label: 'IMC',
+                      value: bmi!.toStringAsFixed(1),
+                      unit: HealthProfileStore.bmiCategory(bmi),
+                      color: kNeonViolet),
+                  if (age != null)
+                    _ProfileStat(
+                        label: 'ÂGE',
+                        value: age.toString(),
+                        unit: 'ans',
+                        color: const Color(0xFFFFC107)),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _edit() async {
+    final wCtrl = TextEditingController(
+        text: HealthProfileStore.weightKg?.toStringAsFixed(0) ?? '');
+    final hCtrl = TextEditingController(
+        text: HealthProfileStore.heightCm?.toStringAsFixed(0) ?? '');
+    final aCtrl = TextEditingController(
+        text: HealthProfileStore.age?.toString() ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: kNeonViolet.withOpacity(0.5))),
+        title: const Text('Profil corporel',
+            style: TextStyle(
+                fontFamily: kArcadeFont, color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _profileField(wCtrl, 'Poids', 'kg'),
+            const SizedBox(height: 12),
+            _profileField(hCtrl, 'Taille', 'cm'),
+            const SizedBox(height: 12),
+            _profileField(aCtrl, 'Âge', 'ans'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kNeonViolet),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer',
+                style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      final wv = double.tryParse(wCtrl.text.replaceAll(',', '.'));
+      final hv = double.tryParse(hCtrl.text.replaceAll(',', '.'));
+      final av = int.tryParse(aCtrl.text);
+      if (wv != null && wv > 0) await HealthProfileStore.setWeight(wv);
+      if (hv != null && hv > 0) await HealthProfileStore.setHeight(hv);
+      if (av != null && av > 0) await HealthProfileStore.setAge(av);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _profileField(
+      TextEditingController ctrl, String label, String unit) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: unit,
+        labelStyle: const TextStyle(color: AppColors.textSecondary),
+        suffixStyle: const TextStyle(color: AppColors.textSecondary),
+        enabledBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.border)),
+        focusedBorder:
+            const OutlineInputBorder(borderSide: BorderSide(color: kNeonViolet)),
+      ),
+    );
+  }
+}
+
+class _ProfileStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final String unit;
+  final Color color;
+  const _ProfileStat(
+      {required this.label,
+      required this.value,
+      required this.unit,
+      required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6)),
+          const SizedBox(height: 4),
+          Text(value,
+              style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900)),
+          Text(unit,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 10)),
         ],
       ),
     );

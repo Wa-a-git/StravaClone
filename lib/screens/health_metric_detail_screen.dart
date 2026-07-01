@@ -96,12 +96,18 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
           // Graphique
           _Panel(
             accent: widget.accent,
-            child: TrendChart(
-              values: values,
-              color: widget.accent,
-              baseline: baseline > 0 ? baseline : null,
-              height: 200,
-            ),
+            child: values.length >= 2
+                ? TrendChart(
+                    values: values,
+                    color: widget.accent,
+                    baseline: baseline > 0 ? baseline : null,
+                    height: 200,
+                  )
+                : _SparseState(
+                    value: hasData ? meta.format(current) : null,
+                    unit: meta.unit,
+                    accent: widget.accent,
+                    days: values.length),
           ),
           const SizedBox(height: 16),
 
@@ -148,6 +154,54 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Affichage quand on n'a pas encore assez de jours pour une courbe.
+class _SparseState extends StatelessWidget {
+  final String? value;
+  final String unit;
+  final Color accent;
+  final int days;
+  const _SparseState(
+      {required this.value,
+      required this.unit,
+      required this.accent,
+      required this.days});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 200,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (value != null) ...[
+            Icon(Icons.show_chart_rounded,
+                color: accent.withOpacity(0.5), size: 32),
+            const SizedBox(height: 10),
+            Text(
+              days <= 1
+                  ? '1 jour enregistré'
+                  : '$days jours enregistrés',
+              style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: accent,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'La courbe se construit chaque jour.\nReviens demain pour voir la tendance.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+          ] else
+            const Text('Aucune donnée pour cette métrique.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ],
       ),
     );
