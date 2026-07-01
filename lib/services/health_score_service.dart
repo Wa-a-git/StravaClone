@@ -4,9 +4,38 @@
 // nous-mêmes à partir des données brutes Health Connect.
 import 'package:flutter/material.dart';
 import '../models/health_snapshot.dart';
+import '../models/daily_health_record.dart';
 import '../theme.dart';
 
 double _clamp(double v) => v.clamp(0.0, 100.0);
+
+/// Direction d'une tendance vs baseline (couche logique, consommée par l'UI).
+enum TrendDir { up, down, flat }
+
+/// Résultat d'une analyse de tendance pour une métrique.
+class TrendInfo {
+  final TrendDir dir;
+  final double delta; // valeur actuelle - baseline
+  final bool good; // la direction est-elle favorable ?
+  final String label; // ex : "+3", "-0.4 km"
+  const TrendInfo({
+    required this.dir,
+    required this.delta,
+    required this.good,
+    required this.label,
+  });
+
+  static const flat = TrendInfo(
+      dir: TrendDir.flat, delta: 0, good: true, label: '—');
+}
+
+/// Un insight lisible (texte + accent + icône) pour le panneau d'analyse.
+class HealthInsight {
+  final String text;
+  final Color color;
+  final IconData icon;
+  const HealthInsight(this.text, this.color, this.icon);
+}
 
 class HealthTier {
   final String name;
@@ -126,5 +155,116 @@ class HealthScoreService {
       bioScore: bio,
       tier: tierFor(bio),
     );
+  }
+
+  // ── Tendances ──────────────────────────────────────────────────────────────
+
+  /// Compare une valeur courante à une baseline et produit une tendance.
+  /// [threshold] est la variation minimale (en unités de la métrique) pour ne
+  /// pas considérer la tendance comme « stable ».
+  static TrendInfo trend(
+    HealthMetric metric,
+    double current,
+    double baseline, {
+    double threshold = 0,
+    String unit = '',
+    int fractionDigits = 0,
+  }) {
+    if (baseline <= 0 || current <= 0) return TrendInfo.flat;
+    final delta = current - baseline;
+    final minChange = threshold > 0 ? threshold : baseline * 0.03;
+    if (delta.abs() < minChange) return TrendInfo.flat;
+
+    final dir = delta > 0 ? TrendDir.up : TrendDir.down;
+    // « bon » = va dans le sens favorable de la métrique
+    final good = metric.lowerIsBetter ? delta < 0 : delta > 0;
+    final sign = delta > 0 ? '+' : '';
+    final label = '$sign${delta.toStringAsFixed(fractionDigits)}$unit';
+    return TrendInfo(dir: dir, delta: delta, good: good, label: label);
+  }
+
+  // ── Insights générés ───────────────────────────────────────────────────────
+
+  /// Analyse le dernier jour vs les baselines et produit des observations
+  /// courtes et actionnables.
+  static List<HealthInsight> insights({
+    required DailyHealthRecord today,
+    required double rhrBaseline,
+    required double hrvBaseline,
+    required double sleepBaselineHours,
+    required int stepsStreak,
+    required int sleepStreak,
+  }) {
+    final out = <HealthInsight>[];
+
+    // FC repos
+    if (today.restingHeartRate > 0 && rhrBaseline > 0) {
+      final d = today.restingHeartRate - rhrBaseline;
+      if (d >= 3) {
+        out.add(HealthInsight(
+            'FC repos +${d.toStringAsFixed(0)} bpm vs ta moyenne 7j : récupération à surveiller.',
+            kNeonPink,
+            Icons.favorite_border_rounded));
+      } else if (d <= -3) {
+        out.add(HealthInsight(
+            'FC repos -${d.abs().toStringAsFixed(0)} bpm vs 7j : bonne récupération.',
+            kNeonGreen,
+            Icons.favorite_rounded));
+      }
+    }
+
+    // HRV
+    if (today.hrv > 0 && hrvBaseline > 0) {
+      final ratio = today.hrv / hrvBaseline;
+      if (ratio >= 1.1) {
+        out.add(HealthInsight(
+            'HRV au-dessus de ta moyenne : ton corps est bien reposé.',
+            kNeonGreen,
+            Icons.monitor_heart_rounded));
+      } else if (ratio <= 0.85) {
+        out.add(HealthInsight(
+            'HRV basse aujourd\'hui : privilégie une séance légère.',
+            const Color(0xFFFFC107),
+            Icons.monitor_heart_rounded));
+      }
+    }
+
+    // Sommeil
+    final sleepH = today.totalSleepMin / 60.0;
+    if (sleepH > 0) {
+      if (sleepH < 6.5) {
+        out.add(HealthInsight(
+            'Nuit courte (${sleepH.toStringAsFixed(1)} h) : vise 7-8 h pour recharger.',
+            const Color(0xFFFFC107),
+            Icons.bedtime_rounded));
+      } else if (sleepH >= 7.5) {
+        out.add(HealthInsight(
+            'Belle nuit de ${sleepH.toStringAsFixed(1)} h : sommeil optimal.',
+            kNeonViolet,
+            Icons.bedtime_rounded));
+      }
+    }
+
+    // Streaks
+    if (sleepStreak >= 3) {
+      out.add(HealthInsight(
+          'Série sommeil ≥ 7 h : $sleepStreak jours d\'affilée 🔥',
+          kNeonViolet,
+          Icons.local_fire_department_rounded));
+    }
+    if (stepsStreak >= 3) {
+      out.add(HealthInsight(
+          'Série 10k pas : $stepsStreak jours d\'affilée 🔥',
+          kNeonGreen,
+          Icons.local_fire_department_rounded));
+    }
+
+    if (out.isEmpty) {
+      out.add(const HealthInsight(
+          'Continue à enregistrer tes journées : les analyses s\'affinent avec l\'historique.',
+          AppColors.textSecondary,
+          Icons.insights_rounded));
+    }
+    return out;
   }
 }

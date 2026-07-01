@@ -70,6 +70,22 @@ class DailyHealthRecord {
 
   double get totalSleepMin => sleepDeepMin + sleepLightMin + sleepRemMin;
 
+  /// Reconstruit un HealthSnapshot à partir de cet enregistrement stocké
+  /// (les baselines ne sont pas persistées — calculées ailleurs via HealthStore).
+  HealthSnapshot toSnapshot() => HealthSnapshot(
+        steps: steps,
+        activeCalories: activeCalories,
+        totalCalories: totalCalories,
+        avgHeartRate: avgHeartRate,
+        restingHeartRate: restingHeartRate,
+        spo2: spo2,
+        respiratoryRate: respiratoryRate,
+        hrv: hrv,
+        flightsClimbed: flightsClimbed,
+        distanceKm: distanceKm,
+        sleep: sleep,
+      );
+
   /// Construit un enregistrement à partir d'un snapshot live + scores calculés.
   factory DailyHealthRecord.fromSnapshot(
     DateTime day,

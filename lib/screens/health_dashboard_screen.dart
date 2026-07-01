@@ -1,25 +1,23 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
 import '../providers/health_provider.dart';
 import '../services/health_score_service.dart';
+import '../services/health_store.dart';
 import '../theme.dart';
 import '../widgets/arcade_fx.dart';
+import '../widgets/health_charts.dart';
+import 'shell_screen.dart';
+import 'health_metric_detail_screen.dart';
 
-class HealthDashboardScreen extends ConsumerStatefulWidget {
+class HealthDashboardScreen extends ConsumerWidget {
   const HealthDashboardScreen({super.key});
 
   @override
-  ConsumerState<HealthDashboardScreen> createState() => _HealthDashboardScreenState();
-}
-
-class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
-
-  @override
-  Widget build(BuildContext context) {
-    final healthState = ref.watch(healthDataProvider);
-    final scores = healthState.scores;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(healthDataProvider);
+    final scores = st.scores;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -30,9 +28,9 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
             pinned: true,
             backgroundColor: AppColors.surface,
             elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: const Text(
+            flexibleSpace: const FlexibleSpaceBar(
+              titlePadding: EdgeInsets.only(left: 20, bottom: 16),
+              title: Text(
                 'SANTÉ & CORPS',
                 style: TextStyle(
                   fontFamily: kArcadeFont,
@@ -47,8 +45,10 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.refresh_rounded, color: AppColors.arcadeCyan),
-                onPressed: () => ref.read(healthDataProvider.notifier).fetchDailyData(),
+                icon: const Icon(Icons.refresh_rounded,
+                    color: AppColors.arcadeCyan),
+                onPressed: () =>
+                    ref.read(healthDataProvider.notifier).fetchDailyData(),
               ),
             ],
           ),
@@ -59,23 +59,38 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildHeader(),
-                  const SizedBox(height: 24),
-                  if (healthState.isLoading)
+                  const SizedBox(height: 20),
+                  if (st.isLoading)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
+                      padding: EdgeInsets.symmetric(vertical: 60),
                       child: Center(
-                          child: CircularProgressIndicator(color: AppColors.arcadeCyan)),
+                          child: CircularProgressIndicator(
+                              color: AppColors.arcadeCyan)),
                     )
-                  else if (!healthState.hasPermission || scores == null)
-                    _buildPermissionWarning(ref)
+                  else if (!st.hasPermission || scores == null)
+                    _PermissionWarning(
+                      onTap: () => ref
+                          .read(healthDataProvider.notifier)
+                          .fetchDailyData(),
+                    )
                   else ...[
-                    _BioScorePanel(scores: scores),
+                    _BioScorePanel(scores: scores, insights: st.insights),
                     const SizedBox(height: 16),
                     _SubScoresRow(scores: scores),
                     const SizedBox(height: 16),
-                    _SleepPanel(sleep: healthState.snapshot.sleep, score: scores.sleepScore),
+                    _HealthXpBanner(
+                      xpToday: st.healthXpToday,
+                      onTap: () => ref
+                          .read(shellIndexProvider.notifier)
+                          .state = 3,
+                    ),
                     const SizedBox(height: 16),
-                    _MetricsPanel(snapshot: healthState.snapshot),
+                    _MetricsGrid(snapshot: st.snapshot),
+                    const SizedBox(height: 16),
+                    _SleepPanel(
+                        sleep: st.snapshot.sleep, score: scores.sleepScore),
+                    const SizedBox(height: 16),
+                    _InsightsPanel(insights: st.insights),
                   ],
                   const SizedBox(height: 32),
                 ],
@@ -91,13 +106,8 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: const [
-        Text(
-          'Données Fitbit',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-          ),
-        ),
+        Text('Données Fitbit',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         SizedBox(height: 8),
         Text(
           'Aptitude du Jour',
@@ -111,8 +121,15 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
       ],
     );
   }
+}
 
-  Widget _buildPermissionWarning(WidgetRef ref) {
+// ── Avertissement permission ──────────────────────────────────────────────────
+class _PermissionWarning extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PermissionWarning({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -122,12 +139,12 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
       ),
       child: Column(
         children: [
-          const Icon(Icons.health_and_safety, size: 48, color: AppColors.arcadePink),
+          const Icon(Icons.health_and_safety,
+              size: 48, color: AppColors.arcadePink),
           const SizedBox(height: 16),
-          const Text(
-            'Health Connect Requis',
-            style: TextStyle(fontFamily: kArcadeFont, fontSize: 16, color: Colors.white),
-          ),
+          const Text('Health Connect Requis',
+              style: TextStyle(
+                  fontFamily: kArcadeFont, fontSize: 16, color: Colors.white)),
           const SizedBox(height: 8),
           const Text(
             'Autorisez l\'accès aux données pour synchroniser votre Fitbit.',
@@ -136,9 +153,11 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.arcadeCyan),
-            onPressed: () => ref.read(healthDataProvider.notifier).fetchDailyData(),
-            child: const Text('Autoriser l\'accès', style: TextStyle(color: Colors.black)),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppColors.arcadeCyan),
+            onPressed: onTap,
+            child: const Text('Autoriser l\'accès',
+                style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -146,128 +165,95 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Panneau Bio-Score (score global, façon jauge d'arcade)
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Héros Bio-Score ───────────────────────────────────────────────────────────
 class _BioScorePanel extends StatelessWidget {
   final HealthScores scores;
-  const _BioScorePanel({required this.scores});
+  final List<HealthInsight> insights;
+  const _BioScorePanel({required this.scores, required this.insights});
 
   @override
   Widget build(BuildContext context) {
     final tier = scores.tier;
+    final bioTrend = HealthScoreService.trend(
+      HealthMetric.bioScore,
+      scores.bioScore.toDouble(),
+      HealthStore.baseline(HealthMetric.bioScore),
+    );
+    final topInsight = insights.isNotEmpty ? insights.first : null;
+
     return _HPanel(
       accent: tier.color,
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ScoreRing(score: scores.bioScore, color: tier.color, size: 100),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _HPanelTitle('BIO-SCORE'),
-                const SizedBox(height: 6),
-                Text(
-                  tier.name,
-                  style: TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: tier.color,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    shadows: [Shadow(color: tier.color, blurRadius: 10)],
-                  ),
+          Row(
+            children: [
+              HealthRing(
+                  score: scores.bioScore,
+                  color: tier.color,
+                  size: 104,
+                  centerLabel: 'BIO'),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _HPanelTitle('BIO-SCORE'),
+                    const SizedBox(height: 6),
+                    Text(
+                      tier.name,
+                      style: TextStyle(
+                        fontFamily: kArcadeFont,
+                        color: tier.color,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        shadows: [Shadow(color: tier.color, blurRadius: 10)],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        TrendArrow(
+                          dir: bioTrend.dir,
+                          good: bioTrend.good,
+                          label: '${bioTrend.label} vs 7j',
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Calculé à partir du sommeil, de la récupération\net de l\'activité du jour.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+          if (topInsight != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: topInsight.color.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  Icon(topInsight.icon, color: topInsight.color, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(topInsight.text,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary, fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _ScoreRing extends StatelessWidget {
-  final int score;
-  final Color color;
-  final double size;
-  const _ScoreRing({required this.score, required this.color, this.size = 72});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: (score / 100).clamp(0.0, 1.0)),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeOutCubic,
-        builder: (context, v, _) => CustomPaint(
-          painter: _RingPainter(progress: v, color: color),
-          child: Center(
-            child: AnimatedCounter(
-              value: score.toDouble(),
-              style: TextStyle(
-                fontFamily: kArcadeFont,
-                color: color,
-                fontSize: size * 0.28,
-                fontWeight: FontWeight.w900,
-                shadows: [Shadow(color: color, blurRadius: 10)],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RingPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  _RingPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final radius = size.width / 2 - 6;
-    const startAngle = -math.pi / 2;
-
-    final bgPaint = Paint()
-      ..color = AppColors.surfaceLight
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round;
-    canvas.drawCircle(center, radius, bgPaint);
-
-    final fgPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round
-      ..shader = null;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      2 * math.pi * progress,
-      false,
-      fgPaint..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Ligne des 3 sous-scores
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Sous-scores (tappables) ───────────────────────────────────────────────────
 class _SubScoresRow extends StatelessWidget {
   final HealthScores scores;
   const _SubScoresRow({required this.scores});
@@ -281,16 +267,16 @@ class _SubScoresRow extends StatelessWidget {
             label: 'SOMMEIL',
             score: scores.sleepScore,
             color: kNeonViolet,
-            icon: Icons.bedtime_rounded,
+            metric: HealthMetric.sleepScore,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _SubScoreCard(
-            label: 'RÉCUPÉRATION',
+            label: 'RÉCUP',
             score: scores.recoveryScore,
             color: kNeonCyan,
-            icon: Icons.favorite_rounded,
+            metric: HealthMetric.recoveryScore,
           ),
         ),
         const SizedBox(width: 10),
@@ -299,7 +285,7 @@ class _SubScoresRow extends StatelessWidget {
             label: 'ACTIVITÉ',
             score: scores.activityScore,
             color: kNeonGreen,
-            icon: Icons.local_fire_department_rounded,
+            metric: HealthMetric.activityScore,
           ),
         ),
       ],
@@ -311,46 +297,219 @@ class _SubScoreCard extends StatelessWidget {
   final String label;
   final int score;
   final Color color;
-  final IconData icon;
+  final HealthMetric metric;
   const _SubScoreCard({
     required this.label,
     required this.score,
     required this.color,
-    required this.icon,
+    required this.metric,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.4)),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              HealthMetricDetailScreen(metric: metric, accent: color),
+        ),
       ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(height: 8),
-          Text(
-            '$score',
-            style: TextStyle(
-              fontFamily: kArcadeFont,
-              color: color,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Column(
+          children: [
+            HealthRing(score: score, color: color, size: 56),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Bandeau XP santé (lien vers l'onglet Niveau) ──────────────────────────────
+class _HealthXpBanner extends StatelessWidget {
+  final int xpToday;
+  final VoidCallback onTap;
+  const _HealthXpBanner({required this.xpToday, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: LinearGradient(
+            colors: [
+              kNeonPink.withOpacity(0.18),
+              kNeonCyan.withOpacity(0.12),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
+          border: Border.all(color: kNeonPink.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.bolt_rounded, color: kNeonPink, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'XP SANTÉ AUJOURD\'HUI',
+                    style: TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: kNeonPink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Ta santé fait monter ton niveau. Voir ta progression →',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('+',
+                    style: TextStyle(
+                        fontFamily: kArcadeFont,
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900)),
+                AnimatedCounter(
+                  value: xpToday.toDouble(),
+                  style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 3, left: 2),
+                  child: Text('XP',
+                      style: TextStyle(
+                          color: kNeonPink,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Grille de métriques avec sparklines + tendances ───────────────────────────
+class _MetricsGrid extends StatelessWidget {
+  final HealthSnapshot snapshot;
+  const _MetricsGrid({required this.snapshot});
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = <_MetricSpec>[
+      _MetricSpec('Pas', HealthMetric.steps, snapshot.steps.toString(), 'pas',
+          Icons.directions_walk_rounded, kNeonGreen),
+      _MetricSpec(
+          'Distance',
+          HealthMetric.distanceKm,
+          snapshot.distanceKm.toStringAsFixed(2),
+          'km',
+          Icons.map_rounded,
+          kNeonGreen),
+      _MetricSpec(
+          'Cal. actives',
+          HealthMetric.activeCalories,
+          snapshot.activeCalories.toStringAsFixed(0),
+          'kcal',
+          Icons.local_fire_department_rounded,
+          kNeonPink),
+      _MetricSpec(
+          'FC repos',
+          HealthMetric.restingHeartRate,
+          snapshot.restingHeartRate > 0
+              ? snapshot.restingHeartRate.toStringAsFixed(0)
+              : '--',
+          'bpm',
+          Icons.favorite_border_rounded,
+          kNeonCyan),
+      _MetricSpec(
+          'HRV',
+          HealthMetric.hrv,
+          snapshot.hrv > 0 ? snapshot.hrv.toStringAsFixed(0) : '--',
+          'ms',
+          Icons.monitor_heart_rounded,
+          kNeonCyan),
+      _MetricSpec(
+          'SpO2',
+          HealthMetric.spo2,
+          snapshot.spo2 > 0 ? snapshot.spo2.toStringAsFixed(0) : '--',
+          '%',
+          Icons.bloodtype_rounded,
+          kNeonViolet),
+      _MetricSpec(
+          'Respiration',
+          HealthMetric.respiratoryRate,
+          snapshot.respiratoryRate > 0
+              ? snapshot.respiratoryRate.toStringAsFixed(1)
+              : '--',
+          'rpm',
+          Icons.air_rounded,
+          kNeonViolet),
+      _MetricSpec(
+          'Étages',
+          HealthMetric.flightsClimbed,
+          snapshot.flightsClimbed.toString(),
+          'étages',
+          Icons.stairs_rounded,
+          const Color(0xFFFFC107)),
+    ];
+
+    return _HPanel(
+      accent: kNeonCyan,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _HPanelTitle('MÉTRIQUES & TENDANCES'),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: metrics
+                .map((m) => SizedBox(
+                      width: (MediaQuery.of(context).size.width - 32 - 36 - 10) /
+                          2,
+                      child: _MetricCard(spec: m),
+                    ))
+                .toList(),
           ),
         ],
       ),
@@ -358,9 +517,110 @@ class _SubScoreCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Panneau sommeil (répartition des phases)
-// ─────────────────────────────────────────────────────────────────────────────
+class _MetricSpec {
+  final String title;
+  final HealthMetric metric;
+  final String value;
+  final String unit;
+  final IconData icon;
+  final Color color;
+  _MetricSpec(this.title, this.metric, this.value, this.unit, this.icon,
+      this.color);
+}
+
+class _MetricCard extends StatelessWidget {
+  final _MetricSpec spec;
+  const _MetricCard({required this.spec});
+
+  @override
+  Widget build(BuildContext context) {
+    final series = HealthStore.series(spec.metric, 7)
+        .map((e) => e.value)
+        .where((v) => v > 0)
+        .toList();
+    final current =
+        series.isNotEmpty ? series.last : 0.0;
+    final baseline = HealthStore.baseline(spec.metric);
+    final trend = HealthScoreService.trend(
+      spec.metric,
+      current,
+      baseline,
+      unit: '',
+      fractionDigits:
+          spec.metric == HealthMetric.distanceKm ? 1 : 0,
+    );
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HealthMetricDetailScreen(
+              metric: spec.metric, accent: spec.color),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: spec.color.withOpacity(0.25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(spec.icon, color: spec.color, size: 14),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    spec.title.toUpperCase(),
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TrendArrow(dir: trend.dir, good: trend.good),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  spec.value,
+                  style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(spec.unit,
+                      style: TextStyle(
+                          color: spec.color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Sparkline(values: series, color: spec.color, height: 28),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Panneau sommeil ───────────────────────────────────────────────────────────
 class _SleepPanel extends StatelessWidget {
   final SleepBreakdown sleep;
   final int score;
@@ -385,27 +645,24 @@ class _SleepPanel extends StatelessWidget {
             children: [
               const _HPanelTitle('SOMMEIL', color: kNeonViolet),
               Text('Score $score/100',
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 12),
           if (total <= 0)
-            const Text(
-              'Aucune donnée de sommeil trouvée pour cette nuit.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            )
+            const Text('Aucune donnée de sommeil trouvée pour cette nuit.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12))
           else ...[
-            Text(
-              _fmt(total),
-              style: const TextStyle(
-                fontFamily: kArcadeFont,
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            Text(_fmt(total),
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900)),
             Text('Efficacité : ${sleep.efficiency.toStringAsFixed(0)}%',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 11)),
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
@@ -415,24 +672,23 @@ class _SleepPanel extends StatelessWidget {
                   children: [
                     if (sleep.deepMin > 0)
                       Expanded(
-                        flex: (sleep.deepMin * 100).round().clamp(1, 1000000),
-                        child: Container(color: kNeonViolet),
-                      ),
+                          flex: (sleep.deepMin * 100).round().clamp(1, 1000000),
+                          child: Container(color: kNeonViolet)),
                     if (sleep.remMin > 0)
                       Expanded(
-                        flex: (sleep.remMin * 100).round().clamp(1, 1000000),
-                        child: Container(color: kNeonCyan),
-                      ),
+                          flex: (sleep.remMin * 100).round().clamp(1, 1000000),
+                          child: Container(color: kNeonCyan)),
                     if (sleep.lightMin > 0)
                       Expanded(
-                        flex: (sleep.lightMin * 100).round().clamp(1, 1000000),
-                        child: Container(color: AppColors.arcadeViolet.withOpacity(0.35)),
-                      ),
+                          flex:
+                              (sleep.lightMin * 100).round().clamp(1, 1000000),
+                          child: Container(
+                              color: AppColors.arcadeViolet.withOpacity(0.35))),
                     if (sleep.awakeMin > 0)
                       Expanded(
-                        flex: (sleep.awakeMin * 100).round().clamp(1, 1000000),
-                        child: Container(color: AppColors.muted),
-                      ),
+                          flex:
+                              (sleep.awakeMin * 100).round().clamp(1, 1000000),
+                          child: Container(color: AppColors.muted)),
                   ],
                 ),
               ),
@@ -467,138 +723,55 @@ class _SleepLegend extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 6),
         Text('$label $value',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Grille de métriques brutes
-// ─────────────────────────────────────────────────────────────────────────────
-class _MetricsPanel extends StatelessWidget {
-  final HealthSnapshot snapshot;
-  const _MetricsPanel({required this.snapshot});
+// ── Insights & streaks ────────────────────────────────────────────────────────
+class _InsightsPanel extends StatelessWidget {
+  final List<HealthInsight> insights;
+  const _InsightsPanel({required this.insights});
 
   @override
   Widget build(BuildContext context) {
-    final metrics = <_MetricData>[
-      _MetricData('Pas', snapshot.steps.toString(), 'pas', Icons.directions_walk_rounded, kNeonGreen),
-      _MetricData('Distance', snapshot.distanceKm.toStringAsFixed(2), 'km', Icons.map_rounded, kNeonGreen),
-      _MetricData('Calories actives', snapshot.activeCalories.toStringAsFixed(0), 'kcal', Icons.local_fire_department_rounded, kNeonPink),
-      _MetricData('Calories totales', snapshot.totalCalories.toStringAsFixed(0), 'kcal', Icons.whatshot_rounded, kNeonPink),
-      _MetricData('Fréq. cardiaque', snapshot.avgHeartRate > 0 ? snapshot.avgHeartRate.toStringAsFixed(0) : '--', 'bpm', Icons.favorite_rounded, kNeonCyan),
-      _MetricData('FC repos', snapshot.restingHeartRate > 0 ? snapshot.restingHeartRate.toStringAsFixed(0) : '--', 'bpm', Icons.favorite_border_rounded, kNeonCyan),
-      _MetricData('SpO2', snapshot.spo2 > 0 ? snapshot.spo2.toStringAsFixed(0) : '--', '%', Icons.bloodtype_rounded, kNeonViolet),
-      _MetricData('Respiration', snapshot.respiratoryRate > 0 ? snapshot.respiratoryRate.toStringAsFixed(1) : '--', 'rpm', Icons.air_rounded, kNeonViolet),
-      _MetricData('HRV', snapshot.hrv > 0 ? snapshot.hrv.toStringAsFixed(0) : '--', 'ms', Icons.monitor_heart_rounded, kNeonCyan),
-      _MetricData('Étages', snapshot.flightsClimbed.toString(), 'étages', Icons.stairs_rounded, const Color(0xFFFFC107)),
-    ];
-
+    if (insights.isEmpty) return const SizedBox.shrink();
     return _HPanel(
-      accent: kNeonCyan,
+      accent: kNeonGreen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _HPanelTitle('MÉTRIQUES DU JOUR'),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: metrics
-                .map((m) => SizedBox(
-                      width: (MediaQuery.of(context).size.width - 32 - 36 - 20) / 2,
-                      child: _MetricTile(data: m),
-                    ))
-                .toList(),
-          ),
+          const _HPanelTitle('ANALYSE', color: kNeonGreen),
+          const SizedBox(height: 12),
+          ...insights.map((ins) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(ins.icon, color: ins.color, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(ins.text,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 12.5)),
+                    ),
+                  ],
+                ),
+              )),
         ],
       ),
     );
   }
 }
 
-class _MetricData {
-  final String title;
-  final String value;
-  final String unit;
-  final IconData icon;
-  final Color color;
-  _MetricData(this.title, this.value, this.unit, this.icon, this.color);
-}
-
-class _MetricTile extends StatelessWidget {
-  final _MetricData data;
-  const _MetricTile({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: data.color.withOpacity(0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(data.icon, color: data.color, size: 14),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  data.title.toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                data.value,
-                style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  data.unit,
-                  style: TextStyle(color: data.color, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cadre de panneau réutilisable (même style que system_screen.dart)
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Cadre de panneau réutilisable ─────────────────────────────────────────────
 class _HPanel extends StatelessWidget {
   final Widget child;
   final Color accent;
