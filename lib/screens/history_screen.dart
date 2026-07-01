@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../providers/activity_provider.dart';
+import '../services/export_service.dart';
+import '../theme.dart';
 import 'detail_screen.dart';
 
 class HistoryScreen extends ConsumerWidget {
@@ -13,15 +15,25 @@ class HistoryScreen extends ConsumerWidget {
     final activities = ref.watch(activityListProvider);
     final notifier = ref.read(activityListProvider.notifier);
 
+    // Classement all-time par distance → médailles pour le top 3
+    final ranked = [...activities]
+      ..sort((a, b) => b.distanceKmValue.compareTo(a.distanceKmValue));
+    const medalEmojis = ['🥇', '🥈', '🥉'];
+    final medals = <dynamic, String>{};
+    for (var i = 0; i < ranked.length && i < 3; i++) {
+      if (ranked[i].distanceKmValue > 0) {
+        medals[ranked[i].key] = medalEmojis[i];
+      }
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // ── iOS large-title app bar ──────────────────────────────────────
           SliverAppBar(
             expandedHeight: 120,
             pinned: true,
-            backgroundColor: const Color(0xFFF2F2F7),
+            backgroundColor: AppColors.surface,
             elevation: 0,
             scrolledUnderElevation: 0,
             actions: [
@@ -31,11 +43,11 @@ class HistoryScreen extends ConsumerWidget {
                   child: GestureDetector(
                     onTap: () => _confirmClearAll(context, notifier),
                     child: const Text(
-                      'Clear All',
+                      'Tout effacer',
                       style: TextStyle(
-                        color: Colors.red,
+                      color: Color(0xFFF55CBD),
                         fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -44,12 +56,14 @@ class HistoryScreen extends ConsumerWidget {
             flexibleSpace: const FlexibleSpaceBar(
               titlePadding: EdgeInsets.only(left: 20, bottom: 14),
               title: Text(
-                'History',
+                'HIGH SCORES',
                 style: TextStyle(
-                  color: Color(0xFF1C1C1E),
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.0,
+                  fontFamily: kArcadeFont,
+                  color: AppColors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                  shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 12)],
                 ),
               ),
               expandedTitleScale: 1.0,
@@ -61,7 +75,13 @@ class HistoryScreen extends ConsumerWidget {
               hasScrollBody: false,
               child: _buildEmptyState(),
             )
-          else
+          else ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: _HistorySummaryCard(activities: activities),
+              ),
+            ),
             SliverPadding(
               padding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -74,6 +94,7 @@ class HistoryScreen extends ConsumerWidget {
                       child: _ActivityCard(
                         activity: activity,
                         index: activities.length - index,
+                        medal: medals[activity.key],
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -83,6 +104,25 @@ class HistoryScreen extends ConsumerWidget {
                         ),
                         onDelete: () =>
                             _confirmDelete(context, activity, notifier),
+                        onRename: () =>
+                            _renameActivity(context, activity, notifier),
+                        onExport: () async {
+                          final path = await ExportService.saveActivityAsMarkdown(
+                            activity,
+                            useDownloads: true,
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                path != null
+                                    ? 'Export .md créé : $path'
+                                    : 'Impossible d’exporter le fichier Markdown.',
+                              ),
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -90,6 +130,7 @@ class HistoryScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -104,36 +145,223 @@ class HistoryScreen extends ConsumerWidget {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: const Color(0xFFE5E5EA),
+              color: AppColors.surface,
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.directions_run_rounded,
               size: 40,
-              color: Color(0xFF8E8E93),
+              color: AppColors.arcadePink,
             ),
           ),
           const SizedBox(height: 20),
           const Text(
-            'No Activities Yet',
+            'Aucune activité pour le moment',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF1C1C1E),
+              color: AppColors.textPrimary,
               letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 6),
           const Text(
-            'Start your first run to see it here.',
+            'Lance ta première sortie pour la voir ici.',
             style: TextStyle(
               fontSize: 15,
-              color: Color(0xFF8E8E93),
+              color: AppColors.textSecondary,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
+  }
+
+  Widget _HistorySummaryCard({required List<Activity> activities}) {
+    final totalDistance = activities.fold<double>(0, (sum, activity) => sum + activity.distanceKmValue);
+    final totalDuration = activities.fold<Duration>(Duration.zero, (sum, activity) => sum + Duration(seconds: activity.duration));
+    final totalSeconds = totalDuration.inSeconds;
+    // Allure moyenne réelle = temps total / distance totale (min/km), pas une moyenne de moyennes
+    final averagePaceSeconds = totalDistance > 0 ? (totalSeconds / totalDistance).round() : 0;
+    // Vitesse moyenne réelle = distance totale / temps total
+    final averageSpeed = totalSeconds > 0 ? totalDistance / (totalSeconds / 3600) : 0.0;
+    final totalElevation = activities.fold<double>(0, (sum, activity) => sum + activity.elevationGainValue);
+    final activityCount = activities.length;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.arcadePink.withOpacity(0.3)),
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'RÉSUMÉ',
+            style: TextStyle(
+              fontFamily: kArcadeFont,
+              color: AppColors.arcadePink,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 1.0,
+              shadows: [Shadow(color: AppColors.arcadePink, blurRadius: 8)],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SummaryValue(
+                label: 'Total',
+                value: '${totalDistance.toStringAsFixed(1)} km',
+              ),
+              _SummaryValue(
+                label: 'Sorties',
+                value: '$activityCount',
+              ),
+              _SummaryValue(
+                label: 'Allure moy.',
+                value: '${averagePaceSeconds ~/ 60}:${(averagePaceSeconds % 60).toString().padLeft(2, '0')} /km',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SummaryValue(
+                label: 'Vitesse moy.',
+                value: '${averageSpeed.toStringAsFixed(1)} km/h',
+              ),
+              _SummaryValue(
+                label: 'Durée tot.',
+                value: '${totalDuration.inHours}h ${totalDuration.inMinutes.remainder(60)}m',
+              ),
+              _SummaryValue(
+                label: 'Dénivelé +',
+                value: '${totalElevation.round()} m',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _SummaryValue({required String label, required String value}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontFamily: kArcadeFont,
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _renameActivity(
+      BuildContext context,
+      Activity activity,
+      ActivityListNotifier notifier,
+      ) async {
+    final controller = TextEditingController(text: activity.name ?? '');
+    final newName = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF141419),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF333333),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Renommer la course',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 8)],
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+                decoration: InputDecoration(
+                  hintText: 'Nom de la course...',
+                  hintStyle: const TextStyle(color: Color(0xFF555555)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF1E1E24),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00FFFF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text('Enregistrer',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800, color: Colors.black)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (newName != null) {
+      await notifier.renameActivity(activity, newName);
+    }
   }
 
   Future<void> _confirmDelete(
@@ -143,7 +371,7 @@ class HistoryScreen extends ConsumerWidget {
       ) async {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF141419),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -156,7 +384,7 @@ class HistoryScreen extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFFE5E5EA),
+              color: const Color(0xFF333333),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -166,14 +394,15 @@ class HistoryScreen extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1C1C1E),
+                color: Colors.white,
+                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
                 letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 6),
             const Text(
               'This action cannot be undone.',
-              style: TextStyle(fontSize: 15, color: Color(0xFF8E8E93)),
+              style: TextStyle(fontSize: 15, color: Color(0xFFAAAAAA)),
             ),
             const SizedBox(height: 28),
             SizedBox(
@@ -182,14 +411,14 @@ class HistoryScreen extends ConsumerWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
+                  backgroundColor: const Color(0xFFFF003C),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: const Text('Delete',
                     style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                        fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 10),
@@ -203,7 +432,8 @@ class HistoryScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF8E8E93),
+                    color: Color(0xFF00FFFF),
+                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
                   ),
                 ),
               ),
@@ -221,7 +451,7 @@ class HistoryScreen extends ConsumerWidget {
       ) async {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF141419),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -234,7 +464,7 @@ class HistoryScreen extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFFE5E5EA),
+              color: const Color(0xFF333333),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -244,14 +474,15 @@ class HistoryScreen extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1C1C1E),
+                color: Colors.white,
+                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
                 letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 6),
             const Text(
               'All activities will be permanently deleted.',
-              style: TextStyle(fontSize: 15, color: Color(0xFF8E8E93)),
+              style: TextStyle(fontSize: 15, color: Color(0xFFAAAAAA)),
             ),
             const SizedBox(height: 28),
             SizedBox(
@@ -260,14 +491,14 @@ class HistoryScreen extends ConsumerWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
+                  backgroundColor: const Color(0xFFFF003C),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: const Text('Clear All',
                     style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                        fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 10),
@@ -281,7 +512,8 @@ class HistoryScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF8E8E93),
+                    color: Color(0xFF00FFFF),
+                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
                   ),
                 ),
               ),
@@ -299,14 +531,20 @@ class HistoryScreen extends ConsumerWidget {
 class _ActivityCard extends StatelessWidget {
   final Activity activity;
   final int index;
+  final String? medal;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onRename;
+  final VoidCallback onExport;
 
   const _ActivityCard({
     required this.activity,
     required this.index,
+    required this.medal,
     required this.onTap,
     required this.onDelete,
+    required this.onRename,
+    required this.onExport,
   });
 
   @override
@@ -316,8 +554,16 @@ class _ActivityCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF141419),
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF00FFFF), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF00FFFF).withOpacity(0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,25 +571,40 @@ class _ActivityCard extends StatelessWidget {
             // Header row
             Row(
               children: [
+                Text(
+                  '#$index',
+                  style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF00FFFF),
+                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+                  ),
+                ),
+                if (medal != null) ...[
+                  const SizedBox(width: 6),
+                  Text(medal!, style: const TextStyle(fontSize: 16)),
+                ],
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color:
-                    const Color(0xFFFC4C02).withOpacity(0.1),
+                    const Color(0xFFF55CBD).withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Row(
                     children: [
                       Icon(Icons.directions_run_rounded,
-                          size: 13, color: Color(0xFFFC4C02)),
+                          size: 13, color: Color(0xFFF55CBD)),
                       SizedBox(width: 4),
                       Text(
                         'Running',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFFFC4C02),
+                          color: Color(0xFFF55CBD),
                         ),
                       ),
                     ],
@@ -354,7 +615,41 @@ class _ActivityCard extends StatelessWidget {
                   _formatDate(activity.date),
                   style: const TextStyle(
                     fontSize: 12,
-                    color: Color(0xFF8E8E93),
+                    color: Color(0xFFAAAAAA),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onRename,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E24),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.edit_rounded,
+                      size: 14,
+                      color: Color(0xFFF8FF00),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onExport,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E24),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.download_rounded,
+                      size: 14,
+                      color: Color(0xFF00FFFF),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -364,18 +659,30 @@ class _ActivityCard extends StatelessWidget {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF2F2F7),
+                      color: const Color(0xFF1E1E24),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.close_rounded,
                       size: 14,
-                      color: Color(0xFF8E8E93),
+                      color: Color(0xFFFF003C),
                     ),
                   ),
                 ),
               ],
             ),
+            if (activity.name?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  activity.name!,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
 
             const SizedBox(height: 14),
 
@@ -383,10 +690,12 @@ class _ActivityCard extends StatelessWidget {
             Text(
               '${activity.distanceKm} km',
               style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1C1C1E),
-                letterSpacing: -1,
+                fontFamily: kArcadeFont,
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 12)],
+                letterSpacing: 0.5,
               ),
             ),
 
@@ -402,7 +711,7 @@ class _ActivityCard extends StatelessWidget {
                 Container(
                     width: 0.5,
                     height: 28,
-                    color: const Color(0xFFE5E5EA),
+                    color: const Color(0xFF333333),
                     margin: const EdgeInsets.symmetric(horizontal: 16)),
                 _MiniStat(
                   label: 'Avg Pace',
@@ -411,12 +720,17 @@ class _ActivityCard extends StatelessWidget {
                 Container(
                     width: 0.5,
                     height: 28,
-                    color: const Color(0xFFE5E5EA),
+                    color: const Color(0xFF333333),
                     margin: const EdgeInsets.symmetric(horizontal: 16)),
-                _MiniStat(
-                  label: 'GPS pts',
-                  value: activity.route.length.toString(),
-                ),
+                activity.hasElevation
+                    ? _MiniStat(
+                        label: 'Dénivelé +',
+                        value: '${activity.elevationGain} m',
+                      )
+                    : _MiniStat(
+                        label: 'GPS pts',
+                        value: activity.route.length.toString(),
+                      ),
               ],
             ),
           ],
@@ -455,7 +769,7 @@ class _MiniStat extends StatelessWidget {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1C1C1E),
+            color: Colors.white,
             letterSpacing: -0.3,
           ),
         ),
@@ -463,7 +777,7 @@ class _MiniStat extends StatelessWidget {
           label,
           style: const TextStyle(
             fontSize: 11,
-            color: Color(0xFF8E8E93),
+            color: Color(0xFF00FFFF),
           ),
         ),
       ],

@@ -2,7 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/activity.dart';
+import '../services/export_service.dart';
+import '../theme.dart';
 
 class DetailScreen extends StatefulWidget {
   final Activity activity;
@@ -28,43 +32,55 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: const Color(0xFF09090B),
       body: CustomScrollView(
         slivers: [
           // ── App bar ──────────────────────────────────────────────────────
           SliverAppBar(
             pinned: true,
-            backgroundColor: Colors.white,
+            backgroundColor: const Color(0xFF09090B),
+            elevation: 0,
+            scrolledUnderElevation: 0,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(
                 margin: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF2F2F7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141419),
                   shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
                 ),
                 child: const Icon(
                   Icons.arrow_back_ios_new_rounded,
                   size: 16,
-                  color: Color(0xFF1C1C1E),
+                  color: Color(0xFF00FFFF),
                 ),
               ),
             ),
+            actions: [
+              IconButton(
+                onPressed: _exportMarkdown,
+                icon: const Icon(Icons.download_rounded, color: Color(0xFF00FFFF)),
+                tooltip: 'Exporter en Markdown',
+              ),
+            ],
             title: Column(
               children: [
-                const Text(
-                  'Running',
-                  style: TextStyle(
-                    color: Color(0xFF1C1C1E),
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.4,
+                Text(
+                  _activity.title,
+                  style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                    shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
                   ),
                 ),
                 Text(
                   _formatDateShort(_activity.date),
                   style: const TextStyle(
-                    color: Color(0xFF8E8E93),
+                    color: Color(0xFFAAAAAA),
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
@@ -85,6 +101,11 @@ class _DetailScreenState extends State<DetailScreen> {
                       _buildStatsGrid(),
                       const SizedBox(height: 16),
                       if (_routePoints.isNotEmpty) _buildRouteCard(),
+                      // Affichage conditionnel des boucles
+                      if ((_activity.laps != null) && (_activity.laps!.isNotEmpty)) ...[
+                        const SizedBox(height: 16),
+                        _buildLapsList(),
+                      ],
                       const SizedBox(height: 32),
                     ],
                   ),
@@ -97,23 +118,53 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  Future<void> _exportMarkdown() async {
+    String? dirPath = ExportService.getSavedExportDirectory();
+    if (dirPath == null) {
+      if (await Permission.manageExternalStorage.request().isGranted || await Permission.storage.request().isGranted) {
+        final selectedDir = await FilePicker.getDirectoryPath(dialogTitle: 'Choisir le dossier lié à Drive');
+        if (selectedDir != null) {
+          await ExportService.saveExportDirectory(selectedDir);
+          dirPath = selectedDir;
+        }
+      }
+    }
+
+    String? path;
+    if (dirPath != null) {
+      path = await ExportService.saveActivityAsMarkdown(_activity);
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          path != null
+              ? 'Export .md créé dans $path'
+              : 'Impossible d’exporter le fichier Markdown.',
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   Widget _buildMap() {
     final points = _routePoints;
 
-    return Container(
+    return SizedBox(
       height: 300,
       child: points.isEmpty
           ? Container(
-        color: const Color(0xFFE5E5EA),
+        color: const Color(0xFF141419),
         child: const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.map_outlined,
-                  size: 40, color: Color(0xFF8E8E93)),
+                  size: 40, color: Color(0xFF555555)),
               SizedBox(height: 8),
               Text(
-                'No route data',
+                'Aucune trace GPS',
                 style: TextStyle(
                   color: Color(0xFF8E8E93),
                   fontSize: 14,
@@ -137,9 +188,9 @@ class _DetailScreenState extends State<DetailScreen> {
         children: [
           TileLayer(
             urlTemplate:
-            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
             userAgentPackageName: 'com.example.strava_clone',
-            subdomains: const ['a', 'b', 'c'],
+            subdomains: const ['a', 'b', 'c', 'd'],
           ),
           if (points.length >= 2)
             PolylineLayer(
@@ -147,7 +198,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 Polyline(
                   points: points,
                   strokeWidth: 5.0,
-                  color: const Color(0xFFFC4C02),
+                  color: const Color(0xFFF55CBD),
                 ),
               ],
             ),
@@ -159,17 +210,18 @@ class _DetailScreenState extends State<DetailScreen> {
                 height: 32,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF30D158),
+                    color: const Color(0xFF39FF14),
                     shape: BoxShape.circle,
                     border:
-                    Border.all(color: Colors.white, width: 2),
-                    boxShadow: const [
+                    Border.all(color: Colors.black, width: 2),
+                    boxShadow: [
                       BoxShadow(
-                          color: Colors.black26, blurRadius: 4)
+                          color: const Color(0xFF39FF14).withOpacity(0.8),
+                          blurRadius: 10)
                     ],
                   ),
                   child: const Icon(Icons.play_arrow_rounded,
-                      color: Colors.white, size: 16),
+                      color: Colors.black, size: 16),
                 ),
               ),
               if (points.length > 1)
@@ -179,13 +231,14 @@ class _DetailScreenState extends State<DetailScreen> {
                   height: 32,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.red,
+                      color: const Color(0xFFFF003C),
                       shape: BoxShape.circle,
                       border:
-                      Border.all(color: Colors.white, width: 2),
-                      boxShadow: const [
+                      Border.all(color: Colors.black, width: 2),
+                      boxShadow: [
                         BoxShadow(
-                            color: Colors.black26, blurRadius: 4)
+                            color: const Color(0xFFFF003C).withOpacity(0.8),
+                            blurRadius: 10)
                       ],
                     ),
                     child: const Icon(Icons.flag_rounded,
@@ -196,7 +249,7 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
           const RichAttributionWidget(
             attributions: [
-              TextSourceAttribution('OpenStreetMap contributors'),
+              TextSourceAttribution('CartoDB Dark Matter'),
             ],
           ),
         ],
@@ -214,17 +267,17 @@ class _DetailScreenState extends State<DetailScreen> {
                 label: 'Distance',
                 value: _activity.distanceKm,
                 unit: 'km',
-                iconColor: const Color(0xFFFC4C02),
+                iconColor: const Color(0xFFF55CBD),
                 icon: Icons.route_rounded,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _DetailStatCard(
-                label: 'Duration',
+                label: 'Durée',
                 value: _activity.durationFormatted,
                 unit: '',
-                iconColor: const Color(0xFF0A84FF),
+                iconColor: const Color(0xFF00FFFF),
                 icon: Icons.timer_rounded,
               ),
             ),
@@ -235,26 +288,140 @@ class _DetailScreenState extends State<DetailScreen> {
           children: [
             Expanded(
               child: _DetailStatCard(
-                label: 'Avg Pace',
+                label: 'Allure moy.',
                 value: _activity.avgPace,
                 unit: '/km',
-                iconColor: const Color(0xFF30D158),
+                iconColor: const Color(0xFF39FF14),
                 icon: Icons.speed_rounded,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _DetailStatCard(
-                label: 'GPS Points',
-                value: _activity.route.length.toString(),
-                unit: 'pts',
-                iconColor: const Color(0xFFBF5AF2),
-                icon: Icons.location_on_rounded,
+                label: 'Pause',
+                value: _activity.pauseFormatted,
+                unit: '',
+                iconColor: const Color(0xFFF8FF00),
+                icon: Icons.pause_rounded,
               ),
             ),
           ],
         ),
+        if (_activity.hasElevation) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailStatCard(
+                  label: 'Dénivelé +',
+                  value: _activity.elevationGainValue.round().toString(),
+                  unit: 'm',
+                  iconColor: const Color(0xFF39FF14),
+                  icon: Icons.trending_up_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _DetailStatCard(
+                  label: 'Dénivelé -',
+                  value: _activity.elevationLossValue.round().toString(),
+                  unit: 'm',
+                  iconColor: const Color(0xFFFF003C),
+                  icon: Icons.trending_down_rounded,
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (_activity.lapCount > 0) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailStatCard(
+                  label: 'Boucles',
+                  value: _activity.lapCount.toString(),
+                  unit: '',
+                  iconColor: const Color(0xFFFF9500),
+                  icon: Icons.loop_rounded,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildLapsList() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141419),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Détail des boucles',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF00FFFF),
+              letterSpacing: -0.4,
+              shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...List.generate(_activity.laps!.length, (index) {
+            final lap = _activity.laps![index];
+            final lapDistance = (lap['distance'] as num?)?.toDouble() ?? 0.0;
+            final lapDuration = (lap['duration'] as num?)?.toInt() ?? 0;
+            
+            final m = lapDuration ~/ 60;
+            final s = lapDuration % 60;
+            final timeStr = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+            
+            String paceStr = '--:--';
+            if (lapDistance > 0 && lapDuration > 0) {
+              final paceSeconds = (lapDuration / (lapDistance / 1000)).round();
+              paceStr = '${(paceSeconds ~/ 60).toString().padLeft(2, '0')}:${(paceSeconds % 60).toString().padLeft(2, '0')} /km';
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Boucle ${index + 1}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: Color(0xFFF55CBD),
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '$timeStr  •  ${(lapDistance / 1000).toStringAsFixed(2)} km',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white),
+                      ),
+                      Text(
+                        'Allure : $paceStr',
+                        style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
+                      )
+                    ],
+                  )
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -264,19 +431,21 @@ class _DetailScreenState extends State<DetailScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF141419),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Route',
+            'Parcours',
             style: TextStyle(
               fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1C1C1E),
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF00FFFF),
               letterSpacing: -0.4,
+              shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
             ),
           ),
           const SizedBox(height: 14),
@@ -284,21 +453,21 @@ class _DetailScreenState extends State<DetailScreen> {
             label: 'Start',
             lat: points.first.latitude,
             lng: points.first.longitude,
-            color: const Color(0xFF30D158),
+            color: const Color(0xFF39FF14),
           ),
           Padding(
             padding: const EdgeInsets.only(left: 10, top: 4, bottom: 4),
             child: Container(
               width: 1.5,
               height: 18,
-              color: const Color(0xFFE5E5EA),
+              color: const Color(0xFF333333),
             ),
           ),
           _RoutePointRow(
             label: 'Finish',
             lat: points.last.latitude,
             lng: points.last.longitude,
-            color: Colors.red,
+            color: const Color(0xFFFF003C),
           ),
         ],
       ),
@@ -341,8 +510,12 @@ class _DetailStatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF141419),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: iconColor.withOpacity(0.4), width: 1),
+        boxShadow: [
+          BoxShadow(color: iconColor.withOpacity(0.12), blurRadius: 10),
+        ],
       ),
       child: Row(
         children: [
@@ -350,7 +523,7 @@ class _DetailStatCard extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
+              color: iconColor.withOpacity(0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: iconColor, size: 18),
@@ -364,8 +537,8 @@ class _DetailStatCard extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFF8E8E93),
-                    fontWeight: FontWeight.w400,
+                    color: Color(0xFFAAAAAA),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -378,19 +551,20 @@ class _DetailStatCard extends StatelessWidget {
                         TextSpan(
                           text: value,
                           style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1C1C1E),
-                            letterSpacing: -0.5,
+                            fontFamily: kArcadeFont,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0,
                           ),
                         ),
                         if (unit.isNotEmpty)
                           TextSpan(
                             text: ' $unit',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
-                              color: Color(0xFF8E8E93),
+                              color: iconColor,
                             ),
                           ),
                       ],

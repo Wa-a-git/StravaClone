@@ -1,26 +1,25 @@
 // lib/screens/shell_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_screen.dart';
 import 'history_screen.dart';
+import 'system_screen.dart';
 import 'tracking_screen.dart';
 
-class ShellScreen extends StatefulWidget {
+/// Index de l'onglet courant (permet de naviguer depuis n'importe quel écran).
+final shellIndexProvider = StateProvider<int>((ref) => 0);
+
+class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key});
 
-  @override
-  State<ShellScreen> createState() => _ShellScreenState();
-}
-
-class _ShellScreenState extends State<ShellScreen> {
-  int _currentIndex = 0;
-
-  final _tabs = const [
+  static const _tabs = [
     _HomeTab(),
+    _SystemTab(),
     _HistoryTab(),
   ];
 
-  void _openRecord() {
+  void _openRecord(BuildContext context) {
     HapticFeedback.mediumImpact();
     Navigator.push(
       context,
@@ -40,20 +39,21 @@ class _ShellScreenState extends State<ShellScreen> {
         },
         transitionDuration: const Duration(milliseconds: 380),
       ),
-    ).then((_) => setState(() {}));
+    );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentIndex = ref.watch(shellIndexProvider);
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
+        index: currentIndex,
         children: _tabs,
       ),
       bottomNavigationBar: _BottomNav(
-        currentIndex: _currentIndex,
-        onTabTap: (i) => setState(() => _currentIndex = i),
-        onRecordTap: _openRecord,
+        currentIndex: currentIndex,
+        onTabTap: (i) => ref.read(shellIndexProvider.notifier).state = i,
+        onRecordTap: () => _openRecord(context),
       ),
     );
   }
@@ -66,6 +66,13 @@ class _HomeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const HomeScreen();
+}
+
+class _SystemTab extends StatelessWidget {
+  const _SystemTab();
+
+  @override
+  Widget build(BuildContext context) => const SystemScreen();
 }
 
 class _HistoryTab extends StatelessWidget {
@@ -93,11 +100,18 @@ class _BottomNav extends StatelessWidget {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE5E5EA), width: 0.5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141419),
+        border: const Border(
+          top: BorderSide(color: Color(0xFF00FFFF), width: 1.0),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00FFFF).withOpacity(0.15),
+            blurRadius: 15,
+            offset: const Offset(0, -3),
+          ),
+        ],
       ),
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomPadding),
@@ -115,6 +129,16 @@ class _BottomNav extends StatelessWidget {
                 ),
               ),
 
+              // Progression tab (niveau / XP / quêtes)
+              Expanded(
+                child: _NavItem(
+                  icon: Icons.military_tech_rounded,
+                  label: 'Niveau',
+                  isActive: currentIndex == 1,
+                  onTap: () => onTabTap(1),
+                ),
+              ),
+
               // Record tab — center FAB-style
               SizedBox(
                 width: 72,
@@ -126,19 +150,19 @@ class _BottomNav extends StatelessWidget {
                       width: 52,
                       height: 52,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFC4C02),
+                        color: const Color(0xFFF55CBD),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFC4C02).withOpacity(0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                            color: const Color(0xFFF55CBD).withOpacity(0.5),
+                            blurRadius: 15,
+                            offset: const Offset(0, 0),
                           ),
                         ],
                       ),
                       child: const Icon(
                         Icons.directions_run_rounded,
-                        color: Colors.white,
+                        color: Colors.black,
                         size: 26,
                       ),
                     ),
@@ -151,8 +175,8 @@ class _BottomNav extends StatelessWidget {
                 child: _NavItem(
                   icon: Icons.bar_chart_rounded,
                   label: 'History',
-                  isActive: currentIndex == 1,
-                  onTap: () => onTabTap(1),
+                  isActive: currentIndex == 2,
+                  onTap: () => onTabTap(2),
                 ),
               ),
             ],
@@ -179,7 +203,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color =
-    isActive ? const Color(0xFFFC4C02) : const Color(0xFF8E8E93);
+    isActive ? const Color(0xFF00FFFF) : const Color(0xFF555555);
 
     return GestureDetector(
       onTap: onTap,
@@ -193,9 +217,10 @@ class _NavItem extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.w500,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
               color: color,
               letterSpacing: -0.2,
+              shadows: isActive ? [Shadow(color: color, blurRadius: 5)] : null,
             ),
           ),
         ],

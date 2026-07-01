@@ -1,4 +1,5 @@
 // lib/services/location_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
@@ -43,10 +44,27 @@ class LocationService {
 
   /// Continuous position stream — updates every ≥5 m moved.
   static Stream<Position> getPositionStream() {
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
-    );
+    LocationSettings settings;
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      settings = AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0, // Enregistre chaque mouvement
+        forceLocationManager: true, // Bypass les restrictions logicielles de batterie
+        intervalDuration: const Duration(seconds: 1), // Requête d'une actualisation intense par seconde
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText: "Wa'a Strava enregistre votre session",
+          notificationTitle: "Suivi en cours",
+          enableWakeLock: true,
+        ),
+      );
+    } else {
+      settings = const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+      );
+    }
+
     return Geolocator.getPositionStream(locationSettings: settings);
   }
 

@@ -1,98 +1,174 @@
-// lib/screens/home_screen.dart
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/activity.dart';
 import '../providers/activity_provider.dart';
+import '../providers/game_provider.dart';
+import '../services/export_service.dart';
+import '../services/game_service.dart';
+import '../widgets/arcade_fx.dart';
+import '../theme.dart';
+import 'shell_screen.dart';
+import 'mini_games_screen.dart';
+
+enum HomePeriod { week, month, all }
+
+extension on HomePeriod {
+  String get label => switch (this) {
+        HomePeriod.week => 'Semaine',
+        HomePeriod.month => 'Mois',
+        HomePeriod.all => 'Tout',
+      };
+}
+
+/// Période sélectionnée pour filtrer les statistiques de l'accueil.
+final homePeriodProvider = StateProvider<HomePeriod>((ref) => HomePeriod.week);
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activities = ref.watch(activityListProvider);
-    final count = activities.length;
+    final allActivities = ref.watch(activityListProvider);
+    final period = ref.watch(homePeriodProvider);
 
-    // Compute totals
+    final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final startOfMonth = DateTime(now.year, now.month, 1);
+
+    // Filtre les activités selon la période choisie
+    final activities = switch (period) {
+      HomePeriod.week =>
+        allActivities.where((a) => !a.date.isBefore(startOfWeek)).toList(),
+      HomePeriod.month =>
+        allActivities.where((a) => !a.date.isBefore(startOfMonth)).toList(),
+      HomePeriod.all => allActivities,
+    };
+
+    final count = activities.length;
     final totalDistanceKm = activities.fold<double>(
       0.0,
-          (sum, a) => sum + a.distance / 1000,
+      (sum, activity) => sum + activity.distanceKmValue,
     );
-    final totalDurationMin = activities.fold<int>(
+    final totalDurationSeconds = activities.fold<int>(
       0,
-          (sum, a) => sum + a.duration ~/ 60,
+      (sum, activity) => sum + activity.duration,
     );
+    final totalElevation = activities.fold<double>(
+      0.0,
+      (sum, activity) => sum + activity.elevationGainValue,
+    );
+    final avgDistanceKm = count > 0 ? totalDistanceKm / count : 0.0;
+    final avgSpeedKmh = totalDurationSeconds > 0
+        ? totalDistanceKm / (totalDurationSeconds / 3600)
+        : 0.0;
+    final avgPaceSeconds = totalDistanceKm > 0
+        ? (totalDurationSeconds / totalDistanceKm).round()
+        : 0;
+    final bestPaceSeconds = activities
+        .where((activity) => activity.distanceKmValue > 0)
+        .map((activity) => activity.duration / activity.distanceKmValue)
+        .fold<double>(double.infinity, min);
+    final longestDistanceKm = activities
+        .map((activity) => activity.distanceKmValue)
+        .fold<double>(0.0, max);
+    final recentRuns = activities.take(6).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // ── iOS large-title style app bar ────────────────────────────────
           SliverAppBar(
             expandedHeight: 120,
             pinned: true,
-            backgroundColor: const Color(0xFFF2F2F7),
+            backgroundColor: AppColors.surface,
             elevation: 0,
-            scrolledUnderElevation: 0,
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding:
-              const EdgeInsets.only(left: 20, bottom: 14),
+              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: const Text(
-                'Strava',
+                'WA\'A STRAVA',
                 style: TextStyle(
-                  color: Color(0xFF1C1C1E),
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.0,
+                  fontFamily: kArcadeFont,
+                  color: AppColors.textPrimary,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                  shadows: [Shadow(color: AppColors.arcadePink, blurRadius: 12)],
                 ),
               ),
               expandedTitleScale: 1.0,
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16, top: 8),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFC4C02),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.directions_run_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.folder_open_rounded,
+                    color: AppColors.textPrimary),
+                tooltip: 'Dossier d\'export',
+                onPressed: () async {
+                  if (await Permission.manageExternalStorage.request().isGranted ||
+                      await Permission.storage.request().isGranted) {
+                    final selectedDir = await FilePicker.getDirectoryPath(
+                      dialogTitle: 'Choisir le dossier d\'export',
+                    );
+                    if (selectedDir != null) {
+                      await ExportService.saveExportDirectory(selectedDir);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Dossier d\'export mis à jour : $selectedDir'),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
               ),
             ],
           ),
-
           SliverToBoxAdapter(
             child: Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ── Greeting ──────────────────────────────────────────────
-                  _buildGreeting(count),
+                  _buildGreeting(allActivities.length),
+                  const SizedBox(height: 16),
+                  _LevelBanner(
+                    profile: ref.watch(playerProfileProvider),
+                    onTap: () =>
+                        ref.read(shellIndexProvider.notifier).state = 1,
+                  ),
+                  const SizedBox(height: 18),
+                  _PeriodSelector(
+                    selected: period,
+                    onChanged: (p) =>
+                        ref.read(homePeriodProvider.notifier).state = p,
+                  ),
+                  const SizedBox(height: 18),
+                  _buildSummaryRow(count, totalDistanceKm, avgDistanceKm, avgSpeedKmh),
                   const SizedBox(height: 20),
-
-                  // ── Stats row ─────────────────────────────────────────────
-                  _buildStatsRow(
-                      count, totalDistanceKm, totalDurationMin),
+                  _buildTrendChart(recentRuns),
                   const SizedBox(height: 20),
-
-                  // ── Recent run card ───────────────────────────────────────
-                  if (activities.isNotEmpty) ...[
-                    _SectionHeader(title: 'Latest Activity'),
-                    const SizedBox(height: 10),
-                    _LatestActivityCard(activity: activities.first),
-                    const SizedBox(height: 20),
+                  _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
+                  const SizedBox(height: 22),
+                  _MiniGamesEntry(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const MiniGamesScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  if (allActivities.isNotEmpty) ...[
+                    const _SectionHeader(title: 'Dernière sortie'),
+                    const SizedBox(height: 12),
+                    _LatestActivityCard(activity: allActivities.first),
+                    const SizedBox(height: 22),
                   ],
-
-                  // ── Motivational banner ───────────────────────────────────
-                  _buildMotivationCard(count),
+                  _buildMotivationCard(allActivities.length),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -105,176 +181,308 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildGreeting(int count) {
     final now = DateTime.now();
-    const days = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday',
+    const weekdays = [
+      'Lundi',
+      'Mardi',
+      'Mercredi',
+      'Jeudi',
+      'Vendredi',
+      'Samedi',
+      'Dimanche'
     ];
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre'
     ];
-    final dayName = days[now.weekday - 1];
-    final dateStr = '${months[now.month - 1]} ${now.day}';
+
+    final dayName = weekdays[now.weekday - 1];
+    final dateStr = '${now.day} ${months[now.month - 1]}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '$dayName, $dateStr',
+          '$dayName · $dateStr',
           style: const TextStyle(
-            fontSize: 14,
-            color: Color(0xFF8E8E93),
-            fontWeight: FontWeight.w400,
-            letterSpacing: -0.2,
+            color: AppColors.textSecondary,
+            fontSize: 13,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 8),
         Text(
-          count == 0 ? 'Start your journey.' : "You've got this.",
+          count == 0 ? 'Prêt pour ta prochaine course ?' : 'Ton tableau de bord',
           style: const TextStyle(
-            fontSize: 22,
-            color: Color(0xFF1C1C1E),
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
+            color: AppColors.textPrimary,
+            fontSize: 28,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.1,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStatsRow(
-      int count, double totalKm, int totalMin) {
+  Widget _buildSummaryRow(int count, double totalDistanceKm, double avgDistanceKm, double avgSpeedKmh) {
     return Row(
       children: [
         Expanded(
           child: _StatCard(
-            label: 'Runs',
-            value: count.toString(),
-            icon: Icons.flag_rounded,
-            iconColor: const Color(0xFFFC4C02),
+            label: 'Courses',
+            animateTo: count.toDouble(),
+            icon: Icons.timeline_rounded,
+            iconColor: AppColors.arcadeCyan,
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
-            label: 'Total km',
-            value: totalKm.toStringAsFixed(1),
+            label: 'Km total',
+            animateTo: totalDistanceKm,
+            fractionDigits: 1,
             icon: Icons.route_rounded,
-            iconColor: const Color(0xFF30D158),
+            iconColor: AppColors.arcadePink,
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
-            label: 'Minutes',
-            value: totalMin.toString(),
-            icon: Icons.timer_rounded,
-            iconColor: const Color(0xFF0A84FF),
+            label: 'Vitesse moyenne',
+            animateTo: avgSpeedKmh,
+            fractionDigits: 1,
+            icon: Icons.speed_rounded,
+            iconColor: AppColors.arcadeViolet,
           ),
         ),
       ],
     );
   }
 
+  Widget _buildPerformanceRow(int avgPaceSeconds, double bestPaceSeconds, double longestDistanceKm, double totalElevation) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                label: 'Allure moyenne',
+                value: _formatPace(avgPaceSeconds),
+                icon: Icons.timer_rounded,
+                iconColor: AppColors.arcadeCyan,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatCard(
+                label: 'Meilleure allure',
+                value: bestPaceSeconds.isFinite ? _formatPace(bestPaceSeconds.toInt()) : '--:--',
+                icon: Icons.whatshot_rounded,
+                iconColor: AppColors.arcadePink,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                label: 'Longue distance',
+                animateTo: longestDistanceKm,
+                fractionDigits: 1,
+                icon: Icons.terrain_rounded,
+                iconColor: AppColors.arcadeViolet,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatCard(
+                label: 'Dénivelé +',
+                animateTo: totalElevation,
+                suffix: ' m',
+                icon: Icons.landscape_rounded,
+                iconColor: AppColors.arcadeCyan,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrendChart(List<Activity> runs) {
+    if (runs.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Tendance des sorties',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Commence ta première course pour voir le graphique.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final maxDistance = runs.map((activity) => activity.distanceKmValue).reduce(max);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Graphique des derniers runs',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 160,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: runs.map((activity) {
+                final heightFactor = maxDistance > 0
+                    ? min(1.0, activity.distanceKmValue / maxDistance)
+                    : 0.0;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          height: max(30, 120 * heightFactor),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.arcadePink, AppColors.arcadeCyan],
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _shortDate(activity.date),
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Dernière : ${runs.first.distanceKm} km',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              Text(
+                'Max : ${runs.map((activity) => activity.distanceKmValue).reduce(max).toStringAsFixed(1)} km',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMotivationCard(int count) {
-    final (emoji, title, sub) = count == 0
-        ? ('🏃', 'Every run starts with one step.', '')
+    final emoji = count == 0 ? '🏁' : count < 5 ? '🔥' : '🚀';
+    final title = count == 0
+        ? 'Ta prochaine sortie démarre maintenant.'
         : count < 5
-        ? ('🔥', 'Building the habit.', 'Consistency beats intensity.')
-        : ('💪', 'You\'re on a streak.', 'Keep showing up.');
+            ? 'Habitude en construction.'
+            : 'Tu es dans le flow.';
+    final subtitle = count == 0
+        ? 'Ajoute ta première course et tu verras ce tableau s’animer.'
+        : count < 5
+            ? 'Garde le rythme, chaque session compte.'
+            : 'Continue comme ça, les progrès sont visibles.';
 
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFF5A1F), Color(0xFFE63D00)],
+          colors: [AppColors.arcadePink, AppColors.arcadeViolet],
         ),
         borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFC4C02).withOpacity(0.38),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Stack(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        child: Row(
           children: [
-            // Decorative circle — top right
-            Positioned(
-              top: -20,
-              right: -20,
-              child: Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 28)),
               ),
             ),
-            // Decorative circle — bottom left
-            Positioned(
-              bottom: -28,
-              left: -16,
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-
-            // Content
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(emoji,
-                          style: const TextStyle(fontSize: 26)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                            height: 1.3,
-                          ),
-                        ),
-                        if (sub.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            sub,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.72),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ],
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 13,
                     ),
                   ),
                 ],
@@ -285,9 +493,230 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+
+  String _formatPace(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  String _shortDate(DateTime date) {
+    const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    return days[date.weekday - 1];
+  }
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
+class _PeriodSelector extends StatelessWidget {
+  final HomePeriod selected;
+  final ValueChanged<HomePeriod> onChanged;
+
+  const _PeriodSelector({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: HomePeriod.values.map((p) {
+          final isActive = p == selected;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(p),
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: isActive
+                      ? const LinearGradient(
+                          colors: [AppColors.arcadePink, AppColors.arcadeViolet],
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  p.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : AppColors.textSecondary,
+                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _LevelBanner extends StatelessWidget {
+  final PlayerProfile profile;
+  final VoidCallback onTap;
+  const _LevelBanner({required this.profile, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final tier = profile.tier;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kNeonCyan.withOpacity(0.4), width: 1.2),
+          boxShadow: [
+            BoxShadow(color: kNeonCyan.withOpacity(0.14), blurRadius: 16),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Médaillon de niveau (couleur du palier)
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: tier.color.withOpacity(0.12),
+                shape: BoxShape.circle,
+                border: Border.all(color: tier.color, width: 1.5),
+                boxShadow: [
+                  BoxShadow(color: tier.color.withOpacity(0.5), blurRadius: 10),
+                ],
+              ),
+              child: Text(
+                '${profile.level}',
+                style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: tier.color,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'NIVEAU ${profile.level}',
+                        style: const TextStyle(
+                          fontFamily: kArcadeFont,
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          tier.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: tier.color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Stack(
+                      children: [
+                        Container(height: 8, color: AppColors.surfaceLight),
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: profile.levelProgress),
+                          duration: const Duration(milliseconds: 900),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, v, _) => FractionallySizedBox(
+                            widthFactor: v,
+                            child: Container(
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [kNeonPink, kNeonCyan],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.chevron_right_rounded, color: kNeonCyan, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniGamesEntry extends StatelessWidget {
+  final VoidCallback onTap;
+  const _MiniGamesEntry({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [AppColors.arcadeViolet, AppColors.arcadePink],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(color: AppColors.arcadeViolet.withOpacity(0.4), blurRadius: 16),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Text('🎮', style: TextStyle(fontSize: 30)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('MINI-JEUX',
+                      style: TextStyle(
+                          fontFamily: kArcadeFont,
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1)),
+                  SizedBox(height: 4),
+                  Text('Zone d\'allure • Fractionné',
+                      style: TextStyle(color: Colors.white, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -298,66 +727,88 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       title,
       style: const TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        color: Color(0xFF1C1C1E),
-        letterSpacing: -0.5,
+        fontFamily: kArcadeFont,
+        fontSize: 15,
+        fontWeight: FontWeight.w800,
+        color: AppColors.textPrimary,
+        letterSpacing: 0.5,
       ),
     );
   }
 }
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
   final Color iconColor;
+  // Pour un compteur animé : valeur numérique + décimales + suffixe
+  final double? animateTo;
+  final int fractionDigits;
+  final String suffix;
 
   const _StatCard({
     required this.label,
-    required this.value,
+    this.value = '',
     required this.icon,
     required this.iconColor,
+    this.animateTo,
+    this.fractionDigits = 0,
+    this.suffix = '',
   });
 
   @override
   Widget build(BuildContext context) {
+    const valueStyle = TextStyle(
+      fontFamily: kArcadeFont,
+      fontSize: 18,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textPrimary,
+      letterSpacing: 0.5,
+    );
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: iconColor.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(color: iconColor.withOpacity(0.10), blurRadius: 10),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
+              color: iconColor.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: iconColor, size: 18),
           ),
           const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1C1C1E),
-              letterSpacing: -0.5,
-            ),
+          FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: animateTo != null
+                ? AnimatedCounter(
+                    value: animateTo!,
+                    fractionDigits: fractionDigits,
+                    suffix: suffix,
+                    style: valueStyle,
+                  )
+                : Text(value, style: valueStyle),
           ),
+          const SizedBox(height: 6),
           Text(
             label,
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFF8E8E93),
-              fontWeight: FontWeight.w400,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -365,8 +816,6 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
-
-// ── Latest activity card ──────────────────────────────────────────────────────
 
 class _LatestActivityCard extends StatelessWidget {
   final Activity activity;
@@ -378,8 +827,9 @@ class _LatestActivityCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,23 +837,22 @@ class _LatestActivityCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFC4C02).withOpacity(0.1),
+                  color: AppColors.arcadePink.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Row(
-                  children: [
+                child: Row(
+                  children: const [
                     Icon(Icons.directions_run_rounded,
-                        size: 13, color: Color(0xFFFC4C02)),
-                    SizedBox(width: 4),
+                        size: 14, color: AppColors.arcadePink),
+                    SizedBox(width: 6),
                     Text(
                       'Running',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFFFC4C02),
+                        color: AppColors.arcadePink,
                       ),
                     ),
                   ],
@@ -414,7 +863,44 @@ class _LatestActivityCard extends StatelessWidget {
                 _formatDate(activity.date),
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF8E8E93),
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Text(
+            '${activity.distanceKm} km',
+            style: const TextStyle(
+              fontFamily: kArcadeFont,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textPrimary,
+              letterSpacing: 0.5,
+              shadows: [Shadow(color: AppColors.arcadePink, blurRadius: 12)],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _InlineMetric(
+                  label: 'Temps',
+                  value: activity.durationFormatted,
+                  unit: '',
+                ),
+              ),
+              Container(
+                width: 0.5,
+                height: 32,
+                color: AppColors.border,
+                margin: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+              Expanded(
+                child: _InlineMetric(
+                  label: 'Allure',
+                  value: activity.avgPace,
+                  unit: '/km',
                 ),
               ),
             ],
@@ -423,32 +909,15 @@ class _LatestActivityCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _InlineMetric(
-                  label: 'Distance',
-                  value: '${activity.distanceKm}',
-                  unit: 'km',
+                child: _MiniStat(
+                  label: 'Vitesse moyenne',
+                  value: '${activity.avgSpeedKmh} km/h',
                 ),
               ),
-              Container(
-                  width: 0.5,
-                  height: 36,
-                  color: const Color(0xFFE5E5EA)),
               Expanded(
-                child: _InlineMetric(
-                  label: 'Time',
-                  value: activity.durationFormatted,
-                  unit: '',
-                ),
-              ),
-              Container(
-                  width: 0.5,
-                  height: 36,
-                  color: const Color(0xFFE5E5EA)),
-              Expanded(
-                child: _InlineMetric(
-                  label: 'Pace',
-                  value: activity.avgPace,
-                  unit: '/km',
+                child: _MiniStat(
+                  label: 'Boucles',
+                  value: activity.lapCount.toString(),
                 ),
               ),
             ],
@@ -460,8 +929,8 @@ class _LatestActivityCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+      'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }
@@ -472,12 +941,16 @@ class _InlineMetric extends StatelessWidget {
   final String value;
   final String unit;
 
-  const _InlineMetric(
-      {required this.label, required this.value, required this.unit});
+  const _InlineMetric({
+    required this.label,
+    required this.value,
+    required this.unit,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         RichText(
           text: TextSpan(
@@ -485,30 +958,64 @@ class _InlineMetric extends StatelessWidget {
               TextSpan(
                 text: value,
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF1C1C1E),
-                  letterSpacing: -0.5,
+                  color: AppColors.textPrimary,
                 ),
               ),
               if (unit.isNotEmpty)
                 TextSpan(
                   text: ' $unit',
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF8E8E93),
+                    color: AppColors.textSecondary,
                   ),
                 ),
             ],
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Text(
           label,
           style: const TextStyle(
-            fontSize: 11,
-            color: Color(0xFF8E8E93),
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MiniStat({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.textSecondary,
           ),
         ),
       ],

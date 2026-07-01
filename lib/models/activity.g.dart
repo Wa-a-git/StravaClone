@@ -1,5 +1,4 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// Run: flutter pub run build_runner build
 
 part of 'activity.dart';
 
@@ -24,13 +23,18 @@ class ActivityAdapter extends TypeAdapter<Activity> {
       route: (fields[3] as List)
           .map((dynamic e) => (e as List).cast<double>())
           .toList(),
+      name: fields[4] as String?,
+      pauseDurationSeconds: fields[5] as int,
+      lapCount: fields[6] as int,
+      laps: (fields[7] as List?)?.cast<dynamic>(),
+      elevations: (fields[8] as List?)?.cast<double>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Activity obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
@@ -38,7 +42,17 @@ class ActivityAdapter extends TypeAdapter<Activity> {
       ..writeByte(2)
       ..write(obj.duration)
       ..writeByte(3)
-      ..write(obj.route);
+      ..write(obj.route)
+      ..writeByte(4)
+      ..write(obj.name)
+      ..writeByte(5)
+      ..write(obj.pauseDurationSeconds)
+      ..writeByte(6)
+      ..write(obj.lapCount)
+      ..writeByte(7)
+      ..write(obj.laps)
+      ..writeByte(8)
+      ..write(obj.elevations);
   }
 
   @override
@@ -47,7 +61,7 @@ class ActivityAdapter extends TypeAdapter<Activity> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is ActivityAdapter &&
-              runtimeType == other.runtimeType &&
-              typeId == other.typeId;
+      other is ActivityAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
 }

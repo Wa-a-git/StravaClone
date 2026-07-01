@@ -12,6 +12,8 @@ class HiveService {
     await Hive.initFlutter();
     Hive.registerAdapter(ActivityAdapter());
     _box = await Hive.openBox<Activity>(_boxName);
+    await Hive.openBox('settings'); // Boîte pour mémoriser le dossier d'export
+    await Hive.openBox('game_results'); // Résultats des mini-jeux
   }
 
   /// Returns the open box (throws if not initialized).

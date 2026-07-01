@@ -22,6 +22,14 @@ class ActivityListNotifier extends StateNotifier<List<Activity>> {
     _load();
   }
 
+  /// Renomme une course (corrige une faute de frappe par ex.).
+  Future<void> renameActivity(Activity activity, String newName) async {
+    final trimmed = newName.trim();
+    activity.name = trimmed.isEmpty ? null : trimmed;
+    await activity.save(); // HiveObject.save() persiste la modification
+    _load();
+  }
+
   Future<void> clearAll() async {
     await HiveService.clearAll();
     _load();

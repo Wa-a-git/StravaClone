@@ -4,45 +4,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/hive_service.dart';
 import 'screens/shell_screen.dart';
-import 'package:geolocator/geolocator.dart'; // ✅ ADDED
+import 'widgets/arcade_fx.dart';
+import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
   ]);
 
-  // Status bar: dark icons on light background
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
+    statusBarIconBrightness: Brightness.light,
   ));
 
   await HiveService.init();
-
-  await _requestLocationPermission(); // ✅ ADDED — triggers iOS popup on first launch
-
   runApp(const ProviderScope(child: StravaApp()));
-}
-
-// ✅ ADDED: Location permission request function
-Future<void> _requestLocationPermission() async {
-  bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) return;
-
-  LocationPermission permission = await Geolocator.checkPermission();
-
-  if (permission == LocationPermission.denied) {
-    // This triggers the iOS "Allow Location Access?" popup
-    permission = await Geolocator.requestPermission();
-  }
-
-  if (permission == LocationPermission.deniedForever) {
-    // Already denied permanently — open Settings
-    await Geolocator.openAppSettings();
-  }
 }
 
 class StravaApp extends StatelessWidget {
@@ -54,59 +32,70 @@ class StravaApp extends StatelessWidget {
       title: 'Strava',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
+      // Overlay CRT (scanlines + léger vignettage) sur toute l'app
+      builder: (context, child) => ScanlineOverlay(
+        opacity: 0.045,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: const ShellScreen(),
     );
   }
 
   ThemeData _buildTheme() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.arcadePink,
+      brightness: Brightness.dark,
+    );
+
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'SF Pro Display', // falls back to system font on Android
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFFC4C02),
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF2F2F7),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.white,
-        foregroundColor: Color(0xFF1C1C1E),
+      brightness: Brightness.dark,
+      fontFamily: 'SF Pro Display',
+      colorScheme: scheme,
+      scaffoldBackgroundColor: AppColors.background,
+      canvasColor: AppColors.background,
+      cardColor: AppColors.surface,
+      dividerColor: AppColors.border,
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        scrolledUnderElevation: 0.5,
         centerTitle: true,
-        titleTextStyle: TextStyle(
-          color: Color(0xFF1C1C1E),
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
+        titleTextStyle: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 19,
+          fontWeight: FontWeight.w700,
           letterSpacing: -0.4,
         ),
-        iconTheme: IconThemeData(color: Color(0xFFFC4C02)),
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFC4C02),
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.arcadePink,
+          foregroundColor: AppColors.textPrimary,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
           textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.3,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
-      cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+      textTheme: const TextTheme(
+        bodyLarge: TextStyle(color: AppColors.textPrimary),
+        bodyMedium: TextStyle(color: AppColors.textSecondary),
       ),
-      dividerTheme: const DividerThemeData(
-        color: Color(0xFFE5E5EA),
-        thickness: 0.5,
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.arcadePink,
+        unselectedItemColor: AppColors.textSecondary,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: AppColors.surfaceAlt,
+        contentTextStyle: TextStyle(color: AppColors.textPrimary),
       ),
     );
   }

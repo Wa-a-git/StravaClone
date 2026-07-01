@@ -20,6 +20,10 @@ class TrackingState {
   final List<LatLng> routePoints;
   final bool locationPermissionGranted;
   final LatLng? currentPosition;
+  final String runName;
+  final int pauseDurationSeconds;
+  final List<Map<String, dynamic>> laps; // Ajout de la mémoire des boucles
+  final List<double> elevations; // altitude (m) parallèle à routePoints
 
   const TrackingState({
     this.status = TrackingStatus.idle,
@@ -28,6 +32,10 @@ class TrackingState {
     this.routePoints = const [],
     this.locationPermissionGranted = false,
     this.currentPosition,
+    this.runName = '',
+    this.pauseDurationSeconds = 0,
+    this.laps = const [],
+    this.elevations = const [],
   });
 
   TrackingState copyWith({
@@ -37,6 +45,10 @@ class TrackingState {
     List<LatLng>? routePoints,
     bool? locationPermissionGranted,
     LatLng? currentPosition,
+    String? runName,
+    int? pauseDurationSeconds,
+    List<Map<String, dynamic>>? laps,
+    List<double>? elevations,
   }) {
     return TrackingState(
       status: status ?? this.status,
@@ -46,6 +58,11 @@ class TrackingState {
       locationPermissionGranted:
       locationPermissionGranted ?? this.locationPermissionGranted,
       currentPosition: currentPosition ?? this.currentPosition,
+      runName: runName ?? this.runName,
+      pauseDurationSeconds:
+      pauseDurationSeconds ?? this.pauseDurationSeconds,
+      laps: laps ?? this.laps,
+      elevations: elevations ?? this.elevations,
     );
   }
 
@@ -77,6 +94,29 @@ class TrackingState {
     final s = paceSeconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
+
+  int get currentLapDuration {
+    int previousTime = laps.fold(0, (sum, lap) => sum + (lap['duration'] as int));
+    return elapsedSeconds - previousTime;
+  }
+
+  double get currentLapDistance {
+    double previousDist = laps.fold(0.0, (sum, lap) => sum + (lap['distance'] as double));
+    return totalDistance - previousDist;
+  }
+
+  String get formattedCurrentLapTime {
+    final duration = currentLapDuration;
+    final m = duration ~/ 60;
+    final s = duration % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  String get formattedCurrentLapDistance {
+    final dist = currentLapDistance;
+    if (dist < 1000) return '${dist.toStringAsFixed(0)} m';
+    return '${(dist / 1000).toStringAsFixed(2)} km';
+  }
 }
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
@@ -87,6 +127,8 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
   Timer? _timer;
   StreamSubscription<Position>? _positionSubscription;
   Position? _lastPosition;
+  DateTime? _pauseStartTime;
+  DateTime? _lastMovementTime;
 
   // ── Permission & initial location ─────────────────────────────────────────
 
@@ -107,6 +149,10 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     return true;
   }
 
+  void updateRunName(String name) {
+    state = state.copyWith(runName: name);
+  }
+
   // ── Controls ──────────────────────────────────────────────────────────────
 
   Future<void> start() async {
@@ -117,8 +163,13 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       routePoints: [],
       totalDistance: 0.0,
       elapsedSeconds: 0,
+      laps: [], // Réinitialisation des boucles au démarrage
+      pauseDurationSeconds: 0,
+      elevations: [],
     );
     _lastPosition = null;
+    _pauseStartTime = null;
+    _lastMovementTime = DateTime.now();
 
     _startTimer();
     await _startGPS();
@@ -126,6 +177,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
 
   void pause() {
     if (state.status != TrackingStatus.tracking) return;
+    _pauseStartTime = DateTime.now();
     state = state.copyWith(status: TrackingStatus.paused);
     _timer?.cancel();
     _positionSubscription?.pause();
@@ -133,13 +185,56 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
 
   void resume() {
     if (state.status != TrackingStatus.paused) return;
+    if (_pauseStartTime != null) {
+      final pauseSeconds = DateTime.now()
+          .difference(_pauseStartTime!)
+          .inSeconds;
+      state = state.copyWith(
+        pauseDurationSeconds: state.pauseDurationSeconds + pauseSeconds,
+      );
+      _pauseStartTime = null;
+    }
+    _lastMovementTime = DateTime.now(); // Evite un faux auto-pause à la reprise
     state = state.copyWith(status: TrackingStatus.tracking);
     _startTimer();
     _positionSubscription?.resume();
   }
 
+  // Ajout de la fonction pour enregistrer un bloc (Lap)
+  void recordLap() {
+    if (state.status != TrackingStatus.tracking) return;
+
+    int previousLapsTime = 0;
+    double previousLapsDistance = 0.0;
+
+    for (var lap in state.laps) {
+      previousLapsTime += lap['duration'] as int;
+      previousLapsDistance += lap['distance'] as double;
+    }
+
+    final currentLapDuration = state.elapsedSeconds - previousLapsTime;
+    final currentLapDistance = state.totalDistance - previousLapsDistance;
+
+    final newLap = {
+      'lapNumber': state.laps.length + 1,
+      'duration': currentLapDuration,
+      'distance': currentLapDistance,
+      'totalTimeAtLap': state.elapsedSeconds,
+    };
+
+    state = state.copyWith(laps: [...state.laps, newLap]);
+  }
+
   Future<Activity?> stop() async {
     if (state.status == TrackingStatus.idle) return null;
+
+    if (state.status == TrackingStatus.paused && _pauseStartTime != null) {
+      final pauseSeconds = DateTime.now().difference(_pauseStartTime!).inSeconds;
+      state = state.copyWith(
+        pauseDurationSeconds: state.pauseDurationSeconds + pauseSeconds,
+      );
+      _pauseStartTime = null;
+    }
 
     _timer?.cancel();
     await _positionSubscription?.cancel();
@@ -148,26 +243,60 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     final savedPoints = state.routePoints;
     final savedDistance = state.totalDistance;
     final savedDuration = state.elapsedSeconds;
+    final savedRunName = state.runName.isNotEmpty ? state.runName : null;
+    final savedPauseDuration = state.pauseDurationSeconds;
+    final savedLapCount = state.laps.length;
+      final savedLaps = List<Map<String, dynamic>>.from(state.laps);
+    final savedElevations = List<double>.from(state.elevations);
 
     state = state.copyWith(
       status: TrackingStatus.idle,
       routePoints: [],
       totalDistance: 0.0,
       elapsedSeconds: 0,
+      laps: [],
+      pauseDurationSeconds: 0,
+      runName: '',
+      elevations: [],
     );
 
     if (savedPoints.isEmpty) return null;
 
     final route = savedPoints.map((p) => [p.latitude, p.longitude]).toList();
+
     final activity = Activity(
       date: DateTime.now(),
       distance: savedDistance,
       duration: savedDuration,
       route: route,
+      name: savedRunName,
+      pauseDurationSeconds: savedPauseDuration,
+      lapCount: savedLapCount,
+        laps: savedLaps, // <-- On passe maintenant les données des boucles au modèle !
+      elevations: savedElevations.isNotEmpty ? savedElevations : null,
     );
 
     await HiveService.saveActivity(activity);
     return activity;
+  }
+
+  /// Arrête le suivi et réinitialise l'état SANS rien enregistrer.
+  void discard() {
+    _timer?.cancel();
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _lastPosition = null;
+    _pauseStartTime = null;
+    state = state.copyWith(
+      status: TrackingStatus.idle,
+      routePoints: [],
+      totalDistance: 0.0,
+      elapsedSeconds: 0,
+      laps: [],
+      pauseDurationSeconds: 0,
+      runName: '',
+      elevations: [],
+    );
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
@@ -175,40 +304,72 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (state.status == TrackingStatus.tracking) {
-        state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
+        bool isMoving = true;
+        if (_lastMovementTime != null && DateTime.now().difference(_lastMovementTime!).inSeconds > 4) {
+          isMoving = false; // Auto-pause : aucun déplacement détecté depuis 4 secondes
+        }
+        
+        if (isMoving) {
+          state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
+        } else {
+          state = state.copyWith(pauseDurationSeconds: state.pauseDurationSeconds + 1);
+        }
       }
     });
   }
 
   Future<void> _startGPS() async {
     _positionSubscription = LocationService.getPositionStream().listen(
-          (Position position) {
-        if (state.status != TrackingStatus.tracking) return;
-
-        final newPoint = LatLng(position.latitude, position.longitude);
-        double addedDistance = 0.0;
-
-        if (_lastPosition != null) {
-          addedDistance = LocationService.distanceBetween(
-            _lastPosition!.latitude,
-            _lastPosition!.longitude,
-            position.latitude,
-            position.longitude,
-          );
-        }
-
-        _lastPosition = position;
-
-        state = state.copyWith(
-          routePoints: [...state.routePoints, newPoint],
-          totalDistance: state.totalDistance + addedDistance,
-          currentPosition: newPoint,
-        );
-      },
+      (Position position) => _handleNewPosition(position, forced: false),
       onError: (_) {},
     );
   }
 
+  // Force une mise à jour immédiate de la position (bouton de recentrage)
+  Future<void> forceUpdateLocation() async {
+    if (state.status != TrackingStatus.tracking) return;
+    try {
+      final pos = await LocationService.getCurrentPosition();
+      if (pos != null) {
+        _handleNewPosition(pos, forced: true);
+      }
+    } catch (_) {}
+  }
+
+  void _handleNewPosition(Position position, {bool forced = false}) {
+    if (state.status != TrackingStatus.tracking) return;
+
+    final newPoint = LatLng(position.latitude, position.longitude);
+    double addedDistance = 0.0;
+
+    if (_lastPosition != null) {
+      addedDistance = LocationService.distanceBetween(
+        _lastPosition!.latitude,
+        _lastPosition!.longitude,
+        position.latitude,
+        position.longitude,
+      );
+
+      // Filtre anti-dérive allégé pour Android : on capte un maximum de points
+      if (!forced) {
+        // Tolérance augmentée à 25m et seuil très bas de 0.5m pour la haute précision
+        if (position.accuracy > 25.0 || addedDistance < 0.5) {
+          state = state.copyWith(currentPosition: newPoint);
+          return;
+        }
+      }
+    }
+
+    _lastPosition = position;
+    _lastMovementTime = DateTime.now();
+
+    state = state.copyWith(
+      routePoints: [...state.routePoints, newPoint],
+      totalDistance: state.totalDistance + addedDistance,
+      currentPosition: newPoint,
+      elevations: [...state.elevations, position.altitude],
+    );
+  }
   @override
   void dispose() {
     _timer?.cancel();
