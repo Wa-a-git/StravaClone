@@ -6,6 +6,7 @@ import 'home_screen.dart';
 import 'history_screen.dart';
 import 'system_screen.dart';
 import 'tracking_screen.dart';
+import 'health_dashboard_screen.dart';
 
 /// Index de l'onglet courant (permet de naviguer depuis n'importe quel écran).
 final shellIndexProvider = StateProvider<int>((ref) => 0);
@@ -14,9 +15,10 @@ class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key});
 
   static const _tabs = [
+    _HealthTab(),
     _HomeTab(),
-    _SystemTab(),
     _HistoryTab(),
+    _SystemTab(),
   ];
 
   void _openRecord(BuildContext context) {
@@ -60,6 +62,13 @@ class ShellScreen extends ConsumerWidget {
 }
 
 // ── Tab page wrappers ─────────────────────────────────────────────────────────
+
+class _HealthTab extends StatelessWidget {
+  const _HealthTab();
+
+  @override
+  Widget build(BuildContext context) => const HealthDashboardScreen();
+}
 
 class _HomeTab extends StatelessWidget {
   const _HomeTab();
@@ -122,18 +131,18 @@ class _BottomNav extends StatelessWidget {
               // Dashboard tab
               Expanded(
                 child: _NavItem(
-                  icon: Icons.home_rounded,
-                  label: 'Home',
+                  icon: Icons.health_and_safety_rounded,
+                  label: 'Santé',
                   isActive: currentIndex == 0,
                   onTap: () => onTabTap(0),
                 ),
               ),
 
-              // Progression tab (niveau / XP / quêtes)
+              // Course tab (L'ancien Home)
               Expanded(
                 child: _NavItem(
-                  icon: Icons.military_tech_rounded,
-                  label: 'Niveau',
+                  icon: Icons.directions_run_rounded,
+                  label: 'Course',
                   isActive: currentIndex == 1,
                   onTap: () => onTabTap(1),
                 ),
@@ -177,6 +186,16 @@ class _BottomNav extends StatelessWidget {
                   label: 'History',
                   isActive: currentIndex == 2,
                   onTap: () => onTabTap(2),
+                ),
+              ),
+
+              // Progression tab (niveau / XP / quêtes)
+              Expanded(
+                child: _NavItem(
+                  icon: Icons.military_tech_rounded,
+                  label: 'Niveau',
+                  isActive: currentIndex == 3,
+                  onTap: () => onTabTap(3),
                 ),
               ),
             ],

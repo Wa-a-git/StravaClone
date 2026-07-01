@@ -13,6 +13,9 @@ import '../widgets/arcade_fx.dart';
 import '../theme.dart';
 import 'shell_screen.dart';
 import 'mini_games_screen.dart';
+import '../services/health_connect_service.dart';
+
+final healthConnectServiceProvider = Provider((ref) => HealthConnectService());
 
 enum HomePeriod { week, month, all }
 
@@ -120,6 +123,27 @@ class HomeScreen extends ConsumerWidget {
                           SnackBar(
                             content: Text('Dossier d\'export mis à jour : $selectedDir'),
                           ),
+                        );
+                      }
+                    }
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.favorite_rounded, color: AppColors.arcadePink),
+                tooltip: 'Test Health Connect',
+                onPressed: () async {
+                  final service = ref.read(healthConnectServiceProvider);
+                  final success = await service.requestPermissions();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(success ? 'Health Connect Autorisé!' : 'Échec Health Connect')),
+                    );
+                    if (success) {
+                      final steps = await service.getDailySteps();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Pas aujourd\'hui : $steps')),
                         );
                       }
                     }

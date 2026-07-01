@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
+    <!-- Health Connect Permissions -->
+    <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.READ_SLEEP"/>
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE"/>
+
     <application
         android:label="Waa Strava"
         android:name="${applicationName}"
@@ -38,6 +45,11 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Health Connect Privacy Policy Intent (Required) -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
         </activity>
 
         <meta-data
@@ -45,11 +57,12 @@
             android:value="2" />
     </application>
 
-    <!-- Required for flutter_map / Android 12+ -->
+    <!-- Required for flutter_map / Android 12+ and Health Connect -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
         </intent>
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
 </manifest>
