@@ -565,16 +565,23 @@ class _MetricsGrid extends StatelessWidget {
         children: [
           const _HPanelTitle('MÉTRIQUES & TENDANCES'),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: metrics
-                .map((m) => SizedBox(
-                      width: (MediaQuery.of(context).size.width - 32 - 36 - 10) /
-                          2,
-                      child: _MetricCard(spec: m),
-                    ))
-                .toList(),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              // 2 colonnes fiables : on retire une marge de sécurité pour
+              // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
+              final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: metrics
+                    .map((m) => SizedBox(
+                          width: cardW,
+                          child: _MetricCard(spec: m),
+                        ))
+                    .toList(),
+              );
+            },
           ),
         ],
       ),
@@ -676,8 +683,12 @@ class _MetricCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Sparkline(values: series, color: spec.color, height: 28),
+            // Sparkline seulement s'il y a un historique à tracer, sinon la
+            // carte reste compacte (pas d'espace vide).
+            if (series.length >= 2) ...[
+              const SizedBox(height: 6),
+              Sparkline(values: series, color: spec.color, height: 28),
+            ],
           ],
         ),
       ),
