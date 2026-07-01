@@ -271,6 +271,44 @@ Future<T?> showAppSheet<T>({
   );
 }
 
+/// Anime l'entrée d'un widget (fondu + léger glissement vers le haut) au
+/// premier affichage. Utile pour donner un côté "vivant" aux écrans sans
+/// dépendance externe ni animation permanente coûteuse.
+class FadeSlideIn extends StatelessWidget {
+  final Widget child;
+  final Duration delay;
+  final Duration duration;
+
+  const FadeSlideIn({
+    super.key,
+    required this.child,
+    this.delay = Duration.zero,
+    this.duration = const Duration(milliseconds: 420),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: duration + delay,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) {
+        final localT = ((t * (duration + delay).inMilliseconds - delay.inMilliseconds) /
+                duration.inMilliseconds)
+            .clamp(0.0, 1.0);
+        return Opacity(
+          opacity: localT,
+          child: Transform.translate(
+            offset: Offset(0, (1 - localT) * 14),
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
 /// État vide générique (liste vide, données manquantes...).
 class EmptyState extends StatelessWidget {
   final IconData icon;

@@ -1,19 +1,19 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../models/activity.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
-import '../services/export_service.dart';
 import '../services/game_service.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/ui_kit.dart';
 import '../theme.dart';
 import 'shell_screen.dart';
 import 'mini_games_screen.dart';
+import 'history_screen.dart';
+import 'tracking_screen.dart';
 
 enum HomePeriod { week, month, all }
 
@@ -28,8 +28,26 @@ extension on HomePeriod {
 /// Période sélectionnée pour filtrer les statistiques de l'accueil.
 final homePeriodProvider = StateProvider<HomePeriod>((ref) => HomePeriod.week);
 
-class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+/// Contenu du sous-onglet "Course" du hub Sport (stats, tendance, historique,
+/// mini-jeux). N'a pas son propre Scaffold : il est inséré dans SportScreen.
+class CourseSection extends ConsumerWidget {
+  const CourseSection({super.key});
+
+  void _startRun(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, animation, __) => const TrackingScreen(),
+        transitionsBuilder: (_, animation, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 380),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -79,141 +97,67 @@ class HomeScreen extends ConsumerWidget {
         .fold<double>(0.0, max);
     final recentRuns = activities.take(6).toList();
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 120,
-            pinned: true,
-            backgroundColor: AppColors.surface,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: const Text(
-                'WA\'A STRAVA',
-                style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: AppColors.textPrimary,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
-                  shadows: [Shadow(color: AppColors.arcadePink, blurRadius: 12)],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FadeSlideIn(
+            child: GlowButton(
+              label: 'LANCER UNE COURSE',
+              icon: Icons.play_arrow_rounded,
+              color: kNeonPink,
+              foreground: Colors.white,
+              onPressed: () => _startRun(context),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          FadeSlideIn(
+            delay: const Duration(milliseconds: 60),
+            child: _LevelBanner(
+              profile: ref.watch(playerProfileProvider),
+              onTap: () => ref.read(shellIndexProvider.notifier).state = 2,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          SegmentedTabs<HomePeriod>(
+            values: HomePeriod.values,
+            selected: period,
+            labelOf: (p) => p.label,
+            onChanged: (p) => ref.read(homePeriodProvider.notifier).state = p,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          _buildSummaryRow(count, totalDistanceKm, avgDistanceKm, avgSpeedKmh),
+          const SizedBox(height: AppSpacing.xxl),
+          _buildTrendChart(recentRuns),
+          const SizedBox(height: AppSpacing.xxl),
+          _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
+          const SizedBox(height: AppSpacing.xxl),
+          _MiniGamesEntry(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MiniGamesScreen()),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+          if (allActivities.isNotEmpty) ...[
+            _SectionHeader(
+              title: 'Dernière sortie',
+              action: TextButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HistoryScreen()),
                 ),
-              ),
-              expandedTitleScale: 1.0,
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.folder_open_rounded,
-                    color: AppColors.textPrimary),
-                tooltip: 'Dossier d\'export',
-                onPressed: () async {
-                  if (await Permission.manageExternalStorage.request().isGranted ||
-                      await Permission.storage.request().isGranted) {
-                    final selectedDir = await FilePicker.getDirectoryPath(
-                      dialogTitle: 'Choisir le dossier d\'export',
-                    );
-                    if (selectedDir != null) {
-                      await ExportService.saveExportDirectory(selectedDir);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Dossier d\'export mis à jour : $selectedDir'),
-                          ),
-                        );
-                      }
-                    }
-                  }
-                },
-              ),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildGreeting(allActivities.length),
-                  const SizedBox(height: AppSpacing.xl),
-                  _LevelBanner(
-                    profile: ref.watch(playerProfileProvider),
-                    onTap: () =>
-                        ref.read(shellIndexProvider.notifier).state = 1,
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  SegmentedTabs<HomePeriod>(
-                    values: HomePeriod.values,
-                    selected: period,
-                    labelOf: (p) => p.label,
-                    onChanged: (p) =>
-                        ref.read(homePeriodProvider.notifier).state = p,
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  _buildSummaryRow(count, totalDistanceKm, avgDistanceKm, avgSpeedKmh),
-                  const SizedBox(height: AppSpacing.xxl),
-                  _buildTrendChart(recentRuns),
-                  const SizedBox(height: AppSpacing.xxl),
-                  _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
-                  const SizedBox(height: AppSpacing.xxl),
-                  _MiniGamesEntry(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const MiniGamesScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxl),
-                  if (allActivities.isNotEmpty) ...[
-                    const _SectionHeader(title: 'Dernière sortie'),
-                    const SizedBox(height: AppSpacing.md),
-                    _LatestActivityCard(activity: allActivities.first),
-                    const SizedBox(height: AppSpacing.xxl),
-                  ],
-                  _buildMotivationCard(allActivities.length),
-                  const SizedBox(height: 32),
-                ],
+                child: const Text('Tout voir →'),
               ),
             ),
-          ),
+            const SizedBox(height: AppSpacing.md),
+            _LatestActivityCard(activity: allActivities.first),
+            const SizedBox(height: AppSpacing.xxl),
+          ],
+          _buildMotivationCard(allActivities.length),
         ],
       ),
-    );
-  }
-
-  Widget _buildGreeting(int count) {
-    final now = DateTime.now();
-    const weekdays = [
-      'Lundi',
-      'Mardi',
-      'Mercredi',
-      'Jeudi',
-      'Vendredi',
-      'Samedi',
-      'Dimanche'
-    ];
-    const months = [
-      'janvier',
-      'février',
-      'mars',
-      'avril',
-      'mai',
-      'juin',
-      'juillet',
-      'août',
-      'septembre',
-      'octobre',
-      'novembre',
-      'décembre'
-    ];
-
-    final dayName = weekdays[now.weekday - 1];
-    final dateStr = '${now.day} ${months[now.month - 1]}';
-
-    return PageHeading(
-      eyebrow: '$dayName · $dateStr',
-      title: count == 0 ? 'Prêt pour ta prochaine course ?' : 'Ton tableau de bord',
     );
   }
 
@@ -643,11 +587,17 @@ class _MiniGamesEntry extends StatelessWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final Widget? action;
+  const _SectionHeader({required this.title, this.action});
 
   @override
   Widget build(BuildContext context) {
-    return Text(title, style: AppText.screenTitle);
+    final text = Text(title, style: AppText.screenTitle);
+    if (action == null) return text;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [text, action!],
+    );
   }
 }
 
