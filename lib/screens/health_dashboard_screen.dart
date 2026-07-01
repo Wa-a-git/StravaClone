@@ -966,7 +966,9 @@ class _GoogleHealthCardState extends State<_GoogleHealthCard> {
   final _service = GoogleHealthApiService();
   bool _connected = false;
   bool _busy = false;
+  bool _testing = false;
   String? _error;
+  String? _apiStatus;
 
   @override
   void initState() {
@@ -974,6 +976,28 @@ class _GoogleHealthCardState extends State<_GoogleHealthCard> {
     _service.isConnected().then((v) {
       if (mounted) setState(() => _connected = v);
     });
+  }
+
+  Future<void> _testApi() async {
+    setState(() {
+      _testing = true;
+      _apiStatus = null;
+    });
+    try {
+      final identity = await _service.getIdentity();
+      if (identity == null) {
+        _apiStatus = 'L\'API n\'a pas répondu (token expiré ? reconnecte-toi).';
+      } else {
+        final vo2 = await _service.getLatestVo2Max();
+        _apiStatus = vo2 != null
+            ? 'API OK ✓ — VO2 max : ${vo2.toStringAsFixed(1)}'
+            : 'API OK ✓ — VO2 max pas encore dispo (en calibrage sur la montre).';
+      }
+    } catch (e) {
+      _apiStatus = 'Erreur API : $e';
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   Future<void> _toggle() async {
@@ -1055,6 +1079,37 @@ class _GoogleHealthCardState extends State<_GoogleHealthCard> {
               ),
             ),
           ),
+          if (_connected) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: OutlinedButton.icon(
+                onPressed: _testing ? null : _testApi,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kNeonGreen,
+                  side: BorderSide(color: kNeonGreen.withOpacity(0.6)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: _testing
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: kNeonGreen))
+                    : const Icon(Icons.science_rounded, size: 16),
+                label: const Text('Tester l\'API (VO2 max)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+          if (_apiStatus != null) ...[
+            const SizedBox(height: 10),
+            Text(_apiStatus!,
+                style: const TextStyle(
+                    color: AppColors.textPrimary, fontSize: 12)),
+          ],
         ],
       ),
     );
