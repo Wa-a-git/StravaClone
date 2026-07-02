@@ -11,6 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Réseau souverain partagé (écriture unifiée dans le vault, note du jour)
+  mycelium:
+    path: ../../mycelium
+
   cupertino_icons: ^1.0.8
   hive: ^2.2.3
   hive_flutter: ^1.1.0
