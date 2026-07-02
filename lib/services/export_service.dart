@@ -4,6 +4,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
 
 class ExportService {
+  /// URL Windroid par défaut (Tailscale du PC), partagée avec les autres apps.
+  static const String defaultWindroidBaseUrl = 'http://100.66.241.12:8765';
+
   static String _sanitizeFileName(String text) {
     return text
         .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
@@ -21,14 +24,22 @@ class ExportService {
     await box.put('export_directory', path);
   }
 
+  /// URL Windroid effective : réglage `windroid_base_url` s'il existe (chaîne
+  /// vide = Windroid désactivé, écriture locale seule), sinon la valeur par défaut.
+  static String getWindroidBaseUrl() {
+    final v = Hive.box('settings').get('windroid_base_url') as String?;
+    return v ?? defaultWindroidBaseUrl;
+  }
+
+  static Future<void> saveWindroidBaseUrl(String url) async {
+    await Hive.box('settings').put('windroid_base_url', url.trim());
+  }
+
   static Future<String?> saveActivityAsMarkdown(
     Activity activity, {
     bool useDownloads = false, // Paramètre ignoré maintenant
   }) async {
     try {
-      final savedPath = getSavedExportDirectory();
-      if (savedPath == null) return null; // Sécurité
-
       final dt = activity.date;
       final id = activity.date.millisecondsSinceEpoch;
       final filenameDate =
@@ -56,53 +67,105 @@ class ExportService {
         if (activity.name?.isNotEmpty == true) 'name': activity.name,
       };
 
-      final body = _buildBody(activity, id: id, avgPace: avgPace, avgSpeedKmh: avgSpeedKmh);
+      final body =
+          _buildBody(activity, id: id, avgPace: avgPace, avgSpeedKmh: avgSpeedKmh);
 
-      // Écrit dans le dossier d'export choisi (racine = dossier lié à Drive).
-      final repo = VaultRepository(LocalVaultSource(savedPath));
-      final writer = EntryWriter(repo);
-      final note = await writer.createEntry(
-        subdir: '',
-        fileName: fileBase,
-        myceliumClass: 'strava',
-        id: id,
-        date: activity.date,
-        fields: fields,
-        body: body,
-        overwrite: true, // ré-export = même chemin, pas de doublon
-      );
+      // 1) PRIMAIRE : Windroid (souverain, écrit direct sur le PC via mycelium).
+      final windroidUrl = getWindroidBaseUrl();
+      if (windroidUrl.isNotEmpty) {
+        final http = HttpVaultSource(windroidUrl,
+            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
+        if (await http.available()) {
+          try {
+            final path = await writeToVault(http,
+                subdir: 'Strava',
+                activity: activity,
+                fileBase: fileBase,
+                id: id,
+                fields: fields,
+                body: body,
+                injectDaily: true);
+            return 'Windroid: $path';
+          } catch (_) {
+            // Windroid a lâché en cours de route → on bascule sur le local.
+          }
+        }
+      }
 
-      final exportedPath = '$savedPath/${note.path}';
+      // 2) FALLBACK : dossier local synchronisé Drive (PC injoignable).
+      final savedPath = getSavedExportDirectory();
+      if (savedPath == null) return null;
 
-      // --- "Push" : résumé injecté dans la note du jour (best-effort) ---
-      await _injectDailySummary(savedPath, activity, fileBase);
-
-      return exportedPath;
+      // Racine du vault connue → on écrit dans Strava/ + note du jour, comme via
+      // Windroid. Sinon écriture directe dans le dossier choisi (sans note du jour).
+      final vaultRoot = _findVaultRoot(savedPath);
+      if (vaultRoot != null) {
+        final path = await writeToVault(LocalVaultSource(vaultRoot),
+            subdir: 'Strava',
+            activity: activity,
+            fileBase: fileBase,
+            id: id,
+            fields: fields,
+            body: body,
+            injectDaily: true);
+        return '$vaultRoot/$path';
+      }
+      final path = await writeToVault(LocalVaultSource(savedPath),
+          subdir: '',
+          activity: activity,
+          fileBase: fileBase,
+          id: id,
+          fields: fields,
+          body: body,
+          injectDaily: false);
+      return '$savedPath/$path';
     } catch (e) {
       return null;
     }
   }
 
-  /// Injecte une ligne de résumé de la course dans la note quotidienne du
-  /// vault (modèle "push" du plan Marble). Best-effort : ne bloque jamais
-  /// l'export. N'écrit que si la racine du vault est identifiable (dossier
-  /// `.obsidian`), pour ne pas éparpiller des notes ailleurs.
-  static Future<void> _injectDailySummary(
-      String exportDir, Activity activity, String fileBase) async {
-    try {
-      final vaultRoot = _findVaultRoot(exportDir);
-      if (vaultRoot == null) return;
-
-      final dist = (activity.distance / 1000).toStringAsFixed(2);
-      final line =
-          '- 🏃 [[$fileBase]] — $dist km en ${activity.durationFormatted} (${activity.avgPace}/km)';
-
-      final service = DailyNoteService(VaultRepository(LocalVaultSource(vaultRoot)));
-      await service.appendToToday(
-          section: 'Sport', content: line, day: activity.date);
-    } catch (_) {
-      // Vault injoignable / pas de racine : on n'empêche pas l'export.
+  /// Écrit la fiche d'activité (+ éventuellement le résumé du jour) via une
+  /// source vault quelconque (Windroid `HttpVaultSource` ou locale
+  /// `LocalVaultSource`). Isolé et public pour être testable avec une source
+  /// en mémoire. Renvoie le chemin relatif de la fiche créée.
+  static Future<String> writeToVault(
+    VaultSource source, {
+    required String subdir,
+    required Activity activity,
+    required String fileBase,
+    required int id,
+    required Map<String, Object?> fields,
+    required String body,
+    required bool injectDaily,
+  }) async {
+    final repo = VaultRepository(source);
+    final note = await EntryWriter(repo).createEntry(
+      subdir: subdir,
+      fileName: fileBase,
+      myceliumClass: 'strava',
+      id: id,
+      date: activity.date,
+      fields: fields,
+      body: body,
+      overwrite: true, // ré-export = même chemin, pas de doublon
+    );
+    if (injectDaily) {
+      try {
+        await DailyNoteService(repo).appendToToday(
+            section: 'Sport',
+            content: _dailyLine(activity, fileBase),
+            day: activity.date);
+      } catch (_) {
+        // Note du jour best-effort : n'empêche pas l'écriture de la fiche.
+      }
     }
+    return note.path;
+  }
+
+  /// Ligne de résumé injectée dans la note du jour (modèle "push" du plan).
+  static String _dailyLine(Activity activity, String fileBase) {
+    final dist = (activity.distance / 1000).toStringAsFixed(2);
+    return '- 🏃 [[$fileBase]] — $dist km en ${activity.durationFormatted} (${activity.avgPace}/km)';
   }
 
   /// Remonte depuis [start] jusqu'à trouver un dossier contenant `.obsidian`

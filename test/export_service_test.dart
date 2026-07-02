@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:mycelium/mycelium.dart';
 
 import 'package:strava/models/activity.dart';
 import 'package:strava/services/export_service.dart';
@@ -21,6 +22,9 @@ void main() {
     Hive.init('${tmp.path}/hive');
     final box = await Hive.openBox('settings');
     await box.put('export_directory', exportDir);
+    // Windroid désactivé : ces tests couvrent le fallback local (et évitent
+    // toute connexion réseau vers un vrai Windroid pendant les tests).
+    await box.put('windroid_base_url', '');
   });
 
   tearDown(() async {
@@ -93,4 +97,58 @@ void main() {
 
     flat.deleteSync(recursive: true);
   });
+
+  // Chemin "Windroid" : writeToVault sur une source quelconque (ici en mémoire)
+  // → fiche dans Strava/ + résumé dans la note du jour, sans réseau.
+  test('writeToVault écrit dans Strava/ et injecte la note du jour', () async {
+    final source = _InMemoryVaultSource();
+    final activity = sampleRun();
+    final path = await ExportService.writeToVault(
+      source,
+      subdir: 'Strava',
+      activity: activity,
+      fileBase: 'tour_test-2026-06-13_07h25',
+      id: activity.date.millisecondsSinceEpoch,
+      fields: {'sport': 'Run', 'distance_km': '2.04'},
+      body: '\n# Sortie\n',
+      injectDaily: true,
+    );
+
+    expect(path, 'Strava/tour_test-2026-06-13_07h25.md');
+    expect(source.files[path], contains('type: "[[strava]]"'));
+    expect(source.files[path], contains('sport: Run'));
+
+    final daily = source.files['Notes/260613.md'];
+    expect(daily, isNotNull);
+    expect(daily, contains('## Sport'));
+    expect(daily, contains('[[tour_test-2026-06-13_07h25]]'));
+  });
+}
+
+/// Source vault en mémoire pour tester writeToVault sans réseau ni disque.
+class _InMemoryVaultSource implements VaultSource {
+  final Map<String, String> files = {};
+
+  @override
+  int get readConcurrency => 4;
+  @override
+  Future<bool> available() async => true;
+  @override
+  Future<List<VaultEntry>> list() async =>
+      files.keys.map((p) => VaultEntry(p, DateTime(2026, 7, 1))).toList();
+  @override
+  Future<String?> read(String path) async => files[path];
+  @override
+  Future<void> write(String path, String content) async => files[path] = content;
+  @override
+  Future<void> writeBytes(String path, List<int> bytes) async {}
+  @override
+  Future<void> delete(String path) async => files.remove(path);
+  @override
+  Future<bool> exists(String path) async => files.containsKey(path);
+  @override
+  Future<List<int>?> readAttachment(String name) async => null;
+  @override
+  Future<Map<String, String>?> readMany(List<String> paths) async =>
+      {for (final p in paths) if (files[p] != null) p: files[p]!};
 }
