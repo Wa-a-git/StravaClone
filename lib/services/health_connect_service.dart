@@ -4,6 +4,27 @@ import '../models/daily_health_record.dart';
 import 'health_score_service.dart';
 import 'health_store.dart';
 
+/// Données « montre » rattachées à une activité (fenêtre temporelle donnée) :
+/// fréquence cardiaque + calories actives lues depuis Health Connect.
+class ActivityVitals {
+  final double avgHr;
+  final double minHr;
+  final double maxHr;
+  final double activeCalories;
+  final List<double> hrSamples;
+
+  const ActivityVitals({
+    this.avgHr = 0,
+    this.minHr = 0,
+    this.maxHr = 0,
+    this.activeCalories = 0,
+    this.hrSamples = const [],
+  });
+
+  bool get hasHr => hrSamples.isNotEmpty;
+  bool get hasData => hasHr || activeCalories > 0;
+}
+
 class HealthConnectService {
   final Health _health = Health();
 
@@ -108,6 +129,52 @@ class HealthConnectService {
       return bEnd.compareTo(aEnd);
     });
     return sessions.first;
+  }
+
+  /// Lit les données montre (FC + calories actives) sur la fenêtre temporelle
+  /// d'une activité. Renvoie un objet vide en cas d'absence de données ou
+  /// d'échec (permission non accordée, etc.) — jamais d'exception.
+  Future<ActivityVitals> getActivityVitals(DateTime start, DateTime end) async {
+    if (!end.isAfter(start)) return const ActivityVitals();
+    try {
+      final results = await Future.wait([
+        _health.getHealthDataFromTypes(
+            types: [HealthDataType.HEART_RATE],
+            startTime: start,
+            endTime: end),
+        _health.getHealthDataFromTypes(
+            types: [HealthDataType.ACTIVE_ENERGY_BURNED],
+            startTime: start,
+            endTime: end),
+      ]);
+
+      final hrPoints = results[0] as List<HealthDataPoint>;
+      final hr = <double>[];
+      for (final p in hrPoints) {
+        if (p.value is NumericHealthValue) {
+          final v = (p.value as NumericHealthValue).numericValue.toDouble();
+          if (v > 0) hr.add(v);
+        }
+      }
+      final cal = _sumNumeric(results[1] as List<HealthDataPoint>);
+
+      if (hr.isEmpty) {
+        return ActivityVitals(activeCalories: cal);
+      }
+      final avg = hr.reduce((a, b) => a + b) / hr.length;
+      final minV = hr.reduce((a, b) => a < b ? a : b);
+      final maxV = hr.reduce((a, b) => a > b ? a : b);
+      return ActivityVitals(
+        avgHr: avg,
+        minHr: minV,
+        maxHr: maxV,
+        activeCalories: cal,
+        hrSamples: hr,
+      );
+    } catch (e) {
+      print('getActivityVitals error: $e');
+      return const ActivityVitals();
+    }
   }
 
   /// Instantané des données santé du jour en cours.

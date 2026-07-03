@@ -6,7 +6,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/activity.dart';
 import '../services/export_service.dart';
+import '../services/health_connect_service.dart';
 import '../theme.dart';
+import '../widgets/health_charts.dart';
 
 class DetailScreen extends StatefulWidget {
   final Activity activity;
@@ -18,6 +20,31 @@ class DetailScreen extends StatefulWidget {
 
 class _DetailScreenState extends State<DetailScreen> {
   Activity get _activity => widget.activity;
+
+  // Données montre (FC + calories) lues depuis Health Connect pour la fenêtre
+  // temporelle de la course. Chargées après le premier rendu.
+  ActivityVitals? _vitals;
+  bool _loadingVitals = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVitals();
+  }
+
+  Future<void> _loadVitals() async {
+    final start = _activity.date;
+    final end = start.add(Duration(
+        seconds: _activity.duration + _activity.pauseDurationSeconds));
+    final vitals =
+        await HealthConnectService().getActivityVitals(start, end);
+    if (mounted) {
+      setState(() {
+        _vitals = vitals;
+        _loadingVitals = false;
+      });
+    }
+  }
 
   List<LatLng> get _routePoints =>
       _activity.route.map((pt) => LatLng(pt[0], pt[1])).toList();
@@ -100,7 +127,11 @@ class _DetailScreenState extends State<DetailScreen> {
                     children: [
                       _buildStatsGrid(),
                       const SizedBox(height: 16),
-                      if (_routePoints.isNotEmpty) _buildRouteCard(),
+                      _buildWatchCard(),
+                      if (_routePoints.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _buildRouteCard(),
+                      ],
                       // Affichage conditionnel des boucles
                       if ((_activity.laps != null) && (_activity.laps!.isNotEmpty)) ...[
                         const SizedBox(height: 16),
@@ -353,6 +384,105 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  Widget _buildWatchCard() {
+    final v = _vitals;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141419),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonCyan.withOpacity(0.4), width: 1.2),
+        boxShadow: [BoxShadow(color: kNeonCyan.withOpacity(0.10), blurRadius: 12)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.watch_rounded, color: kNeonCyan, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Données montre',
+                style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: kNeonCyan,
+                  letterSpacing: 0.5,
+                  shadows: [Shadow(color: kNeonCyan, blurRadius: 6)],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_loadingVitals)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: kNeonCyan),
+                ),
+              ),
+            )
+          else if (v == null || !v.hasData)
+            const Text(
+              'Aucune donnée de la montre sur ce créneau.\nPorte ta Charge 6 pendant la course et synchronise-la.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _WatchStat(
+                    label: 'FC moy.',
+                    value: v.hasHr ? v.avgHr.round().toString() : '--',
+                    unit: 'bpm',
+                    color: kNeonPink,
+                  ),
+                ),
+                Expanded(
+                  child: _WatchStat(
+                    label: 'FC max',
+                    value: v.hasHr ? v.maxHr.round().toString() : '--',
+                    unit: 'bpm',
+                    color: kNeonRed,
+                  ),
+                ),
+                Expanded(
+                  child: _WatchStat(
+                    label: 'FC min',
+                    value: v.hasHr ? v.minHr.round().toString() : '--',
+                    unit: 'bpm',
+                    color: kNeonCyan,
+                  ),
+                ),
+                Expanded(
+                  child: _WatchStat(
+                    label: 'Cal. actives',
+                    value: v.activeCalories > 0
+                        ? v.activeCalories.round().toString()
+                        : '--',
+                    unit: 'kcal',
+                    color: kNeonAmber,
+                  ),
+                ),
+              ],
+            ),
+            if (v.hasHr && v.hrSamples.length >= 2) ...[
+              const SizedBox(height: 16),
+              const Text('Fréquence cardiaque',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              const SizedBox(height: 6),
+              Sparkline(values: v.hrSamples, color: kNeonPink, height: 48),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildLapsList() {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -576,6 +706,65 @@ class _DetailStatCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Watch stat (petite valeur santé de la course) ────────────────────────────
+
+class _WatchStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final String unit;
+  final Color color;
+
+  const _WatchStat({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          alignment: Alignment.centerLeft,
+          fit: BoxFit.scaleDown,
+          child: RichText(
+            text: TextSpan(children: [
+              TextSpan(
+                text: value,
+                style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+              TextSpan(
+                text: ' $unit',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
