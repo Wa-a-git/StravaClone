@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
+import '../providers/activity_provider.dart';
 import '../providers/health_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/game_service.dart';
@@ -17,6 +19,7 @@ import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'health_metric_detail_screen.dart';
 import 'sleep_detail_screen.dart';
+import 'detail_screen.dart';
 
 class HealthDashboardScreen extends ConsumerWidget {
   const HealthDashboardScreen({super.key});
@@ -25,6 +28,17 @@ class HealthDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final st = ref.watch(healthDataProvider);
     final scores = st.scores;
+
+    // Courses GPS enregistrées aujourd'hui (pour le feed "Activité suivie").
+    final now = DateTime.now();
+    final todayRuns = ref
+        .watch(activityListProvider)
+        .where((a) =>
+            a.date.year == now.year &&
+            a.date.month == now.month &&
+            a.date.day == now.day)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -115,6 +129,30 @@ class HealthDashboardScreen extends ConsumerWidget {
                     ],
                     const SizedBox(height: 24),
 
+                    // Courses GPS du jour, si tu en as enregistré.
+                    if (todayRuns.isNotEmpty) ...[
+                      _FeedHeader(
+                        time: _timeLabel(todayRuns.first.date),
+                        title: todayRuns.length > 1
+                            ? '${todayRuns.length} activités suivies'
+                            : 'Activité suivie',
+                        accent: kNeonPink,
+                      ),
+                      const SizedBox(height: 12),
+                      for (final run in todayRuns) ...[
+                        _ActivityFeedCard(
+                          activity: run,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => DetailScreen(activity: run)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      const SizedBox(height: 14),
+                    ],
+
                     const _FeedHeader(time: 'AUJOURD\'HUI', title: 'Activité & corps', accent: kNeonGreen),
                     const SizedBox(height: 12),
                     _MetricsGrid(snapshot: st.snapshot),
@@ -158,6 +196,10 @@ class HealthDashboardScreen extends ConsumerWidget {
     if (w == null) return null;
     return '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
   }
+
+  /// Heure (HH:mm) d'un événement pour l'en-tête de feed.
+  static String _timeLabel(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
   Widget _buildQuestPanels(
       BuildContext context, WidgetRef ref, HealthDataState st) {
@@ -1004,6 +1046,66 @@ class _FeedHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Carte d'activité dans le feed santé ───────────────────────────────────────
+class _ActivityFeedCard extends StatelessWidget {
+  final Activity activity;
+  final VoidCallback onTap;
+  const _ActivityFeedCard({required this.activity, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPanel(
+      accent: kNeonPink,
+      padding: const EdgeInsets.all(14),
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: kNeonPink.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: const Icon(Icons.directions_run_rounded,
+                color: kNeonPink, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(activity.title,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text('${activity.distanceKm} km',
+                        style: const TextStyle(
+                            fontFamily: kArcadeFont,
+                            color: kNeonPink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${activity.durationFormatted} · ${activity.avgPace}/km',
+                      style: AppText.caption,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: kNeonPink, size: 20),
+        ],
+      ),
     );
   }
 }
