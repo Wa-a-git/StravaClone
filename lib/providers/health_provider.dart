@@ -99,6 +99,13 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
     _recompute(snapshot, scores, xp);
   }
 
+  /// Recalcule uniquement les insights (après un feedback pouce haut/bas),
+  /// sans refaire d'appel réseau.
+  void refreshInsights() {
+    if (state.scores == null) return;
+    _recompute(state.snapshot, state.scores!, state.healthXpToday);
+  }
+
   void _recompute(HealthSnapshot snapshot, HealthScores scores, int xpToday) {
     final history = HealthStore.lastNDays(30);
     final todayRec = HealthStore.recordFor(DateTime.now());
@@ -118,7 +125,7 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
                 HealthStore.baseline(HealthMetric.sleepHours),
             stepsStreak: stepsStreak,
             sleepStreak: sleepStreak,
-          );
+          ).where((i) => !HealthFeedbackStore.isDismissed(i.id)).toList();
 
     state = state.copyWith(
       snapshot: snapshot,

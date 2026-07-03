@@ -3,6 +3,7 @@
 // avec le reste de l'app. Aucune dépendance externe.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../models/health_snapshot.dart';
 import '../services/health_score_service.dart' show TrendDir;
 import '../theme.dart';
 import 'arcade_fx.dart';
@@ -291,6 +292,154 @@ class _TrendPainter extends CustomPainter {
       old.values != values ||
       old.baseline != baseline ||
       old.color != color;
+}
+
+/// Hypnogramme : tracé chronologique des stades de sommeil sur la nuit.
+/// 4 lanes (Éveil en haut → Profond en bas), chaque segment dessiné à sa
+/// position temporelle réelle, avec des liaisons verticales entre stades.
+class Hypnogram extends StatelessWidget {
+  final List<SleepSegment> segments;
+  final double height;
+  final bool showAxis;
+
+  const Hypnogram({
+    super.key,
+    required this.segments,
+    this.height = 130,
+    this.showAxis = true,
+  });
+
+  String _hm(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    if (segments.isEmpty) {
+      return SizedBox(
+        height: height,
+        child: const Center(
+          child: Text('Pas de détail des stades pour cette nuit.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        ),
+      );
+    }
+    final start = segments.map((s) => s.start).reduce((a, b) => a.isBefore(b) ? a : b);
+    final end = segments.map((s) => s.end).reduce((a, b) => a.isAfter(b) ? a : b);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: height,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOutCubic,
+            builder: (context, t, _) => CustomPaint(
+              painter: _HypnogramPainter(
+                segments: segments,
+                start: start,
+                end: end,
+                progress: t,
+              ),
+            ),
+          ),
+        ),
+        if (showAxis) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(_hm(start),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11)),
+              Text(_hm(end),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11)),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _HypnogramPainter extends CustomPainter {
+  final List<SleepSegment> segments;
+  final DateTime start;
+  final DateTime end;
+  final double progress;
+
+  _HypnogramPainter({
+    required this.segments,
+    required this.start,
+    required this.end,
+    required this.progress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final totalMs = end.difference(start).inMilliseconds.toDouble();
+    if (totalMs <= 0) return;
+
+    const laneCount = 4; // awake, rem, light, deep
+    final laneH = size.height / laneCount;
+    final blockH = laneH * 0.55;
+
+    double xFor(DateTime t) =>
+        size.width * (t.difference(start).inMilliseconds / totalMs);
+    double laneCenterY(int lane) => laneH * lane + laneH / 2;
+
+    // Fond très léger de chaque lane pour la lisibilité.
+    for (int lane = 0; lane < laneCount; lane++) {
+      final cy = laneCenterY(lane);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, cy - blockH / 2, size.width, blockH),
+          const Radius.circular(6),
+        ),
+        Paint()..color = AppColors.surfaceLight.withOpacity(0.35),
+      );
+    }
+
+    // On ne dessine que jusqu'à progress (animation de gauche à droite).
+    final drawUntilX = size.width * progress;
+
+    // Liaisons verticales entre segments consécutifs.
+    final linkPaint = Paint()
+      ..color = AppColors.border
+      ..strokeWidth = 2;
+    for (int i = 0; i < segments.length - 1; i++) {
+      final a = segments[i];
+      final b = segments[i + 1];
+      final x = xFor(b.start);
+      if (x > drawUntilX) break;
+      final y1 = laneCenterY(a.stage.lane);
+      final y2 = laneCenterY(b.stage.lane);
+      canvas.drawLine(Offset(x, y1), Offset(x, y2), linkPaint);
+    }
+
+    // Blocs de stade.
+    for (final seg in segments) {
+      final x1 = xFor(seg.start);
+      if (x1 > drawUntilX) break;
+      var x2 = xFor(seg.end);
+      x2 = math.min(x2, drawUntilX);
+      final w = math.max(2.0, x2 - x1);
+      final cy = laneCenterY(seg.stage.lane);
+      final rect = Rect.fromLTWH(x1, cy - blockH / 2, w, blockH);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(6)),
+        Paint()
+          ..color = seg.stage.color
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.4),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HypnogramPainter old) =>
+      old.progress != progress || old.segments != segments;
 }
 
 /// Anneau de score animé (0-100) avec valeur au centre.

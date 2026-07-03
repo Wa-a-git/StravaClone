@@ -207,22 +207,28 @@ class HealthConnectService {
     // total (Google Health n'affiche que la session principale).
     final mainSession = _latestSleepSession(sleepPoints);
     double deep = 0, light = 0, rem = 0, awake = 0, asleep = 0;
+    final segments = <SleepSegment>[];
     for (final p in mainSession) {
       final minutes = p.value is NumericHealthValue
           ? (p.value as NumericHealthValue).numericValue.toDouble()
           : 0.0;
+      SleepStage? stage;
       switch (p.type) {
         case HealthDataType.SLEEP_DEEP:
           deep += minutes;
+          stage = SleepStage.deep;
           break;
         case HealthDataType.SLEEP_LIGHT:
           light += minutes;
+          stage = SleepStage.light;
           break;
         case HealthDataType.SLEEP_REM:
           rem += minutes;
+          stage = SleepStage.rem;
           break;
         case HealthDataType.SLEEP_AWAKE:
           awake += minutes;
+          stage = SleepStage.awake;
           break;
         case HealthDataType.SLEEP_ASLEEP:
           asleep += minutes;
@@ -230,12 +236,18 @@ class HealthConnectService {
         default:
           break;
       }
+      // On ne garde comme segment que les stades détaillés (pas le "asleep"
+      // générique, sinon il chevaucherait les stades précis).
+      if (stage != null && p.dateTo.isAfter(p.dateFrom)) {
+        segments.add(SleepSegment(stage: stage, start: p.dateFrom, end: p.dateTo));
+      }
     }
     // Si l'appareil ne détaille pas les stades mais fournit un total "asleep",
     // on le répartit en léger par défaut pour ne pas perdre la donnée de durée.
     if (deep == 0 && light == 0 && rem == 0 && asleep > 0) {
       light = asleep;
     }
+    segments.sort((a, b) => a.start.compareTo(b.start));
 
     return HealthSnapshot(
       steps: steps,
@@ -256,6 +268,7 @@ class HealthConnectService {
         remMin: rem,
         awakeMin: awake,
         asleepMin: deep + light + rem,
+        segments: segments,
       ),
     );
   }

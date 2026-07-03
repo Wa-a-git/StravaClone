@@ -50,6 +50,50 @@ class HealthProfileStore {
   static bool get isComplete => weightKg != null && heightCm != null;
 }
 
+/// Feedback utilisateur sur les insights santé (pouce haut/bas).
+/// Un insight « rejeté » est masqué pour la journée en cours (il pourra
+/// réapparaître un autre jour s'il est toujours pertinent). Persisté dans la
+/// boîte 'settings'.
+class HealthFeedbackStore {
+  static Box get _box => Hive.box('settings');
+
+  static String _dayKey() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  static String get _dismissKey => 'insight_dismissed_${_dayKey()}';
+  static String get _likeKey => 'insight_liked_${_dayKey()}';
+
+  static Set<String> get _dismissed {
+    final raw = _box.get(_dismissKey);
+    return raw is List ? raw.map((e) => e.toString()).toSet() : <String>{};
+  }
+
+  static Set<String> get _liked {
+    final raw = _box.get(_likeKey);
+    return raw is List ? raw.map((e) => e.toString()).toSet() : <String>{};
+  }
+
+  static bool isDismissed(String id) => _dismissed.contains(id);
+  static bool isLiked(String id) => _liked.contains(id);
+
+  static Future<void> dismiss(String id) async {
+    final s = _dismissed..add(id);
+    await _box.put(_dismissKey, s.toList());
+  }
+
+  static Future<void> like(String id) async {
+    final s = _liked..add(id);
+    await _box.put(_likeKey, s.toList());
+  }
+
+  static Future<void> undoLike(String id) async {
+    final s = _liked..remove(id);
+    await _box.put(_likeKey, s.toList());
+  }
+}
+
 class HealthStore {
   static const String boxName = 'health_history';
 

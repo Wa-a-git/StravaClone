@@ -24,6 +24,9 @@ class DailyHealthRecord {
   final double sleepRemMin;
   final double sleepAwakeMin;
 
+  /// Chronologie détaillée des stades de sommeil (pour l'hypnogramme).
+  final List<SleepSegment> sleepSegments;
+
   // Scores calculés (0-100)
   final int bioScore;
   final int sleepScore;
@@ -46,6 +49,7 @@ class DailyHealthRecord {
     this.sleepLightMin = 0,
     this.sleepRemMin = 0,
     this.sleepAwakeMin = 0,
+    this.sleepSegments = const [],
     this.bioScore = 0,
     this.sleepScore = 0,
     this.recoveryScore = 0,
@@ -66,6 +70,7 @@ class DailyHealthRecord {
         remMin: sleepRemMin,
         awakeMin: sleepAwakeMin,
         asleepMin: sleepDeepMin + sleepLightMin + sleepRemMin,
+        segments: sleepSegments,
       );
 
   double get totalSleepMin => sleepDeepMin + sleepLightMin + sleepRemMin;
@@ -111,6 +116,7 @@ class DailyHealthRecord {
       sleepLightMin: s.sleep.lightMin,
       sleepRemMin: s.sleep.remMin,
       sleepAwakeMin: s.sleep.awakeMin,
+      sleepSegments: s.sleep.segments,
       bioScore: bioScore,
       sleepScore: sleepScore,
       recoveryScore: recoveryScore,
@@ -134,6 +140,7 @@ class DailyHealthRecord {
         'sleepLightMin': sleepLightMin,
         'sleepRemMin': sleepRemMin,
         'sleepAwakeMin': sleepAwakeMin,
+        'sleepSegments': sleepSegments.map((s) => s.toMap()).toList(),
         'bioScore': bioScore,
         'sleepScore': sleepScore,
         'recoveryScore': recoveryScore,
@@ -143,6 +150,10 @@ class DailyHealthRecord {
   factory DailyHealthRecord.fromMap(Map<dynamic, dynamic> m) {
     double d(String k) => (m[k] as num?)?.toDouble() ?? 0.0;
     int i(String k) => (m[k] as num?)?.toInt() ?? 0;
+    final rawSeg = m['sleepSegments'];
+    final segs = rawSeg is List
+        ? rawSeg.whereType<Map>().map((e) => SleepSegment.fromMap(e)).toList()
+        : <SleepSegment>[];
     return DailyHealthRecord(
       date: DateTime.fromMillisecondsSinceEpoch(i('date')),
       steps: i('steps'),
@@ -159,6 +170,7 @@ class DailyHealthRecord {
       sleepLightMin: d('sleepLightMin'),
       sleepRemMin: d('sleepRemMin'),
       sleepAwakeMin: d('sleepAwakeMin'),
+      sleepSegments: segs,
       bioScore: i('bioScore'),
       sleepScore: i('sleepScore'),
       recoveryScore: i('recoveryScore'),

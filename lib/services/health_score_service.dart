@@ -30,11 +30,14 @@ class TrendInfo {
 }
 
 /// Un insight lisible (texte + accent + icône) pour le panneau d'analyse.
+/// [id] est stable par catégorie (ex : 'rhr_high') pour permettre le feedback
+/// (masquer un insight jugé inutile).
 class HealthInsight {
+  final String id;
   final String text;
   final Color color;
   final IconData icon;
-  const HealthInsight(this.text, this.color, this.icon);
+  const HealthInsight(this.id, this.text, this.color, this.icon);
 }
 
 class HealthTier {
@@ -202,11 +205,13 @@ class HealthScoreService {
       final d = today.restingHeartRate - rhrBaseline;
       if (d >= 3) {
         out.add(HealthInsight(
+            'rhr_high',
             'FC repos +${d.toStringAsFixed(0)} bpm vs ta moyenne 7j : récupération à surveiller.',
             kNeonPink,
             Icons.favorite_border_rounded));
       } else if (d <= -3) {
         out.add(HealthInsight(
+            'rhr_low',
             'FC repos -${d.abs().toStringAsFixed(0)} bpm vs 7j : bonne récupération.',
             kNeonGreen,
             Icons.favorite_rounded));
@@ -218,11 +223,13 @@ class HealthScoreService {
       final ratio = today.hrv / hrvBaseline;
       if (ratio >= 1.1) {
         out.add(HealthInsight(
+            'hrv_high',
             'HRV au-dessus de ta moyenne : ton corps est bien reposé.',
             kNeonGreen,
             Icons.monitor_heart_rounded));
       } else if (ratio <= 0.85) {
         out.add(HealthInsight(
+            'hrv_low',
             'HRV basse aujourd\'hui : privilégie une séance légère.',
             const Color(0xFFFFC107),
             Icons.monitor_heart_rounded));
@@ -234,11 +241,13 @@ class HealthScoreService {
     if (sleepH > 0) {
       if (sleepH < 6.5) {
         out.add(HealthInsight(
+            'sleep_short',
             'Nuit courte (${sleepH.toStringAsFixed(1)} h) : vise 7-8 h pour recharger.',
             const Color(0xFFFFC107),
             Icons.bedtime_rounded));
       } else if (sleepH >= 7.5) {
         out.add(HealthInsight(
+            'sleep_good',
             'Belle nuit de ${sleepH.toStringAsFixed(1)} h : sommeil optimal.',
             kNeonViolet,
             Icons.bedtime_rounded));
@@ -248,12 +257,14 @@ class HealthScoreService {
     // Streaks
     if (sleepStreak >= 3) {
       out.add(HealthInsight(
+          'streak_sleep',
           'Série sommeil ≥ 7 h : $sleepStreak jours d\'affilée 🔥',
           kNeonViolet,
           Icons.local_fire_department_rounded));
     }
     if (stepsStreak >= 3) {
       out.add(HealthInsight(
+          'streak_steps',
           'Série 10k pas : $stepsStreak jours d\'affilée 🔥',
           kNeonGreen,
           Icons.local_fire_department_rounded));
@@ -261,6 +272,7 @@ class HealthScoreService {
 
     if (out.isEmpty) {
       out.add(const HealthInsight(
+          'empty',
           'Continue à enregistrer tes journées : les analyses s\'affinent avec l\'historique.',
           AppColors.textSecondary,
           Icons.insights_rounded));

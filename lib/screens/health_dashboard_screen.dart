@@ -16,6 +16,7 @@ import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'health_metric_detail_screen.dart';
+import 'sleep_detail_screen.dart';
 
 class HealthDashboardScreen extends ConsumerWidget {
   const HealthDashboardScreen({super.key});
@@ -88,30 +89,53 @@ class HealthDashboardScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                     ],
+                    // ── Feed chronologique de la journée ──
+                    const _FeedHeader(time: 'MAINTENANT', title: 'Ton aptitude', accent: kNeonCyan),
+                    const SizedBox(height: 12),
                     FadeSlideIn(child: _BioScorePanel(scores: scores, insights: st.insights)),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     _SubScoresRow(scores: scores),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
+
+                    _FeedHeader(
+                      time: _wakeLabel(st.snapshot.sleep) ?? 'CETTE NUIT',
+                      title: 'Sommeil',
+                      accent: kNeonViolet,
+                    ),
+                    const SizedBox(height: 12),
+                    FadeSlideIn(
+                      child: _SleepPanel(
+                          sleep: st.snapshot.sleep, score: scores.sleepScore),
+                    ),
+                    if (st.stepsStreak > 0 || st.sleepStreak > 0) ...[
+                      const SizedBox(height: 12),
+                      _StreaksRow(
+                          stepsStreak: st.stepsStreak,
+                          sleepStreak: st.sleepStreak),
+                    ],
+                    const SizedBox(height: 24),
+
+                    const _FeedHeader(time: 'AUJOURD\'HUI', title: 'Activité & corps', accent: kNeonGreen),
+                    const SizedBox(height: 12),
+                    _MetricsGrid(snapshot: st.snapshot),
+                    const SizedBox(height: 12),
                     _HealthXpBanner(
                       xpToday: st.healthXpToday,
                       onTap: () => ref
                           .read(shellIndexProvider.notifier)
                           .state = 2,
                     ),
-                    const SizedBox(height: 16),
-                    _MetricsGrid(snapshot: st.snapshot),
-                    const SizedBox(height: 16),
-                    _SleepPanel(
-                        sleep: st.snapshot.sleep, score: scores.sleepScore),
-                    const SizedBox(height: 16),
-                    if (st.stepsStreak > 0 || st.sleepStreak > 0) ...[
-                      _StreaksRow(
-                          stepsStreak: st.stepsStreak,
-                          sleepStreak: st.sleepStreak),
-                      const SizedBox(height: 16),
-                    ],
-                    _InsightsPanel(insights: st.insights),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
+
+                    const _FeedHeader(time: 'ANALYSE', title: 'Recommandations', accent: kNeonGreen),
+                    const SizedBox(height: 12),
+                    _InsightsPanel(
+                      insights: st.insights,
+                      onFeedback: () =>
+                          ref.read(healthDataProvider.notifier).refreshInsights(),
+                    ),
+                    const SizedBox(height: 24),
+
                     _buildQuestPanels(context, ref, st),
                   ],
                   const SizedBox(height: 32),
@@ -126,6 +150,13 @@ class HealthDashboardScreen extends ConsumerWidget {
 
   Widget _buildHeader() {
     return const PageHeading(eyebrow: 'Données Fitbit', title: 'Aptitude du Jour');
+  }
+
+  /// Heure de réveil formatée (HH:mm) pour l'en-tête de feed du sommeil.
+  static String? _wakeLabel(SleepBreakdown sleep) {
+    final w = sleep.wakeTime;
+    if (w == null) return null;
+    return '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
   }
 
   Widget _buildQuestPanels(
@@ -798,77 +829,114 @@ class _SleepPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = sleep.totalAsleepMin;
+    final hasSegments = sleep.segments.isNotEmpty;
     return _HPanel(
       accent: kNeonViolet,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const _HPanelTitle('SOMMEIL', color: kNeonViolet),
-              Text('Score $score/100',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 11)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (total <= 0)
-            const Text('Aucune donnée de sommeil trouvée pour cette nuit.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12))
-          else ...[
-            Text(_fmt(total),
-                style: const TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900)),
-            Text('Efficacité : ${sleep.efficiency.toStringAsFixed(0)}%',
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 11)),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                height: 16,
-                child: Row(
+      child: InkWell(
+        onTap: total > 0
+            ? () {
+                HapticFeedback.selectionClick();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SleepDetailScreen()),
+                );
+              }
+            : null,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const _HPanelTitle('SOMMEIL', color: kNeonViolet),
+                Row(
                   children: [
-                    if (sleep.deepMin > 0)
-                      Expanded(
-                          flex: (sleep.deepMin * 100).round().clamp(1, 1000000),
-                          child: Container(color: kNeonViolet)),
-                    if (sleep.remMin > 0)
-                      Expanded(
-                          flex: (sleep.remMin * 100).round().clamp(1, 1000000),
-                          child: Container(color: kNeonCyan)),
-                    if (sleep.lightMin > 0)
-                      Expanded(
-                          flex:
-                              (sleep.lightMin * 100).round().clamp(1, 1000000),
-                          child: Container(
-                              color: AppColors.arcadeViolet.withOpacity(0.35))),
-                    if (sleep.awakeMin > 0)
-                      Expanded(
-                          flex:
-                              (sleep.awakeMin * 100).round().clamp(1, 1000000),
-                          child: Container(color: AppColors.muted)),
+                    Text('Score $score/100',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 11)),
+                    if (total > 0) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.chevron_right_rounded,
+                          color: kNeonViolet, size: 18),
+                    ],
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 14,
-              runSpacing: 6,
-              children: [
-                _SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
-                _SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
-                _SleepLegend('Léger', _fmt(sleep.lightMin), AppColors.arcadeViolet),
-                _SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
               ],
             ),
+            const SizedBox(height: 12),
+            if (total <= 0)
+              const Text('Aucune donnée de sommeil trouvée pour cette nuit.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12))
+            else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(_fmt(total),
+                      style: const TextStyle(
+                          fontFamily: kArcadeFont,
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(width: 10),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('Efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 11)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // Hypnogramme si on a le détail chronologique, sinon la barre
+              // empilée classique (compat. anciens enregistrements).
+              if (hasSegments)
+                Hypnogram(segments: sleep.segments, height: 96, showAxis: true)
+              else
+                _stackedBar(),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 14,
+                runSpacing: 6,
+                children: [
+                  _SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
+                  _SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
+                  _SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
+                  _SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stackedBar() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        height: 16,
+        child: Row(
+          children: [
+            if (sleep.deepMin > 0)
+              Expanded(
+                  flex: (sleep.deepMin * 100).round().clamp(1, 1000000),
+                  child: Container(color: kNeonViolet)),
+            if (sleep.remMin > 0)
+              Expanded(
+                  flex: (sleep.remMin * 100).round().clamp(1, 1000000),
+                  child: Container(color: kNeonCyan)),
+            if (sleep.lightMin > 0)
+              Expanded(
+                  flex: (sleep.lightMin * 100).round().clamp(1, 1000000),
+                  child: Container(color: SleepStage.light.color)),
+            if (sleep.awakeMin > 0)
+              Expanded(
+                  flex: (sleep.awakeMin * 100).round().clamp(1, 1000000),
+                  child: Container(color: AppColors.muted)),
+          ],
+        ),
       ),
     );
   }
@@ -898,10 +966,53 @@ class _SleepLegend extends StatelessWidget {
   }
 }
 
+// ── En-tête de section « feed » (pastille + heure + titre) ────────────────────
+class _FeedHeader extends StatelessWidget {
+  final String time;
+  final String title;
+  final Color accent;
+  const _FeedHeader({required this.time, required this.title, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: accent,
+            shape: BoxShape.circle,
+            boxShadow: softGlow(accent, blur: 8, opacity: 0.7),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          time,
+          style: AppText.sectionLabel.copyWith(color: accent),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Insights & streaks ────────────────────────────────────────────────────────
 class _InsightsPanel extends StatelessWidget {
   final List<HealthInsight> insights;
-  const _InsightsPanel({required this.insights});
+  final VoidCallback onFeedback;
+  const _InsightsPanel({required this.insights, required this.onFeedback});
 
   @override
   Widget build(BuildContext context) {
@@ -911,24 +1022,97 @@ class _InsightsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _HPanelTitle('ANALYSE', color: kNeonGreen),
-          const SizedBox(height: 12),
-          ...insights.map((ins) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(ins.icon, color: ins.color, size: 18),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(ins.text,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary, fontSize: 12.5)),
-                    ),
-                  ],
-                ),
-              )),
+          for (int i = 0; i < insights.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 20, color: AppColors.border, thickness: 0.5),
+            _InsightTile(insight: insights[i], onFeedback: onFeedback),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Un insight avec feedback pouce haut / pouce bas.
+class _InsightTile extends StatefulWidget {
+  final HealthInsight insight;
+  final VoidCallback onFeedback;
+  const _InsightTile({required this.insight, required this.onFeedback});
+
+  @override
+  State<_InsightTile> createState() => _InsightTileState();
+}
+
+class _InsightTileState extends State<_InsightTile> {
+  @override
+  Widget build(BuildContext context) {
+    final ins = widget.insight;
+    final liked = HealthFeedbackStore.isLiked(ins.id);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(ins.icon, color: ins.color, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(ins.text,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 12.5, height: 1.35)),
+        ),
+        const SizedBox(width: 8),
+        // Pouce haut : "utile" (ack, mise en avant discrète)
+        _FeedbackButton(
+          icon: liked ? Icons.thumb_up_rounded : Icons.thumb_up_off_alt_rounded,
+          active: liked,
+          color: kNeonGreen,
+          onTap: () async {
+            HapticFeedback.selectionClick();
+            if (liked) {
+              await HealthFeedbackStore.undoLike(ins.id);
+            } else {
+              await HealthFeedbackStore.like(ins.id);
+            }
+            if (mounted) setState(() {});
+          },
+        ),
+        const SizedBox(width: 4),
+        // Pouce bas : masque l'insight pour la journée
+        _FeedbackButton(
+          icon: Icons.thumb_down_off_alt_rounded,
+          active: false,
+          color: AppColors.textSecondary,
+          onTap: () async {
+            HapticFeedback.mediumImpact();
+            await HealthFeedbackStore.dismiss(ins.id);
+            widget.onFeedback();
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _FeedbackButton extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final Color color;
+  final VoidCallback onTap;
+  const _FeedbackButton({
+    required this.icon,
+    required this.active,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(icon,
+            size: 17,
+            color: active ? color : AppColors.muted),
       ),
     );
   }
