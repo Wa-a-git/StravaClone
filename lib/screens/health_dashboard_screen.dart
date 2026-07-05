@@ -1043,9 +1043,16 @@ class _FeedConnector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 3.5),
-      child: Container(width: 1.5, height: 14, color: color.withOpacity(0.35)),
+    // La colonne parente est en CrossAxisAlignment.stretch (pour que les
+    // panneaux prennent toute la largeur) : sans Align, ce Container hériterait
+    // des contraintes strictes et s'étirerait sur toute la largeur au lieu de
+    // rester un fin trait vertical sous la pastille.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 3.5),
+        child: Container(width: 1.5, height: 14, color: color.withOpacity(0.35)),
+      ),
     );
   }
 }
