@@ -17,6 +17,7 @@ class DailyHealthRecord {
   final double hrv;
   final int flightsClimbed;
   final double distanceKm;
+  final double vo2Max;
 
   // Sommeil (minutes)
   final double sleepDeepMin;
@@ -45,6 +46,7 @@ class DailyHealthRecord {
     this.hrv = 0,
     this.flightsClimbed = 0,
     this.distanceKm = 0,
+    this.vo2Max = 0,
     this.sleepDeepMin = 0,
     this.sleepLightMin = 0,
     this.sleepRemMin = 0,
@@ -75,6 +77,32 @@ class DailyHealthRecord {
 
   double get totalSleepMin => sleepDeepMin + sleepLightMin + sleepRemMin;
 
+  /// Copie avec un VO2 max mis à jour (seul champ modifiable après coup —
+  /// vient d'une source séparée, Google Health API, fetchée après le reste).
+  DailyHealthRecord copyWith({double? vo2Max}) => DailyHealthRecord(
+        date: date,
+        steps: steps,
+        activeCalories: activeCalories,
+        totalCalories: totalCalories,
+        avgHeartRate: avgHeartRate,
+        restingHeartRate: restingHeartRate,
+        spo2: spo2,
+        respiratoryRate: respiratoryRate,
+        hrv: hrv,
+        flightsClimbed: flightsClimbed,
+        distanceKm: distanceKm,
+        vo2Max: vo2Max ?? this.vo2Max,
+        sleepDeepMin: sleepDeepMin,
+        sleepLightMin: sleepLightMin,
+        sleepRemMin: sleepRemMin,
+        sleepAwakeMin: sleepAwakeMin,
+        sleepSegments: sleepSegments,
+        bioScore: bioScore,
+        sleepScore: sleepScore,
+        recoveryScore: recoveryScore,
+        activityScore: activityScore,
+      );
+
   /// Reconstruit un HealthSnapshot à partir de cet enregistrement stocké
   /// (les baselines ne sont pas persistées — calculées ailleurs via HealthStore).
   HealthSnapshot toSnapshot() => HealthSnapshot(
@@ -89,6 +117,7 @@ class DailyHealthRecord {
         flightsClimbed: flightsClimbed,
         distanceKm: distanceKm,
         sleep: sleep,
+        vo2Max: vo2Max,
       );
 
   /// Construit un enregistrement à partir d'un snapshot live + scores calculés.
@@ -112,6 +141,7 @@ class DailyHealthRecord {
       hrv: s.hrv,
       flightsClimbed: s.flightsClimbed,
       distanceKm: s.distanceKm,
+      vo2Max: s.vo2Max,
       sleepDeepMin: s.sleep.deepMin,
       sleepLightMin: s.sleep.lightMin,
       sleepRemMin: s.sleep.remMin,
@@ -136,6 +166,7 @@ class DailyHealthRecord {
         'hrv': hrv,
         'flightsClimbed': flightsClimbed,
         'distanceKm': distanceKm,
+        'vo2Max': vo2Max,
         'sleepDeepMin': sleepDeepMin,
         'sleepLightMin': sleepLightMin,
         'sleepRemMin': sleepRemMin,
@@ -166,6 +197,7 @@ class DailyHealthRecord {
       hrv: d('hrv'),
       flightsClimbed: i('flightsClimbed'),
       distanceKm: d('distanceKm'),
+      vo2Max: d('vo2Max'),
       sleepDeepMin: d('sleepDeepMin'),
       sleepLightMin: d('sleepLightMin'),
       sleepRemMin: d('sleepRemMin'),
@@ -194,6 +226,7 @@ enum HealthMetric {
   sleepHours,
   distanceKm,
   flightsClimbed,
+  vo2Max,
 }
 
 extension HealthMetricAccessor on HealthMetric {
@@ -226,6 +259,8 @@ extension HealthMetricAccessor on HealthMetric {
         return r.distanceKm;
       case HealthMetric.flightsClimbed:
         return r.flightsClimbed.toDouble();
+      case HealthMetric.vo2Max:
+        return r.vo2Max;
     }
   }
 

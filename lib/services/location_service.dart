@@ -53,7 +53,7 @@ class LocationService {
         forceLocationManager: true, // Bypass les restrictions logicielles de batterie
         intervalDuration: const Duration(seconds: 1), // Requête d'une actualisation intense par seconde
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationText: "Wa'a Strava enregistre votre session",
+          notificationText: "Arcade Health enregistre votre session",
           notificationTitle: "Suivi en cours",
           enableWakeLock: true,
         ),

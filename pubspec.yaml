@@ -1,5 +1,5 @@
-name: strava
-description: "A clean, minimalist GPS run-tracking app."
+name: arcade_health
+description: "Arcade Health — suivi santé (sommeil, HRV, VO2 max...) et sport (course, muscu...)."
 publish_to: 'none'
 
 version: 1.0.1+2
@@ -32,6 +32,7 @@ dependencies:
   health: ^13.3.1
   google_sign_in: ^6.2.1
   http: ^1.2.2
+  app_links: ^6.3.3
 
 dev_dependencies:
   flutter_test:

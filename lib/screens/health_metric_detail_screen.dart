@@ -25,8 +25,11 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final meta = _metaFor(widget.metric);
-    final series = HealthStore.series(widget.metric, _range);
-    final values = series.map((e) => e.value).where((v) => v > 0).toList();
+    final series = HealthStore.series(widget.metric, _range)
+        .where((e) => e.value > 0)
+        .toList();
+    final values = series.map((e) => e.value).toList();
+    final dates = series.map((e) => e.key).toList();
     final baseline = HealthStore.baseline(widget.metric, window: _range);
 
     final hasData = values.isNotEmpty;
@@ -102,6 +105,9 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
                     color: widget.accent,
                     baseline: baseline > 0 ? baseline : null,
                     height: 200,
+                    dates: dates,
+                    unit: meta.unit,
+                    fractionDigits: meta.fractionDigits,
                   )
                 : _SparseState(
                     value: hasData ? meta.format(current) : null,
@@ -440,5 +446,15 @@ _MetricMeta _metaFor(HealthMetric m) {
           explainTitle: 'À PROPOS',
           explain: 'Nombre d\'étages gravis dans la journée. Contribue au score '
               'd\'activité et sollicite le système cardio.');
+    case HealthMetric.vo2Max:
+      return const _MetricMeta(
+          title: 'VO2 max',
+          unit: 'ml/kg/min',
+          fractionDigits: 1,
+          explainTitle: 'À PROPOS',
+          explain: 'Volume maximal d\'oxygène que ton corps peut utiliser à '
+              'l\'effort — un des meilleurs indicateurs de ta condition '
+              'cardiovasculaire. Mesuré par ta montre et lu via Google Health '
+              'API (nécessite d\'être connecté depuis le profil).');
   }
 }

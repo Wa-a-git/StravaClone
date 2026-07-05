@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
+import '../services/export_service.dart';
+import '../services/google_health_api_service.dart';
 import '../services/health_connect_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
@@ -81,8 +85,20 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
 
     // Après backfill, le jour courant est garanti stocké : on le lit.
     final now = DateTime.now();
-    final record = HealthStore.recordFor(now);
-    final snapshot = record?.toSnapshot() ?? await _service.getTodaySnapshot();
+    var record = HealthStore.recordFor(now);
+    var snapshot = record?.toSnapshot() ?? await _service.getTodaySnapshot();
+
+    // VO2 max : source séparée (Google Health API, cloud), best-effort — ne
+    // bloque jamais le reste du dashboard si non connecté ou en erreur.
+    final vo2Max = await _fetchVo2Max();
+    if (vo2Max != null && vo2Max > 0) {
+      snapshot = snapshot.copyWith(vo2Max: vo2Max);
+      if (record != null) {
+        record = record.copyWith(vo2Max: vo2Max);
+        await HealthStore.upsertDay(record);
+      }
+    }
+
     final scores = record != null
         ? HealthScores(
             sleepScore: record.sleepScore,
@@ -96,7 +112,26 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
     // Récompense l'XP santé du jour (idempotent) dans le pool commun.
     final xp = await HealthGameService.awardDailyXp(now, scores, snapshot);
 
+    // Export vault (mycelium) best-effort, fire-and-forget : n'attend pas le
+    // réseau pour afficher le dashboard.
+    if (record != null) {
+      unawaited(ExportService.saveHealthDayAsMarkdown(record));
+    }
+
     _recompute(snapshot, scores, xp);
+  }
+
+  /// VO2 max le plus récent via Google Health API, si connecté. Null si non
+  /// connecté ou en erreur — jamais d'exception propagée (métrique premium
+  /// optionnelle, ne doit jamais casser le reste du dashboard).
+  Future<double?> _fetchVo2Max() async {
+    try {
+      final api = GoogleHealthApiService();
+      if (!await api.isConnected()) return null;
+      return await api.getLatestVo2Max();
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Recalcule uniquement les insights (après un feedback pouce haut/bas),

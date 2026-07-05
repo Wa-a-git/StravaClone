@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../models/activity.dart';
+import '../models/daily_health_record.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
 
@@ -78,13 +79,15 @@ class ExportService {
         if (await http.available()) {
           try {
             final path = await writeToVault(http,
-                subdir: 'Strava',
-                activity: activity,
+                subdir: 'Sport/Exercice',
                 fileBase: fileBase,
                 id: id,
+                date: activity.date,
+                myceliumClass: 'exercice',
                 fields: fields,
                 body: body,
-                injectDaily: true);
+                dailySection: 'Sport',
+                dailyLine: _dailyLine(activity, fileBase));
             return 'Windroid: $path';
           } catch (_) {
             // Windroid a lâché en cours de route → on bascule sur le local.
@@ -96,65 +99,144 @@ class ExportService {
       final savedPath = getSavedExportDirectory();
       if (savedPath == null) return null;
 
-      // Racine du vault connue → on écrit dans Strava/ + note du jour, comme via
-      // Windroid. Sinon écriture directe dans le dossier choisi (sans note du jour).
+      // Racine du vault connue → on écrit dans Sport/Exercice/ + note du jour,
+      // comme via Windroid. Sinon écriture directe dans le dossier choisi
+      // (sans note du jour).
       final vaultRoot = _findVaultRoot(savedPath);
       if (vaultRoot != null) {
         final path = await writeToVault(LocalVaultSource(vaultRoot),
-            subdir: 'Strava',
-            activity: activity,
+            subdir: 'Sport/Exercice',
             fileBase: fileBase,
             id: id,
+            date: activity.date,
+            myceliumClass: 'exercice',
             fields: fields,
             body: body,
-            injectDaily: true);
+            dailySection: 'Sport',
+            dailyLine: _dailyLine(activity, fileBase));
         return '$vaultRoot/$path';
       }
       final path = await writeToVault(LocalVaultSource(savedPath),
           subdir: '',
-          activity: activity,
           fileBase: fileBase,
           id: id,
+          date: activity.date,
+          myceliumClass: 'exercice',
           fields: fields,
-          body: body,
-          injectDaily: false);
+          body: body);
       return '$savedPath/$path';
     } catch (e) {
       return null;
     }
   }
 
-  /// Écrit la fiche d'activité (+ éventuellement le résumé du jour) via une
-  /// source vault quelconque (Windroid `HttpVaultSource` ou locale
-  /// `LocalVaultSource`). Isolé et public pour être testable avec une source
-  /// en mémoire. Renvoie le chemin relatif de la fiche créée.
+  /// Écrit la fiche santé du jour dans `Sport/Santé/` (une fiche par jour,
+  /// ré-écrite à chaque synchro) + injecte un résumé sous `## Santé` dans la
+  /// note du jour. Best-effort : jamais d'exception propagée (appelé en
+  /// fire-and-forget depuis le provider santé).
+  static Future<String?> saveHealthDayAsMarkdown(DailyHealthRecord record) async {
+    try {
+      final fileBase = record.key; // yyyy-MM-dd, une fiche par jour
+      final fields = <String, Object?>{
+        'steps': record.steps,
+        'distance_km': record.distanceKm.toStringAsFixed(2),
+        'active_calories': record.activeCalories.round(),
+        if (record.restingHeartRate > 0)
+          'resting_heart_rate': record.restingHeartRate.round(),
+        if (record.hrv > 0) 'hrv': record.hrv.round(),
+        if (record.spo2 > 0) 'spo2': record.spo2.round(),
+        if (record.respiratoryRate > 0)
+          'respiratory_rate': double.parse(record.respiratoryRate.toStringAsFixed(1)),
+        if (record.vo2Max > 0)
+          'vo2_max': double.parse(record.vo2Max.toStringAsFixed(1)),
+        'sleep_hours': double.parse((record.totalSleepMin / 60.0).toStringAsFixed(1)),
+        'bio_score': record.bioScore,
+        'sleep_score': record.sleepScore,
+        'recovery_score': record.recoveryScore,
+        'activity_score': record.activityScore,
+      };
+      final body = _buildHealthBody(record);
+      final dailyLine = _healthDailyLine(record);
+      // id stable (minuit du jour) : une fiche santé par jour, ré-exportée
+      // idempotente au même id, comme les fiches d'activité.
+      final id = record.date.millisecondsSinceEpoch;
+
+      final windroidUrl = getWindroidBaseUrl();
+      if (windroidUrl.isNotEmpty) {
+        final http = HttpVaultSource(windroidUrl,
+            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
+        if (await http.available()) {
+          try {
+            final path = await writeToVault(http,
+                subdir: 'Sport/Santé',
+                fileBase: fileBase,
+                id: id,
+                date: record.date,
+                myceliumClass: 'sante',
+                fields: fields,
+                body: body,
+                dailySection: 'Santé',
+                dailyLine: dailyLine);
+            return 'Windroid: $path';
+          } catch (_) {
+            // fallback local ci-dessous
+          }
+        }
+      }
+
+      final savedPath = getSavedExportDirectory();
+      if (savedPath == null) return null;
+      final vaultRoot = _findVaultRoot(savedPath);
+      if (vaultRoot != null) {
+        final path = await writeToVault(LocalVaultSource(vaultRoot),
+            subdir: 'Sport/Santé',
+            fileBase: fileBase,
+            id: id,
+            date: record.date,
+            myceliumClass: 'sante',
+            fields: fields,
+            body: body,
+            dailySection: 'Santé',
+            dailyLine: dailyLine);
+        return '$vaultRoot/$path';
+      }
+      return null; // pas de racine de vault connue : pas de fiche isolée hors contexte
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Écrit une fiche (+ éventuellement le résumé du jour) via une source vault
+  /// quelconque (Windroid `HttpVaultSource` ou locale `LocalVaultSource`).
+  /// Isolé et public pour être testable avec une source en mémoire. Renvoie
+  /// le chemin relatif de la fiche créée.
   static Future<String> writeToVault(
     VaultSource source, {
     required String subdir,
-    required Activity activity,
     required String fileBase,
     required int id,
+    required DateTime date,
+    required String myceliumClass,
     required Map<String, Object?> fields,
     required String body,
-    required bool injectDaily,
+    String? dailySection,
+    String? dailyLine,
   }) async {
     final repo = VaultRepository(source);
     final note = await EntryWriter(repo).createEntry(
       subdir: subdir,
       fileName: fileBase,
-      myceliumClass: 'strava',
+      myceliumClass: myceliumClass,
       id: id,
-      date: activity.date,
+      date: date,
       fields: fields,
       body: body,
       overwrite: true, // ré-export = même chemin, pas de doublon
     );
-    if (injectDaily) {
+    if (dailySection != null && dailyLine != null) {
       try {
-        await DailyNoteService(repo).appendToToday(
-            section: 'Sport',
-            content: _dailyLine(activity, fileBase),
-            day: activity.date);
+        await DailyNoteService(repo)
+            .appendToToday(section: dailySection, content: dailyLine, day: date);
       } catch (_) {
         // Note du jour best-effort : n'empêche pas l'écriture de la fiche.
       }
@@ -166,6 +248,14 @@ class ExportService {
   static String _dailyLine(Activity activity, String fileBase) {
     final dist = (activity.distance / 1000).toStringAsFixed(2);
     return '- 🏃 [[$fileBase]] — $dist km en ${activity.durationFormatted} (${activity.avgPace}/km)';
+  }
+
+  /// Ligne de résumé santé injectée dans la note du jour.
+  static String _healthDailyLine(DailyHealthRecord record) {
+    final h = record.totalSleepMin ~/ 60;
+    final m = (record.totalSleepMin % 60).round();
+    return '- 🫀 [[${record.key}]] — Bio-Score ${record.bioScore}/100, '
+        'sommeil ${h}h${m.toString().padLeft(2, '0')}, ${record.steps} pas';
   }
 
   /// Remonte depuis [start] jusqu'à trouver un dossier contenant `.obsidian`
@@ -298,7 +388,7 @@ marker: default, $endPt
         '<h1 style="color: #F55CBD; border-bottom: 2px solid #00FFFF; padding-bottom: 10px; text-shadow: 0 0 10px rgba(245, 92, 189, 0.4); margin-bottom: 5px;">$safeTitle</h1>');
     buffer.writeln();
     buffer.writeln('> [!quote] 📋 **Rapport Technique**');
-    buffer.writeln('> *Données télémétriques enregistrées via Wa\'a Strava.*');
+    buffer.writeln('> *Données télémétriques enregistrées via Arcade Health.*');
     buffer.writeln();
     buffer.writeln('## 📊 Statistiques Globales');
     buffer.writeln();
@@ -353,6 +443,78 @@ marker: default, $endPt
       buffer.writeln('</table>');
       buffer.writeln();
       buffer.write(echartsBlock);
+    }
+
+    return buffer.toString();
+  }
+
+  /// Construit le corps markdown de la fiche santé quotidienne — même
+  /// habillage néon que les fiches de course (dashboard de stats + détail
+  /// sommeil), pour rester au même niveau visuel.
+  static String _buildHealthBody(DailyHealthRecord record) {
+    final dt = record.date;
+    final readableDate =
+        '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    final h = record.totalSleepMin ~/ 60;
+    final m = (record.totalSleepMin % 60).round();
+
+    final buffer = StringBuffer();
+    buffer.writeln();
+    buffer.writeln(
+        '<h1 style="color: #F55CBD; border-bottom: 2px solid #00FFFF; padding-bottom: 10px; text-shadow: 0 0 10px rgba(245, 92, 189, 0.4); margin-bottom: 5px;">🫀 Santé du $readableDate</h1>');
+    buffer.writeln();
+    buffer.writeln('> [!quote] 📋 **Aptitude du jour**');
+    buffer.writeln('> *Données enregistrées via Arcade Health.*');
+    buffer.writeln();
+    buffer.writeln('## 📊 Scores');
+    buffer.writeln();
+    buffer.writeln(
+        '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-around; background-color: #141419; padding: 20px; border-radius: 12px; border: 1px solid #F55CBD; box-shadow: 0 4px 15px rgba(245, 92, 189, 0.15); text-align: center; margin-bottom: 20px; font-family: sans-serif;">');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🧬</span><br/><strong style="color: #00FFFF; font-size: 18px;">${record.bioScore}/100</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Bio-Score</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">😴</span><br/><strong style="color: #9D4EFF; font-size: 18px;">${record.sleepScore}/100</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Sommeil</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🔋</span><br/><strong style="color: #00FFFF; font-size: 18px;">${record.recoveryScore}/100</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Récupération</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🏃</span><br/><strong style="color: #39FF14; font-size: 18px;">${record.activityScore}/100</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Activité</span></div>');
+    buffer.writeln('</div>');
+    buffer.writeln();
+
+    buffer.writeln('## 🩺 Indicateurs');
+    buffer.writeln();
+    buffer.writeln(
+        '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-around; background-color: #141419; padding: 20px; border-radius: 12px; border: 1px solid #00FFFF; text-align: center; margin-bottom: 20px; font-family: sans-serif;">');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">👣</span><br/><strong style="color: #F55CBD; font-size: 18px;">${record.steps}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Pas</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">📏</span><br/><strong style="color: #F55CBD; font-size: 18px;">${record.distanceKm.toStringAsFixed(2)} km</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Distance</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">😴</span><br/><strong style="color: #9D4EFF; font-size: 18px;">${h}h${m.toString().padLeft(2, '0')}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Sommeil</span></div>');
+    if (record.restingHeartRate > 0) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">❤️</span><br/><strong style="color: #FF2E88; font-size: 18px;">${record.restingHeartRate.round()} bpm</strong><br/><span style="color: #AAAAAA; font-size: 12px;">FC repos</span></div>');
+    }
+    if (record.hrv > 0) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">💓</span><br/><strong style="color: #00FFFF; font-size: 18px;">${record.hrv.round()} ms</strong><br/><span style="color: #AAAAAA; font-size: 12px;">HRV</span></div>');
+    }
+    if (record.vo2Max > 0) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🫁</span><br/><strong style="color: #39FF14; font-size: 18px;">${record.vo2Max.toStringAsFixed(1)}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">VO2 max</span></div>');
+    }
+    buffer.writeln('</div>');
+
+    if (record.totalSleepMin > 0) {
+      final deepH = record.sleepDeepMin ~/ 60, deepM = (record.sleepDeepMin % 60).round();
+      final remH = record.sleepRemMin ~/ 60, remM = (record.sleepRemMin % 60).round();
+      final lightH = record.sleepLightMin ~/ 60, lightM = (record.sleepLightMin % 60).round();
+      buffer.writeln();
+      buffer.writeln('## 🛌 Détail sommeil');
+      buffer.writeln();
+      buffer.writeln('- Profond : ${deepH}h${deepM.toString().padLeft(2, '0')}');
+      buffer.writeln('- Paradoxal : ${remH}h${remM.toString().padLeft(2, '0')}');
+      buffer.writeln('- Léger : ${lightH}h${lightM.toString().padLeft(2, '0')}');
     }
 
     return buffer.toString();

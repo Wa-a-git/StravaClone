@@ -118,9 +118,7 @@ class _GoogleHealthCardState extends State<GoogleHealthCard> {
   final _service = GoogleHealthApiService();
   bool _connected = false;
   bool _busy = false;
-  bool _testing = false;
   String? _error;
-  String? _apiStatus;
 
   @override
   void initState() {
@@ -130,26 +128,15 @@ class _GoogleHealthCardState extends State<GoogleHealthCard> {
     });
   }
 
-  Future<void> _testApi() async {
-    setState(() {
-      _testing = true;
-      _apiStatus = null;
-    });
-    try {
-      final identity = await _service.getIdentity();
-      if (identity == null) {
-        _apiStatus = 'L\'API n\'a pas répondu (token expiré ? reconnecte-toi).';
-      } else {
-        final vo2 = await _service.getLatestVo2Max();
-        _apiStatus = vo2 != null
-            ? 'API OK ✓ — VO2 max : ${vo2.toStringAsFixed(1)}'
-            : 'API OK ✓ — VO2 max pas encore dispo (en calibrage sur la montre).';
-      }
-    } catch (e) {
-      _apiStatus = 'Erreur API : $e';
-    } finally {
-      if (mounted) setState(() => _testing = false);
-    }
+  /// Statut VO2 max lu depuis les données santé locales déjà synchronisées
+  /// (le dashboard Santé se charge du fetch réel) — cette carte se contente
+  /// de refléter l'état, plus de bouton de test manuel.
+  String? get _vo2Status {
+    if (!_connected) return null;
+    final vo2 = HealthStore.recordFor(DateTime.now())?.vo2Max ?? 0;
+    return vo2 > 0
+        ? 'VO2 max synchronisé : ${vo2.toStringAsFixed(1)} ml/kg/min'
+        : 'En attente de calibration montre (VO2 max pas encore dispo).';
   }
 
   Future<void> _toggle() async {
@@ -191,7 +178,7 @@ class _GoogleHealthCardState extends State<GoogleHealthCard> {
           const SizedBox(height: 10),
           Text(
             _connected
-                ? 'Connecté ✓ — les données premium (VO2 max, préparation…) arrivent bientôt.'
+                ? 'Connecté ✓ — le VO2 max synchronise automatiquement dans l\'onglet Santé.'
                 : 'Connecte-toi pour débloquer VO2 max, préparation et historique long, au-delà de Health Connect.',
             style: const TextStyle(
                 color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
@@ -210,32 +197,10 @@ class _GoogleHealthCardState extends State<GoogleHealthCard> {
             busy: _busy,
             onPressed: _toggle,
           ),
-          if (_connected) ...[
+          if (_vo2Status != null) ...[
             const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 40,
-              child: OutlinedButton.icon(
-                onPressed: _testing ? null : _testApi,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kNeonGreen,
-                  side: BorderSide(color: kNeonGreen.withOpacity(0.6)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: _testing
-                    ? const SizedBox(
-                        width: 15,
-                        height: 15,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: kNeonGreen))
-                    : const Icon(Icons.science_rounded, size: 16),
-                label: const Text('Tester l\'API (VO2 max)',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ],
-          if (_apiStatus != null) ...[
-            const SizedBox(height: 10),
-            Text(_apiStatus!, style: const TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            Text(_vo2Status!,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 12)),
           ],
         ],
       ),

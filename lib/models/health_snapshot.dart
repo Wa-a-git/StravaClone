@@ -107,6 +107,10 @@ class HealthSnapshot {
   final double distanceKm;
   final SleepBreakdown sleep;
 
+  /// VO2 max (ml/kg/min), source Google Health API (cloud). 0 = indisponible
+  /// (non connecté, ou pas encore calibré par la montre).
+  final double vo2Max;
+
   const HealthSnapshot({
     this.steps = 0,
     this.activeCalories = 0,
@@ -121,5 +125,23 @@ class HealthSnapshot {
     this.flightsClimbed = 0,
     this.distanceKm = 0,
     this.sleep = const SleepBreakdown(),
+    this.vo2Max = 0,
   });
+
+  HealthSnapshot copyWith({double? vo2Max}) => HealthSnapshot(
+        steps: steps,
+        activeCalories: activeCalories,
+        totalCalories: totalCalories,
+        avgHeartRate: avgHeartRate,
+        restingHeartRate: restingHeartRate,
+        restingHeartRateBaseline: restingHeartRateBaseline,
+        spo2: spo2,
+        respiratoryRate: respiratoryRate,
+        hrv: hrv,
+        hrvBaseline: hrvBaseline,
+        flightsClimbed: flightsClimbed,
+        distanceKm: distanceKm,
+        sleep: sleep,
+        vo2Max: vo2Max ?? this.vo2Max,
+      );
 }

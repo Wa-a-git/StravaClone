@@ -1,11 +1,23 @@
 // lib/main.dart
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'models/activity.dart';
+import 'screens/detail_screen.dart';
+import 'screens/health_history_screen.dart';
+import 'services/health_store.dart';
 import 'services/hive_service.dart';
 import 'screens/shell_screen.dart';
 import 'widgets/arcade_fx.dart';
 import 'theme.dart';
+
+/// Clé de navigation globale : les deep links (Marble → fiche précise)
+/// arrivent en dehors de tout `BuildContext` d'écran, il faut donc pouvoir
+/// pousser une route depuis l'extérieur de l'arbre de widgets.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,16 +32,83 @@ void main() async {
   ));
 
   await HiveService.init();
-  runApp(const ProviderScope(child: StravaApp()));
+  runApp(const ProviderScope(child: ArcadeHealthApp()));
 }
 
-class StravaApp extends StatelessWidget {
-  const StravaApp({super.key});
+class ArcadeHealthApp extends StatefulWidget {
+  const ArcadeHealthApp({super.key});
+
+  @override
+  State<ArcadeHealthApp> createState() => _ArcadeHealthAppState();
+}
+
+class _ArcadeHealthAppState extends State<ArcadeHealthApp> {
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  /// Écoute les liens `arcadehealth://<classe>/<id>` envoyés par Marble
+  /// (tap sur une fiche sport/santé dans l'aperçu du jour) — à froid
+  /// ([getInitialLink]) et à chaud (app déjà lancée, [uriLinkStream]).
+  Future<void> _initDeepLinks() async {
+    try {
+      final initial = await _appLinks.getInitialLink();
+      if (initial != null) _handleDeepLink(initial);
+    } catch (_) {
+      // Pas de lien initial ou plateforme non supportée : rien à faire.
+    }
+    _linkSub = _appLinks.uriLinkStream.listen(_handleDeepLink, onError: (_) {});
+  }
+
+  void _handleDeepLink(Uri uri) {
+    if (uri.scheme != 'arcadehealth') return;
+    final id = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+    if (id == null || id.isEmpty) return;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+
+    switch (uri.host) {
+      case 'exercice':
+        final epochMs = int.tryParse(id);
+        if (epochMs == null) return;
+        Activity? found;
+        for (final a in HiveService.getAllActivities()) {
+          if (a.date.millisecondsSinceEpoch == epochMs) {
+            found = a;
+            break;
+          }
+        }
+        if (found != null) {
+          nav.push(MaterialPageRoute(builder: (_) => DetailScreen(activity: found!)));
+        }
+        break;
+      case 'sante':
+        final date = DateTime.tryParse(id);
+        if (date == null) return;
+        final record = HealthStore.recordFor(date);
+        if (record != null) {
+          nav.push(MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: record)));
+        }
+        break;
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Strava',
+      navigatorKey: navigatorKey,
+      title: 'Arcade Health',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
       // Overlay CRT (scanlines + léger vignettage) — discret, garde l'identité

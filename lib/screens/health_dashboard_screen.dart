@@ -17,6 +17,7 @@ import '../widgets/health_charts.dart';
 import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
+import 'health_history_screen.dart';
 import 'health_metric_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'detail_screen.dart';
@@ -105,7 +106,7 @@ class HealthDashboardScreen extends ConsumerWidget {
                     ],
                     // ── Feed chronologique de la journée ──
                     const _FeedHeader(time: 'MAINTENANT', title: 'Ton aptitude', accent: kNeonCyan),
-                    const SizedBox(height: 12),
+                    const _FeedConnector(color: kNeonCyan),
                     FadeSlideIn(child: _BioScorePanel(scores: scores, insights: st.insights)),
                     const SizedBox(height: 12),
                     _SubScoresRow(scores: scores),
@@ -116,7 +117,7 @@ class HealthDashboardScreen extends ConsumerWidget {
                       title: 'Sommeil',
                       accent: kNeonViolet,
                     ),
-                    const SizedBox(height: 12),
+                    const _FeedConnector(color: kNeonViolet),
                     FadeSlideIn(
                       child: _SleepPanel(
                           sleep: st.snapshot.sleep, score: scores.sleepScore),
@@ -138,7 +139,7 @@ class HealthDashboardScreen extends ConsumerWidget {
                             : 'Activité suivie',
                         accent: kNeonPink,
                       ),
-                      const SizedBox(height: 12),
+                      const _FeedConnector(color: kNeonPink),
                       for (final run in todayRuns) ...[
                         _ActivityFeedCard(
                           activity: run,
@@ -154,7 +155,7 @@ class HealthDashboardScreen extends ConsumerWidget {
                     ],
 
                     const _FeedHeader(time: 'AUJOURD\'HUI', title: 'Activité & corps', accent: kNeonGreen),
-                    const SizedBox(height: 12),
+                    const _FeedConnector(color: kNeonGreen),
                     _MetricsGrid(snapshot: st.snapshot),
                     const SizedBox(height: 12),
                     _HealthXpBanner(
@@ -166,7 +167,7 @@ class HealthDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: 24),
 
                     const _FeedHeader(time: 'ANALYSE', title: 'Recommandations', accent: kNeonGreen),
-                    const SizedBox(height: 12),
+                    const _FeedConnector(color: kNeonGreen),
                     _InsightsPanel(
                       insights: st.insights,
                       onFeedback: () =>
@@ -175,6 +176,17 @@ class HealthDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: 24),
 
                     _buildQuestPanels(context, ref, st),
+                    const SizedBox(height: 20),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const HealthHistoryScreen()),
+                        ),
+                        child: const Text('Voir tout l\'historique santé →'),
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 32),
                 ],
@@ -395,6 +407,7 @@ class _BioScorePanel extends StatelessWidget {
 
     return _HPanel(
       accent: tier.color,
+      hero: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -680,6 +693,16 @@ class _MetricsGrid extends StatelessWidget {
           'ms',
           Icons.monitor_heart_rounded,
           kNeonCyan),
+      // VO2 max : premium Google Health API, affiché seulement s'il y a une
+      // valeur réelle (pas de carte "--" pour une donnée jamais connectée).
+      if (snapshot.vo2Max > 0)
+        _MetricSpec(
+            'VO2 max',
+            HealthMetric.vo2Max,
+            snapshot.vo2Max.toStringAsFixed(1),
+            'ml/kg/min',
+            Icons.speed_rounded,
+            kNeonGreen),
       _MetricSpec(
           'SpO2',
           HealthMetric.spo2,
@@ -826,13 +849,17 @@ class _MetricCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(spec.unit,
-                      style: TextStyle(
-                          color: accent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(spec.unit,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ),
                 ),
               ],
             ),
@@ -1004,6 +1031,21 @@ class _SleepLegend extends StatelessWidget {
             style:
                 const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
       ],
+    );
+  }
+}
+
+// ── Connecteur vertical discret entre la pastille d'un en-tête de feed et son
+// panneau — donne un vrai fil chronologique au lieu de blocs isolés.
+class _FeedConnector extends StatelessWidget {
+  final Color color;
+  const _FeedConnector({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 3.5),
+      child: Container(width: 1.5, height: 14, color: color.withOpacity(0.35)),
     );
   }
 }
@@ -1477,7 +1519,7 @@ class _HealthQuestTile extends StatelessWidget {
 // ── Cadre de panneau réutilisable (alias du design system, garde le nom
 // historique pour limiter le diff dans ce fichier) ────────────────────────────
 class _HPanel extends AppPanel {
-  const _HPanel({required super.child, required super.accent});
+  const _HPanel({required super.child, required super.accent, super.hero});
 }
 
 class _HPanelTitle extends PanelTitle {

@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mycelium/mycelium.dart';
 
-import 'package:strava/models/activity.dart';
-import 'package:strava/services/export_service.dart';
+import 'package:arcade_health/models/activity.dart';
+import 'package:arcade_health/services/export_service.dart';
 
 void main() {
   late Directory tmp;
@@ -16,8 +16,8 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('strava_export_');
     vaultRoot = tmp.path;
     Directory('$vaultRoot/.obsidian').createSync(); // marqueur de vault
-    exportDir = '$vaultRoot/Strava';
-    Directory(exportDir).createSync();
+    exportDir = '$vaultRoot/Sport/Exercice';
+    Directory(exportDir).createSync(recursive: true);
 
     Hive.init('${tmp.path}/hive');
     final box = await Hive.openBox('settings');
@@ -49,7 +49,7 @@ void main() {
     expect(path, isNotNull);
 
     final content = File(path!).readAsStringSync();
-    expect(content, contains('type: "[[strava]]"'));
+    expect(content, contains('type: "[[exercice]]"'));
     expect(content, contains('id: ${DateTime(2026, 6, 13, 7, 25).millisecondsSinceEpoch}'));
     expect(content, contains('date: 2026-06-13'));
     expect(content, contains('sport: Run'));
@@ -99,23 +99,25 @@ void main() {
   });
 
   // Chemin "Windroid" : writeToVault sur une source quelconque (ici en mémoire)
-  // → fiche dans Strava/ + résumé dans la note du jour, sans réseau.
-  test('writeToVault écrit dans Strava/ et injecte la note du jour', () async {
+  // → fiche dans Sport/Exercice/ + résumé dans la note du jour, sans réseau.
+  test('writeToVault écrit dans Sport/Exercice/ et injecte la note du jour', () async {
     final source = _InMemoryVaultSource();
     final activity = sampleRun();
     final path = await ExportService.writeToVault(
       source,
-      subdir: 'Strava',
-      activity: activity,
+      subdir: 'Sport/Exercice',
       fileBase: 'tour_test-2026-06-13_07h25',
       id: activity.date.millisecondsSinceEpoch,
+      date: activity.date,
+      myceliumClass: 'exercice',
       fields: {'sport': 'Run', 'distance_km': '2.04'},
       body: '\n# Sortie\n',
-      injectDaily: true,
+      dailySection: 'Sport',
+      dailyLine: '- 🏃 [[tour_test-2026-06-13_07h25]] — 2.04 km',
     );
 
-    expect(path, 'Strava/tour_test-2026-06-13_07h25.md');
-    expect(source.files[path], contains('type: "[[strava]]"'));
+    expect(path, 'Sport/Exercice/tour_test-2026-06-13_07h25.md');
+    expect(source.files[path], contains('type: "[[exercice]]"'));
     expect(source.files[path], contains('sport: Run'));
 
     final daily = source.files['Notes/260613.md'];

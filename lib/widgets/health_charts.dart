@@ -146,12 +146,18 @@ class TrendChart extends StatelessWidget {
   final Color color;
   final double? baseline;
   final double height;
+  final List<DateTime>? dates;
+  final String unit;
+  final int fractionDigits;
   const TrendChart({
     super.key,
     required this.values,
     required this.color,
     this.baseline,
     this.height = 200,
+    this.dates,
+    this.unit = '',
+    this.fractionDigits = 0,
   });
 
   @override
@@ -178,6 +184,9 @@ class TrendChart extends StatelessWidget {
             color: color,
             baseline: baseline,
             progress: t,
+            dates: dates,
+            unit: unit,
+            fractionDigits: fractionDigits,
           ),
         ),
       ),
@@ -190,19 +199,46 @@ class _TrendPainter extends CustomPainter {
   final Color color;
   final double? baseline;
   final double progress;
+  final List<DateTime>? dates;
+  final String unit;
+  final int fractionDigits;
   _TrendPainter({
     required this.values,
     required this.color,
     required this.baseline,
     required this.progress,
+    this.dates,
+    this.unit = '',
+    this.fractionDigits = 0,
   });
+
+  static String _shortDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+  void _drawLabel(Canvas canvas, String text, Offset anchor,
+      {required bool alignRight, required bool alignTop}) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final dx = alignRight ? anchor.dx - painter.width : anchor.dx;
+    final dy = alignTop ? anchor.dy : anchor.dy - painter.height;
+    painter.paint(canvas, Offset(dx, dy));
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     const leftPad = 4.0;
     const rightPad = 4.0;
     const topPad = 14.0;
-    const bottomPad = 14.0;
+    // Marge basse agrandie pour laisser la place aux dates de l'axe X.
+    final bottomPad = (dates != null && dates!.length >= 2) ? 28.0 : 14.0;
     final chartW = size.width - leftPad - rightPad;
     final chartH = size.height - topPad - bottomPad;
 
@@ -226,6 +262,26 @@ class _TrendPainter extends CustomPainter {
       final y = topPad + chartH * (g / 3);
       canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y),
           gridPaint);
+    }
+
+    // Légende axe Y : valeurs min/max de l'échelle, alignées sur les lignes
+    // de grille extrêmes (plus de courbe "brute" sans repère chiffré).
+    final maxLabel = '${maxV.toStringAsFixed(fractionDigits)}$unit';
+    final minLabel = '${minV.toStringAsFixed(fractionDigits)}$unit';
+    _drawLabel(canvas, maxLabel, Offset(size.width - rightPad, topPad - 2),
+        alignRight: true, alignTop: false);
+    _drawLabel(
+        canvas, minLabel, Offset(size.width - rightPad, topPad + chartH + 2),
+        alignRight: true, alignTop: true);
+
+    // Légende axe X : dates de début/fin de la période affichée.
+    final ds = dates;
+    if (ds != null && ds.length >= 2) {
+      final dateY = topPad + chartH + 14;
+      _drawLabel(canvas, _shortDate(ds.first), Offset(leftPad, dateY),
+          alignRight: false, alignTop: true);
+      _drawLabel(canvas, _shortDate(ds.last), Offset(size.width - rightPad, dateY),
+          alignRight: true, alignTop: true);
     }
 
     // Ligne de baseline (pointillés)
