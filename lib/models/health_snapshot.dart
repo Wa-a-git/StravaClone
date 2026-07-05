@@ -111,6 +111,10 @@ class HealthSnapshot {
   /// (non connecté, ou pas encore calibré par la montre).
   final double vo2Max;
 
+  /// Dernier poids connu (kg), source Health Connect (balance connectée).
+  /// 0 = jamais pesé.
+  final double weightKg;
+
   const HealthSnapshot({
     this.steps = 0,
     this.activeCalories = 0,
@@ -126,9 +130,10 @@ class HealthSnapshot {
     this.distanceKm = 0,
     this.sleep = const SleepBreakdown(),
     this.vo2Max = 0,
+    this.weightKg = 0,
   });
 
-  HealthSnapshot copyWith({double? vo2Max}) => HealthSnapshot(
+  HealthSnapshot copyWith({double? vo2Max, double? weightKg}) => HealthSnapshot(
         steps: steps,
         activeCalories: activeCalories,
         totalCalories: totalCalories,
@@ -143,5 +148,6 @@ class HealthSnapshot {
         distanceKm: distanceKm,
         sleep: sleep,
         vo2Max: vo2Max ?? this.vo2Max,
+        weightKg: weightKg ?? this.weightKg,
       );
 }

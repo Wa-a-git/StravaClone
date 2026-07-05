@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,14 +105,26 @@ class HealthDashboardScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    // ── Feed chronologique de la journée ──
-                    const _FeedHeader(time: 'MAINTENANT', title: 'Ton aptitude', accent: kNeonCyan),
-                    const _FeedConnector(color: kNeonCyan),
-                    FadeSlideIn(child: _BioScorePanel(scores: scores, insights: st.insights)),
-                    const SizedBox(height: 12),
+                    // ── CADRAN : résumé du jour en un coup d'œil, pas de
+                    // narratif ici — juste les chiffres, comme un tableau de
+                    // bord (inspiré de l'onglet "Aujourd'hui" de Fitbit). ──
+                    FadeSlideIn(child: _BioScorePanel(scores: scores)),
+                    const SizedBox(height: 14),
+                    _WeekDotsStrip(history: st.history),
+                    const SizedBox(height: 14),
                     _SubScoresRow(scores: scores),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+                    _MetricsGrid(snapshot: st.snapshot),
+                    const SizedBox(height: 12),
+                    _HealthXpBanner(
+                      xpToday: st.healthXpToday,
+                      onTap: () => ref
+                          .read(shellIndexProvider.notifier)
+                          .state = 2,
+                    ),
+                    const SizedBox(height: 28),
 
+                    // ── FEED : narratif chronologique de la journée ──
                     _FeedHeader(
                       time: _wakeLabel(st.snapshot.sleep) ?? 'CETTE NUIT',
                       title: 'Sommeil',
@@ -153,18 +166,6 @@ class HealthDashboardScreen extends ConsumerWidget {
                       ],
                       const SizedBox(height: 14),
                     ],
-
-                    const _FeedHeader(time: 'AUJOURD\'HUI', title: 'Activité & corps', accent: kNeonGreen),
-                    const _FeedConnector(color: kNeonGreen),
-                    _MetricsGrid(snapshot: st.snapshot),
-                    const SizedBox(height: 12),
-                    _HealthXpBanner(
-                      xpToday: st.healthXpToday,
-                      onTap: () => ref
-                          .read(shellIndexProvider.notifier)
-                          .state = 2,
-                    ),
-                    const SizedBox(height: 24),
 
                     const _FeedHeader(time: 'ANALYSE', title: 'Recommandations', accent: kNeonGreen),
                     const _FeedConnector(color: kNeonGreen),
@@ -392,8 +393,7 @@ class _PermissionWarning extends StatelessWidget {
 // ── Héros Bio-Score ───────────────────────────────────────────────────────────
 class _BioScorePanel extends StatelessWidget {
   final HealthScores scores;
-  final List<HealthInsight> insights;
-  const _BioScorePanel({required this.scores, required this.insights});
+  const _BioScorePanel({required this.scores});
 
   @override
   Widget build(BuildContext context) {
@@ -403,7 +403,6 @@ class _BioScorePanel extends StatelessWidget {
       scores.bioScore.toDouble(),
       HealthStore.baseline(HealthMetric.bioScore),
     );
-    final topInsight = insights.isNotEmpty ? insights.first : null;
 
     return _HPanel(
       accent: tier.color,
@@ -450,30 +449,79 @@ class _BioScorePanel extends StatelessWidget {
               ),
             ],
           ),
-          if (topInsight != null) ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: topInsight.color.withOpacity(0.4)),
-              ),
-              child: Row(
+        ],
+      ),
+    );
+  }
+}
+
+// ── Bandeau hebdo : 7 points (L-D), rempli si l'objectif de pas du jour est
+// atteint. Uniquement le fait (atteint/pas atteint), avec le chiffre réel en
+// légende — pas de verdict, juste "combien de jours" cette semaine. ──────────
+class _WeekDotsStrip extends StatelessWidget {
+  final List<DailyHealthRecord> history;
+  const _WeekDotsStrip({required this.history});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStart = GameService.startOfWeek(now);
+    final byKey = {for (final r in history) r.key: r};
+    const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+    final days = List.generate(7, (i) => weekStart.add(Duration(days: i)));
+    final active = days
+        .map((d) =>
+            (byKey[DailyHealthRecord.keyFor(d)]?.steps ?? 0) >=
+            HealthGameService.stepsGoal)
+        .toList();
+    final activeCount = active.where((a) => a).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$activeCount jour${activeCount > 1 ? 's' : ''} ≥ 10 000 pas cette semaine',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: List.generate(7, (i) {
+            final isFuture = days[i].isAfter(today);
+            final isActive = active[i];
+            return Expanded(
+              child: Column(
                 children: [
-                  Icon(topInsight.icon, color: topInsight.color, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(topInsight.text,
-                        style: const TextStyle(
-                            color: AppColors.textPrimary, fontSize: 12)),
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive ? kNeonGreen : AppColors.surfaceLight,
+                      border: Border.all(
+                          color: isActive ? kNeonGreen : AppColors.border),
+                    ),
+                    child: isActive
+                        ? const Icon(Icons.directions_walk_rounded,
+                            size: 13, color: Colors.black)
+                        : null,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    labels[i],
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: isFuture
+                            ? AppColors.muted
+                            : AppColors.textSecondary),
                   ),
                 ],
               ),
-            ),
-          ],
-        ],
-      ),
+            );
+          }),
+        ),
+      ],
     );
   }
 }
@@ -654,13 +702,7 @@ class _HealthXpBanner extends StatelessWidget {
 }
 
 // ── Grille de métriques avec sparklines + tendances ───────────────────────────
-class _MetricsGrid extends StatelessWidget {
-  final HealthSnapshot snapshot;
-  const _MetricsGrid({required this.snapshot});
-
-  @override
-  Widget build(BuildContext context) {
-    final metrics = <_MetricSpec>[
+List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
       _MetricSpec('Pas', HealthMetric.steps, snapshot.steps.toString(), 'pas',
           Icons.directions_walk_rounded, kNeonGreen),
       _MetricSpec(
@@ -693,8 +735,9 @@ class _MetricsGrid extends StatelessWidget {
           'ms',
           Icons.monitor_heart_rounded,
           kNeonCyan),
-      // VO2 max : premium Google Health API, affiché seulement s'il y a une
-      // valeur réelle (pas de carte "--" pour une donnée jamais connectée).
+      // VO2 max / Poids : sources premium ou peu fréquentes, affichées
+      // seulement s'il y a une valeur réelle (pas de carte "--" pour une
+      // donnée jamais connectée).
       if (snapshot.vo2Max > 0)
         _MetricSpec(
             'VO2 max',
@@ -703,6 +746,14 @@ class _MetricsGrid extends StatelessWidget {
             'ml/kg/min',
             Icons.speed_rounded,
             kNeonGreen),
+      if (snapshot.weightKg > 0)
+        _MetricSpec(
+            'Poids',
+            HealthMetric.weightKg,
+            snapshot.weightKg.toStringAsFixed(1),
+            'kg',
+            Icons.monitor_weight_rounded,
+            kNeonAmber),
       _MetricSpec(
           'SpO2',
           HealthMetric.spo2,
@@ -728,33 +779,121 @@ class _MetricsGrid extends StatelessWidget {
           const Color(0xFFFFC107)),
     ];
 
+class _MetricsGrid extends StatefulWidget {
+  final HealthSnapshot snapshot;
+  const _MetricsGrid({required this.snapshot});
+
+  @override
+  State<_MetricsGrid> createState() => _MetricsGridState();
+}
+
+class _MetricsGridState extends State<_MetricsGrid> {
+  @override
+  Widget build(BuildContext context) {
+    final all = _allMetricSpecs(widget.snapshot);
+    final visible =
+        all.where((m) => !MetricsPreferenceStore.isHidden(m.metric)).toList();
+
     return _HPanel(
       accent: kNeonCyan,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _HPanelTitle('MÉTRIQUES & TENDANCES'),
-          const SizedBox(height: 14),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const spacing = 10.0;
-              // 2 colonnes fiables : on retire une marge de sécurité pour
-              // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
-              final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: metrics
-                    .map((m) => SizedBox(
-                          width: cardW,
-                          child: _MetricCard(spec: m),
-                        ))
-                    .toList(),
-              );
-            },
+          _HPanelTitle(
+            'MÉTRIQUES & TENDANCES',
+            trailing: GestureDetector(
+              onTap: () => _openCustomize(context, all),
+              behavior: HitTestBehavior.opaque,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.tune_rounded, size: 14, color: AppColors.textSecondary),
+                  SizedBox(width: 4),
+                  Text('Personnaliser',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                ],
+              ),
+            ),
           ),
+          const SizedBox(height: 14),
+          if (visible.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Toutes les métriques sont masquées.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 10.0;
+                // 2 colonnes fiables : on retire une marge de sécurité pour
+                // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
+                final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: visible
+                      .map((m) => SizedBox(
+                            width: cardW,
+                            child: _MetricCard(spec: m),
+                          ))
+                      .toList(),
+                );
+              },
+            ),
         ],
       ),
+    );
+  }
+
+  Future<void> _openCustomize(BuildContext context, List<_MetricSpec> all) async {
+    await showAppSheet(context: context, child: _MetricsCustomizeSheet(specs: all));
+    if (mounted) setState(() {});
+  }
+}
+
+// ── Feuille "Personnaliser" : masque/affiche des cartes de la grille ─────────
+class _MetricsCustomizeSheet extends StatefulWidget {
+  final List<_MetricSpec> specs;
+  const _MetricsCustomizeSheet({required this.specs});
+
+  @override
+  State<_MetricsCustomizeSheet> createState() => _MetricsCustomizeSheetState();
+}
+
+class _MetricsCustomizeSheetState extends State<_MetricsCustomizeSheet> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'PERSONNALISER',
+          style: TextStyle(
+              fontFamily: kArcadeFont,
+              color: kNeonCyan,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1),
+        ),
+        const SizedBox(height: 4),
+        const Text('Choisis les cartes affichées dans le dashboard.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        const SizedBox(height: 10),
+        for (final spec in widget.specs)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(spec.title,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+            activeThumbColor: spec.color,
+            value: !MetricsPreferenceStore.isHidden(spec.metric),
+            onChanged: (v) {
+              MetricsPreferenceStore.setHidden(spec.metric, !v);
+              setState(() {});
+            },
+          ),
+      ],
     );
   }
 }
@@ -832,7 +971,11 @@ class _MetricCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (!noData) TrendArrow(dir: trend.dir, good: trend.good),
+                // Poids exclu : une hausse/baisse n'est ni bonne ni mauvaise
+                // dans l'absolu (dépend de l'objectif de chacun) — la flèche
+                // colorée serait un verdict qu'on n'a pas les moyens d'affirmer.
+                if (!noData && spec.metric != HealthMetric.weightKg)
+                  TrendArrow(dir: trend.dir, good: trend.good),
               ],
             ),
             const SizedBox(height: 8),
@@ -1392,7 +1535,10 @@ class _HealthQuestsPanel extends StatelessWidget {
             final progress = HealthQuestProgress(
                 def: q, current: current, claimed: claimed);
             return _HealthQuestTile(
-                progress: progress, accent: accent, onClaim: () => onClaim(q));
+                progress: progress,
+                accent: accent,
+                weekRecords: weekRecords,
+                onClaim: () => onClaim(q));
           }),
         ],
       ),
@@ -1403,9 +1549,14 @@ class _HealthQuestsPanel extends StatelessWidget {
 class _HealthQuestTile extends StatelessWidget {
   final HealthQuestProgress progress;
   final Color accent;
+  final List<DailyHealthRecord> weekRecords;
   final VoidCallback onClaim;
-  const _HealthQuestTile(
-      {required this.progress, required this.accent, required this.onClaim});
+  const _HealthQuestTile({
+    required this.progress,
+    required this.accent,
+    required this.weekRecords,
+    required this.onClaim,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1491,6 +1642,10 @@ class _HealthQuestTile extends StatelessWidget {
                       color: AppColors.textSecondary, fontSize: 11)),
             ],
           ),
+          if (q.isWeekly) ...[
+            const SizedBox(height: 12),
+            _WeeklyQuestBars(quest: q, weekRecords: weekRecords, color: accent),
+          ],
           if (canClaim) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -1523,6 +1678,80 @@ class _HealthQuestTile extends StatelessWidget {
   }
 }
 
+// ── Barres quotidiennes d'une quête hebdo : 7 barres (L-D) + coche sur les
+// jours où le seuil journalier de référence est atteint. Chaque barre porte
+// la valeur réelle du jour (via sa hauteur) — pas d'interprétation, juste la
+// progression jour par jour vers l'objectif de la semaine. ──────────────────
+class _WeeklyQuestBars extends StatelessWidget {
+  final HealthQuestDef quest;
+  final List<DailyHealthRecord> weekRecords;
+  final Color color;
+  const _WeeklyQuestBars(
+      {required this.quest, required this.weekRecords, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final weekStart = GameService.startOfWeek(DateTime.now());
+    final byKey = {for (final r in weekRecords) r.key: r};
+    const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+    final values = <double>[];
+    final met = <bool>[];
+    for (int i = 0; i < 7; i++) {
+      final day = weekStart.add(Duration(days: i));
+      final rec = byKey[DailyHealthRecord.keyFor(day)];
+      switch (quest.metric) {
+        case HealthQuestMetric.weekSteps:
+          final steps = rec?.steps ?? 0;
+          values.add(steps.toDouble());
+          met.add(steps >= HealthGameService.stepsGoal);
+          break;
+        case HealthQuestMetric.weekSleepNights:
+          final hours = (rec?.totalSleepMin ?? 0) / 60.0;
+          values.add(hours);
+          met.add(hours >= 7);
+          break;
+        default:
+          values.add(0);
+          met.add(false);
+      }
+    }
+    final maxV = values.fold<double>(1, math.max);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(7, (i) {
+        final barH = (values[i] / maxV * 32).clamp(3.0, 32.0);
+        return Expanded(
+          child: Column(
+            children: [
+              SizedBox(
+                height: 14,
+                child: met[i]
+                    ? Icon(Icons.check_circle_rounded, size: 13, color: color)
+                    : null,
+              ),
+              const SizedBox(height: 3),
+              Container(
+                height: barH,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: met[i] ? color : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i],
+                  style:
+                      const TextStyle(color: AppColors.textSecondary, fontSize: 9)),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
 // ── Cadre de panneau réutilisable (alias du design system, garde le nom
 // historique pour limiter le diff dans ce fichier) ────────────────────────────
 class _HPanel extends AppPanel {
@@ -1530,5 +1759,5 @@ class _HPanel extends AppPanel {
 }
 
 class _HPanelTitle extends PanelTitle {
-  const _HPanelTitle(super.text, {super.color = kNeonCyan});
+  const _HPanelTitle(super.text, {super.color = kNeonCyan, super.trailing});
 }

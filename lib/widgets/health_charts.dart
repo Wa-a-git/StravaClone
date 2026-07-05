@@ -139,6 +139,20 @@ class _SparklinePainter extends CustomPainter {
       old.progress != progress || old.values != values || old.color != color;
 }
 
+/// Bande de référence médicalement établie (ex. SpO2 saine 95-100%), dessinée
+/// en fond du graphique. On ne l'utilise que pour des plages consensuelles et
+/// non ambiguës (jamais pour FC repos/HRV/VO2 max, trop individuelles pour
+/// qu'une bande unique soit honnête) — la donnée réelle reste toujours au
+/// premier plan, la bande n'est qu'un repère visuel supplémentaire.
+class ChartZone {
+  final double min;
+  final double max;
+  final Color color;
+  final String label;
+  const ChartZone(
+      {required this.min, required this.max, required this.color, required this.label});
+}
+
 /// Courbe complète avec axes légers, ligne de baseline et étiquettes min/max.
 /// Utilisée dans l'écran de détail.
 class TrendChart extends StatelessWidget {
@@ -149,6 +163,7 @@ class TrendChart extends StatelessWidget {
   final List<DateTime>? dates;
   final String unit;
   final int fractionDigits;
+  final ChartZone? zone;
   const TrendChart({
     super.key,
     required this.values,
@@ -158,6 +173,7 @@ class TrendChart extends StatelessWidget {
     this.dates,
     this.unit = '',
     this.fractionDigits = 0,
+    this.zone,
   });
 
   @override
@@ -187,6 +203,7 @@ class TrendChart extends StatelessWidget {
             dates: dates,
             unit: unit,
             fractionDigits: fractionDigits,
+            zone: zone,
           ),
         ),
       ),
@@ -202,6 +219,7 @@ class _TrendPainter extends CustomPainter {
   final List<DateTime>? dates;
   final String unit;
   final int fractionDigits;
+  final ChartZone? zone;
   _TrendPainter({
     required this.values,
     required this.color,
@@ -210,6 +228,7 @@ class _TrendPainter extends CustomPainter {
     this.dates,
     this.unit = '',
     this.fractionDigits = 0,
+    this.zone,
   });
 
   static String _shortDate(DateTime d) =>
@@ -248,11 +267,31 @@ class _TrendPainter extends CustomPainter {
       minV = math.min(minV, baseline!);
       maxV = math.max(maxV, baseline!);
     }
+    // La bande de référence doit toujours être entièrement visible, même si
+    // les valeurs du jour sont loin d'elle — sinon on perdrait justement le
+    // repère qui permet de voir "à quel point" on s'en écarte.
+    final z = zone;
+    if (z != null) {
+      minV = math.min(minV, z.min);
+      maxV = math.max(maxV, z.max);
+    }
     final range = (maxV - minV).abs() < 1e-6 ? 1.0 : (maxV - minV);
 
     double yFor(double v) =>
         topPad + chartH - ((v - minV) / range) * chartH;
     double xFor(int i) => leftPad + chartW * (i / (values.length - 1));
+
+    // Bande de référence (dessinée avant tout le reste, en fond).
+    if (z != null) {
+      final zTop = yFor(z.max).clamp(topPad, topPad + chartH);
+      final zBottom = yFor(z.min).clamp(topPad, topPad + chartH);
+      canvas.drawRect(
+        Rect.fromLTRB(leftPad, zTop, size.width - rightPad, zBottom),
+        Paint()..color = z.color.withOpacity(0.12),
+      );
+      _drawLabel(canvas, z.label, Offset(leftPad, zTop + 1),
+          alignRight: false, alignTop: true);
+    }
 
     // Grille horizontale légère (4 lignes)
     final gridPaint = Paint()

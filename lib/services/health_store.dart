@@ -5,6 +5,31 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/daily_health_record.dart';
 
+/// Préférence d'affichage de la grille de métriques du dashboard santé
+/// ("Personnaliser") — quelles cartes l'utilisateur a choisi de masquer.
+/// Persistée dans la boîte 'settings'. Par défaut, rien n'est masqué.
+class MetricsPreferenceStore {
+  static Box get _box => Hive.box('settings');
+  static const _key = 'dashboard_hidden_metrics';
+
+  static Set<String> get _hidden {
+    final raw = _box.get(_key);
+    return raw is List ? raw.map((e) => e.toString()).toSet() : <String>{};
+  }
+
+  static bool isHidden(HealthMetric m) => _hidden.contains(m.name);
+
+  static Future<void> setHidden(HealthMetric m, bool hidden) async {
+    final s = _hidden;
+    if (hidden) {
+      s.add(m.name);
+    } else {
+      s.remove(m.name);
+    }
+    await _box.put(_key, s.toList());
+  }
+}
+
 /// Profil corporel de l'utilisateur (poids/taille/âge), saisi manuellement et
 /// persisté dans la boîte 'settings' (partagée avec GameStore).
 class HealthProfileStore {

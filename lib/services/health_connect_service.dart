@@ -50,6 +50,7 @@ class HealthConnectService {
     HealthDataType.HEART_RATE_VARIABILITY_RMSSD,
     HealthDataType.FLIGHTS_CLIMBED,
     HealthDataType.DISTANCE_DELTA,
+    HealthDataType.WEIGHT,
   ];
 
   // Request permissions for Health Connect
@@ -248,6 +249,12 @@ class HealthConnectService {
           ],
           startTime: sleepWindowStart,
           endTime: dayEnd),
+      // Poids : pesée peu fréquente (balance connectée), on cherche donc le
+      // dernier relevé connu jusqu'à ce jour plutôt que seulement "aujourd'hui".
+      _health.getHealthDataFromTypes(
+          types: [HealthDataType.WEIGHT],
+          startTime: midnight.subtract(const Duration(days: 90)),
+          endTime: dayEnd),
     ]);
 
     final steps = (results[0] as int?) ?? 0;
@@ -316,6 +323,15 @@ class HealthConnectService {
     }
     segments.sort((a, b) => a.start.compareTo(b.start));
 
+    // Dernier relevé de poids connu jusqu'à ce jour (0 si jamais pesé).
+    final weightPoints = results[13] as List<HealthDataPoint>;
+    var weightKg = 0.0;
+    if (weightPoints.isNotEmpty) {
+      final sorted = [...weightPoints]..sort((a, b) => a.dateFrom.compareTo(b.dateFrom));
+      final last = sorted.last.value;
+      if (last is NumericHealthValue) weightKg = last.numericValue.toDouble();
+    }
+
     return HealthSnapshot(
       steps: steps,
       activeCalories: activeCalories,
@@ -329,6 +345,7 @@ class HealthConnectService {
       hrvBaseline: hrvBaseline,
       flightsClimbed: flightsClimbed,
       distanceKm: distanceKm,
+      weightKg: weightKg,
       sleep: SleepBreakdown(
         deepMin: deep,
         lightMin: light,

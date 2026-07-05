@@ -149,6 +149,8 @@ class ExportService {
           'respiratory_rate': double.parse(record.respiratoryRate.toStringAsFixed(1)),
         if (record.vo2Max > 0)
           'vo2_max': double.parse(record.vo2Max.toStringAsFixed(1)),
+        if (record.weightKg > 0)
+          'weight_kg': double.parse(record.weightKg.toStringAsFixed(1)),
         'sleep_hours': double.parse((record.totalSleepMin / 60.0).toStringAsFixed(1)),
         'bio_score': record.bioScore,
         'sleep_score': record.sleepScore,

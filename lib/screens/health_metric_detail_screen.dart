@@ -108,6 +108,7 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
                     dates: dates,
                     unit: meta.unit,
                     fractionDigits: meta.fractionDigits,
+                    zone: meta.zone,
                   )
                 : _SparseState(
                     value: hasData ? meta.format(current) : null,
@@ -324,12 +325,14 @@ class _MetricMeta {
   final int fractionDigits;
   final String explainTitle;
   final String explain;
+  final ChartZone? zone;
   const _MetricMeta({
     required this.title,
     required this.unit,
     required this.fractionDigits,
     required this.explainTitle,
     required this.explain,
+    this.zone,
   });
 
   String format(double v) => v.toStringAsFixed(fractionDigits);
@@ -413,7 +416,9 @@ _MetricMeta _metaFor(HealthMetric m) {
           fractionDigits: 0,
           explainTitle: 'À PROPOS',
           explain: 'Taux d\'oxygène dans le sang mesuré pendant le sommeil. '
-              'Une valeur saine se situe généralement entre 95 et 100%.');
+              'Une valeur saine se situe généralement entre 95 et 100%.',
+          zone: ChartZone(
+              min: 95, max: 100, color: kNeonGreen, label: 'Plage saine 95-100%'));
     case HealthMetric.respiratoryRate:
       return const _MetricMeta(
           title: 'Fréquence respiratoire',
@@ -421,7 +426,12 @@ _MetricMeta _metaFor(HealthMetric m) {
           fractionDigits: 1,
           explainTitle: 'À PROPOS',
           explain: 'Respirations par minute pendant le sommeil. Une valeur stable '
-              'nuit après nuit est un bon signe ; une hausse peut signaler de la fatigue.');
+              'nuit après nuit est un bon signe ; une hausse peut signaler de la fatigue.',
+          zone: ChartZone(
+              min: 12,
+              max: 20,
+              color: kNeonGreen,
+              label: 'Plage saine 12-20 rpm au repos'));
     case HealthMetric.sleepHours:
       return const _MetricMeta(
           title: 'Durée de sommeil',
@@ -456,5 +466,14 @@ _MetricMeta _metaFor(HealthMetric m) {
               'l\'effort — un des meilleurs indicateurs de ta condition '
               'cardiovasculaire. Mesuré par ta montre et lu via Google Health '
               'API (nécessite d\'être connecté depuis le profil).');
+    case HealthMetric.weightKg:
+      return const _MetricMeta(
+          title: 'Poids',
+          unit: 'kg',
+          fractionDigits: 1,
+          explainTitle: 'À PROPOS',
+          explain: 'Dernier relevé connu, lu depuis Health Connect (balance '
+              'connectée). Se met à jour seulement les jours où tu te pèses — '
+              'les autres jours reprennent la dernière valeur connue.');
   }
 }
