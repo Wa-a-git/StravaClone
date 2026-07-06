@@ -46,7 +46,7 @@ class HistoryScreen extends ConsumerWidget {
                     child: const Text(
                       'Tout effacer',
                       style: TextStyle(
-                      color: Color(0xFFF55CBD),
+                      color: kNeonPink,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -64,7 +64,7 @@ class HistoryScreen extends ConsumerWidget {
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.0,
-                  shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 12)],
+                  shadows: [Shadow(color: kNeonCyan, blurRadius: 12)],
                 ),
               ),
               expandedTitleScale: 1.0,
@@ -271,7 +271,7 @@ class HistoryScreen extends ConsumerWidget {
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
-                  shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 8)],
+                  shadows: [Shadow(color: kNeonCyan, blurRadius: 8)],
                   letterSpacing: -0.5,
                 ),
               ),
@@ -299,7 +299,7 @@ class HistoryScreen extends ConsumerWidget {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, controller.text.trim()),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00FFFF),
+                    backgroundColor: kNeonCyan,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -350,7 +350,7 @@ class HistoryScreen extends ConsumerWidget {
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
-                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
+                shadows: [Shadow(color: kNeonPink, blurRadius: 8)],
                 letterSpacing: -0.5,
               ),
             ),
@@ -366,7 +366,7 @@ class HistoryScreen extends ConsumerWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF003C),
+                  backgroundColor: kNeonRed,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -387,8 +387,8 @@ class HistoryScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF00FFFF),
-                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
+                    color: kNeonCyan,
+                    shadows: [Shadow(color: kNeonCyan, blurRadius: 5)],
                   ),
                 ),
               ),
@@ -430,7 +430,7 @@ class HistoryScreen extends ConsumerWidget {
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
-                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
+                shadows: [Shadow(color: kNeonPink, blurRadius: 8)],
                 letterSpacing: -0.5,
               ),
             ),
@@ -446,7 +446,7 @@ class HistoryScreen extends ConsumerWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF003C),
+                  backgroundColor: kNeonRed,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -467,8 +467,8 @@ class HistoryScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF00FFFF),
-                    shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
+                    color: kNeonCyan,
+                    shadows: [Shadow(color: kNeonCyan, blurRadius: 5)],
                   ),
                 ),
               ),
@@ -533,21 +533,21 @@ class _ActivityCard extends StatelessWidget {
                       horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color:
-                    const Color(0xFFF55CBD).withOpacity(0.15),
+                    kNeonPink.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.directions_run_rounded,
-                          size: 13, color: Color(0xFFF55CBD)),
+                          size: 13, color: kNeonPink),
                       SizedBox(width: 4),
                       Text(
                         'Running',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFFF55CBD),
+                          color: kNeonPink,
                         ),
                       ),
                     ],
@@ -572,7 +572,7 @@ class _ActivityCard extends StatelessWidget {
                     child: const Icon(
                       Icons.edit_rounded,
                       size: 14,
-                      color: Color(0xFFF8FF00),
+                      color: kNeonAmber,
                     ),
                   ),
                 ),
@@ -589,7 +589,7 @@ class _ActivityCard extends StatelessWidget {
                     child: const Icon(
                       Icons.download_rounded,
                       size: 14,
-                      color: Color(0xFF00FFFF),
+                      color: kNeonCyan,
                     ),
                   ),
                 ),
@@ -606,7 +606,7 @@ class _ActivityCard extends StatelessWidget {
                     child: const Icon(
                       Icons.close_rounded,
                       size: 14,
-                      color: Color(0xFFFF003C),
+                      color: kNeonRed,
                     ),
                   ),
                 ),
@@ -635,7 +635,7 @@ class _ActivityCard extends StatelessWidget {
                 fontSize: 25,
                 fontWeight: FontWeight.w900,
                 color: Colors.white,
-                shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 12)],
+                shadows: [Shadow(color: kNeonPink, blurRadius: 12)],
                 letterSpacing: 0.5,
               ),
             ),
@@ -717,7 +717,7 @@ class _MiniStat extends StatelessWidget {
           label,
           style: const TextStyle(
             fontSize: 11,
-            color: Color(0xFF00FFFF),
+            color: kNeonCyan,
           ),
         ),
       ],

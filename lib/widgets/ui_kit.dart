@@ -26,28 +26,21 @@ class AppPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final borderColor = accent != null
-        ? accent!.withOpacity(hero ? 0.5 : 0.25)
+        ? accent!.withOpacity(hero ? 0.45 : 0.25)
         : AppColors.border;
 
-    // Un panneau "hero" (moment fort de la page) a droit à un léger dégradé
-    // teinté par son accent en plus du glow — les panneaux normaux restent
-    // un fond plat neutre.
-    final heroGradient = hero && accent != null
-        ? LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [accent!.withOpacity(0.12), AppColors.surface],
-          )
-        : null;
-
+    // Un panneau "hero" (moment fort de la page) se distingue par une bordure
+    // un peu plus marquée et un très léger halo — pas par un fond teinté :
+    // sur une grande carte (ex. le récap du jour), un dégradé plein cadre
+    // finit par noyer tout le contenu sous une couleur, ce qui lit "néon"
+    // plutôt qu'élégant.
     final content = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: heroGradient == null ? AppColors.surface : null,
-        gradient: heroGradient,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(color: borderColor, width: hero ? 1.2 : 1),
-        boxShadow: hero && accent != null ? softGlow(accent!, blur: 24, opacity: 0.14) : null,
+        boxShadow: hero && accent != null ? softGlow(accent!) : null,
       ),
       child: child,
     );

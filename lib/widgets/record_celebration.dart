@@ -34,11 +34,11 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
   late final AnimationController _pulse;
 
   static const _neon = [
-    Color(0xFFF55CBD),
-    Color(0xFF00FFFF),
-    Color(0xFF39FF14),
-    Color(0xFFF8FF00),
-    Color(0xFF8A5EFF),
+    kNeonPink,
+    kNeonCyan,
+    kNeonGreen,
+    kNeonAmber,
+    kNeonViolet,
   ];
 
   @override
@@ -98,11 +98,11 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
                   fontFamily: kArcadeFont,
                   fontWeight: FontWeight.w900,
                   fontSize: 30,
-                  color: Color(0xFFF8FF00),
+                  color: kNeonAmber,
                   letterSpacing: 2,
                   shadows: [
-                    Shadow(color: Color(0xFFF8FF00), blurRadius: 18),
-                    Shadow(color: Color(0xFFF55CBD), blurRadius: 30),
+                    Shadow(color: kNeonAmber, blurRadius: 18),
+                    Shadow(color: kNeonPink, blurRadius: 30),
                   ],
                 ),
               ),
@@ -114,9 +114,9 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
                   fontFamily: kArcadeFont,
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
-                  color: Color(0xFF00FFFF),
+                  color: kNeonCyan,
                   letterSpacing: 1,
-                  shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 10)],
+                  shadows: [Shadow(color: kNeonCyan, blurRadius: 10)],
                 ),
               ),
               const SizedBox(height: 24),
@@ -130,10 +130,10 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
                       color: const Color(0xFF141419),
                       borderRadius: BorderRadius.circular(14),
                       border:
-                          Border.all(color: const Color(0xFF39FF14), width: 1.5),
+                          Border.all(color: kNeonGreen, width: 1.5),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF39FF14).withOpacity(0.3),
+                          color: kNeonGreen.withOpacity(0.3),
                           blurRadius: 12,
                         ),
                       ],
@@ -142,7 +142,7 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.emoji_events_rounded,
-                            color: Color(0xFF39FF14), size: 18),
+                            color: kNeonGreen, size: 18),
                         const SizedBox(width: 10),
                         Flexible(
                           child: Text(
@@ -166,11 +166,11 @@ class _RecordCelebrationDialogState extends State<_RecordCelebrationDialog>
                 child: ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF55CBD),
+                    backgroundColor: kNeonPink,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    shadowColor: const Color(0xFFF55CBD),
+                    shadowColor: kNeonPink,
                     elevation: 12,
                   ),
                   child: const Text(

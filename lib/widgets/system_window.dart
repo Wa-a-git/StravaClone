@@ -8,7 +8,7 @@ Future<void> showSystemWindow(
   BuildContext context, {
   required String heading,
   required List<String> lines,
-  Color accent = const Color(0xFF00FFFF),
+  Color accent = kNeonCyan,
   String buttonLabel = 'CONTINUER',
 }) {
   return showGeneralDialog<void>(

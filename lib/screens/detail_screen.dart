@@ -75,19 +75,19 @@ class _DetailScreenState extends State<DetailScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF141419),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
+                  border: Border.all(color: kNeonCyan, width: 1.2),
                 ),
                 child: const Icon(
                   Icons.arrow_back_ios_new_rounded,
                   size: 16,
-                  color: Color(0xFF00FFFF),
+                  color: kNeonCyan,
                 ),
               ),
             ),
             actions: [
               IconButton(
                 onPressed: _exportMarkdown,
-                icon: const Icon(Icons.download_rounded, color: Color(0xFF00FFFF)),
+                icon: const Icon(Icons.download_rounded, color: kNeonCyan),
                 tooltip: 'Exporter en Markdown',
               ),
             ],
@@ -101,7 +101,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,
-                    shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
+                    shadows: [Shadow(color: kNeonPink, blurRadius: 8)],
                   ),
                 ),
                 Text(
@@ -229,7 +229,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 Polyline(
                   points: points,
                   strokeWidth: 5.0,
-                  color: const Color(0xFFF55CBD),
+                  color: kNeonPink,
                 ),
               ],
             ),
@@ -241,13 +241,13 @@ class _DetailScreenState extends State<DetailScreen> {
                 height: 32,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF39FF14),
+                    color: kNeonGreen,
                     shape: BoxShape.circle,
                     border:
                     Border.all(color: Colors.black, width: 2),
                     boxShadow: [
                       BoxShadow(
-                          color: const Color(0xFF39FF14).withOpacity(0.8),
+                          color: kNeonGreen.withOpacity(0.8),
                           blurRadius: 10)
                     ],
                   ),
@@ -262,13 +262,13 @@ class _DetailScreenState extends State<DetailScreen> {
                   height: 32,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF003C),
+                      color: kNeonRed,
                       shape: BoxShape.circle,
                       border:
                       Border.all(color: Colors.black, width: 2),
                       boxShadow: [
                         BoxShadow(
-                            color: const Color(0xFFFF003C).withOpacity(0.8),
+                            color: kNeonRed.withOpacity(0.8),
                             blurRadius: 10)
                       ],
                     ),
@@ -298,7 +298,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 label: 'Distance',
                 value: _activity.distanceKm,
                 unit: 'km',
-                iconColor: const Color(0xFFF55CBD),
+                iconColor: kNeonPink,
                 icon: Icons.route_rounded,
               ),
             ),
@@ -308,7 +308,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 label: 'Durée',
                 value: _activity.durationFormatted,
                 unit: '',
-                iconColor: const Color(0xFF00FFFF),
+                iconColor: kNeonCyan,
                 icon: Icons.timer_rounded,
               ),
             ),
@@ -322,7 +322,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 label: 'Allure moy.',
                 value: _activity.avgPace,
                 unit: '/km',
-                iconColor: const Color(0xFF39FF14),
+                iconColor: kNeonGreen,
                 icon: Icons.speed_rounded,
               ),
             ),
@@ -332,7 +332,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 label: 'Pause',
                 value: _activity.pauseFormatted,
                 unit: '',
-                iconColor: const Color(0xFFF8FF00),
+                iconColor: kNeonAmber,
                 icon: Icons.pause_rounded,
               ),
             ),
@@ -347,7 +347,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   label: 'Dénivelé +',
                   value: _activity.elevationGainValue.round().toString(),
                   unit: 'm',
-                  iconColor: const Color(0xFF39FF14),
+                  iconColor: kNeonGreen,
                   icon: Icons.trending_up_rounded,
                 ),
               ),
@@ -357,7 +357,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   label: 'Dénivelé -',
                   value: _activity.elevationLossValue.round().toString(),
                   unit: 'm',
-                  iconColor: const Color(0xFFFF003C),
+                  iconColor: kNeonRed,
                   icon: Icons.trending_down_rounded,
                 ),
               ),
@@ -489,7 +489,7 @@ class _DetailScreenState extends State<DetailScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF141419),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
+        border: Border.all(color: kNeonCyan, width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -499,9 +499,9 @@ class _DetailScreenState extends State<DetailScreen> {
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF00FFFF),
+              color: kNeonCyan,
               letterSpacing: -0.4,
-              shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+              shadows: [Shadow(color: kNeonCyan, blurRadius: 6)],
             ),
           ),
           const SizedBox(height: 14),
@@ -530,7 +530,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
-                      color: Color(0xFFF55CBD),
+                      color: kNeonPink,
                     ),
                   ),
                   Column(
@@ -563,7 +563,7 @@ class _DetailScreenState extends State<DetailScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF141419),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF00FFFF), width: 1.2),
+        border: Border.all(color: kNeonCyan, width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -573,9 +573,9 @@ class _DetailScreenState extends State<DetailScreen> {
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF00FFFF),
+              color: kNeonCyan,
               letterSpacing: -0.4,
-              shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+              shadows: [Shadow(color: kNeonCyan, blurRadius: 6)],
             ),
           ),
           const SizedBox(height: 14),
@@ -583,7 +583,7 @@ class _DetailScreenState extends State<DetailScreen> {
             label: 'Start',
             lat: points.first.latitude,
             lng: points.first.longitude,
-            color: const Color(0xFF39FF14),
+            color: kNeonGreen,
           ),
           Padding(
             padding: const EdgeInsets.only(left: 10, top: 4, bottom: 4),
@@ -597,7 +597,7 @@ class _DetailScreenState extends State<DetailScreen> {
             label: 'Finish',
             lat: points.last.latitude,
             lng: points.last.longitude,
-            color: const Color(0xFFFF003C),
+            color: kNeonRed,
           ),
         ],
       ),

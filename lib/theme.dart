@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 /// titres de section — jamais pour le corps de texte (lisibilité).
 const String kArcadeFont = 'Orbitron';
 
-/// Couleurs néon — réservées aux accents, CTA et moments forts.
-/// Ne jamais les utiliser pour du texte courant ou des bordures par défaut.
-const Color kNeonCyan = Color(0xFF4DEDE0);
-const Color kNeonPink = Color(0xFFF55CBD);
-const Color kNeonGreen = Color(0xFF3DDC84);
-const Color kNeonViolet = Color(0xFF9B7BFF);
-const Color kNeonAmber = Color(0xFFFFC24B);
-const Color kNeonRed = Color(0xFFFF5470);
+/// Couleurs d'accent — tons "pierre précieuse" plutôt que néon pur : même
+/// famille de teintes qu'avant (identité arcade conservée) mais assourdies
+/// pour lire comme élégantes plutôt que synthwave/glow. Réservées aux
+/// accents, CTA et moments forts — jamais pour du texte courant.
+const Color kNeonCyan = Color(0xFF2FA9A0);
+const Color kNeonPink = Color(0xFFC85A87);
+const Color kNeonGreen = Color(0xFF2E9E63);
+const Color kNeonViolet = Color(0xFF7C6AD6);
+const Color kNeonAmber = Color(0xFFCC9640);
+const Color kNeonRed = Color(0xFFC94D5C);
 
 class AppColors {
   static const arcadePink = kNeonPink;
@@ -101,6 +103,12 @@ class AppText {
 
 /// Halo lumineux discret — une seule intensité standard pour tout l'app,
 /// pour éviter l'effet "chaque carte a son propre néon" qui fatigue l'œil.
-List<BoxShadow> softGlow(Color color, {double blur = 20, double opacity = 0.10}) {
+/// Volontairement très léger : un repère de profondeur, pas un effet glow.
+List<BoxShadow> softGlow(Color color, {double blur = 14, double opacity = 0.06}) {
   return [BoxShadow(color: color.withOpacity(opacity), blurRadius: blur)];
 }
+
+/// Léger relief de texte pour les nombres-clés — juste assez pour détacher le
+/// chiffre du fond, sans effet "enseigne au néon" (pas de blur large).
+List<Shadow> softTextGlow(Color color) =>
+    [Shadow(color: color.withOpacity(0.35), blurRadius: 4)];

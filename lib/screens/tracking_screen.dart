@@ -76,10 +76,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Nouveau bloc démarré !', style: TextStyle(color: Color(0xFF00FFFF), fontWeight: FontWeight.bold, shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 8)])),
+        content: const Text('Nouveau bloc démarré !', style: TextStyle(color: kNeonCyan, fontWeight: FontWeight.bold, shadows: [Shadow(color: kNeonCyan, blurRadius: 8)])),
         backgroundColor: const Color(0xFF141419),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF00FFFF), width: 1)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kNeonCyan, width: 1)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -108,10 +108,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Course supprimée — rien n’a été enregistré',
-              style: TextStyle(color: Color(0xFFFF003C), fontWeight: FontWeight.bold)),
+              style: TextStyle(color: kNeonRed, fontWeight: FontWeight.bold)),
           backgroundColor: const Color(0xFF141419),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFFF003C), width: 1)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kNeonRed, width: 1)),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -128,10 +128,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${activity.distanceKm} km saved in ${activity.durationFormatted}',
-              style: const TextStyle(color: Color(0xFFF55CBD), fontWeight: FontWeight.bold, shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 6)])),
+              style: const TextStyle(color: kNeonPink, fontWeight: FontWeight.bold, shadows: [Shadow(color: kNeonPink, blurRadius: 6)])),
           backgroundColor: const Color(0xFF141419),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFF55CBD), width: 1)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kNeonPink, width: 1)),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -164,10 +164,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       if (exportedPath != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Export .md saved to: $exportedPath', style: const TextStyle(color: Color(0xFF00FFFF))),
+            content: Text('Export .md saved to: $exportedPath', style: const TextStyle(color: kNeonCyan)),
             backgroundColor: const Color(0xFF141419),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF00FFFF), width: 1)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kNeonCyan, width: 1)),
             duration: const Duration(seconds: 4),
           ),
         );
@@ -287,14 +287,14 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF55CBD).withOpacity(0.15),
+                  color: kNeonPink.withOpacity(0.15),
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: const Color(0xFFF55CBD).withOpacity(0.3), blurRadius: 15)
+                    BoxShadow(color: kNeonPink.withOpacity(0.3), blurRadius: 15)
                   ],
                 ),
                 child: const Icon(Icons.stop_rounded,
-                    color: Color(0xFFF55CBD), size: 30),
+                    color: kNeonPink, size: 30),
               ),
               const SizedBox(height: 16),
               const Text(
@@ -303,7 +303,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
-                  shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)],
+                  shadows: [Shadow(color: kNeonPink, blurRadius: 8)],
                   letterSpacing: -0.5,
                 ),
               ),
@@ -341,11 +341,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     Navigator.pop(ctx, _StopChoice.save);
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF55CBD),
+                    backgroundColor: kNeonPink,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    shadowColor: const Color(0xFFF55CBD),
+                    shadowColor: kNeonPink,
                     elevation: 10,
                   ),
                   child: const Text(
@@ -362,7 +362,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(ctx, _StopChoice.discard),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFFF003C), width: 1.5),
+                    side: const BorderSide(color: kNeonRed, width: 1.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -372,7 +372,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFFFF003C),
+                      color: kNeonRed,
                     ),
                   ),
                 ),
@@ -388,8 +388,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF00FFFF),
-                      shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 6)],
+                      color: kNeonCyan,
+                      shadows: [Shadow(color: kNeonCyan, blurRadius: 6)],
                     ),
                   ),
                 ),
@@ -407,10 +407,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF141419),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFF55CBD), width: 1)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: kNeonPink, width: 1)),
         title: const Text(
           'Location Required',
-          style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF55CBD), shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 8)]),
+          style: TextStyle(fontWeight: FontWeight.w700, color: kNeonPink, shadows: [Shadow(color: kNeonPink, blurRadius: 8)]),
         ),
         content: const Text(
             'Please enable location permission to use GPS tracking.',
@@ -425,7 +425,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               Navigator.pop(ctx);
               openAppSettings();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00FFFF), foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: kNeonCyan, foregroundColor: Colors.black),
             child: const Text('Open Settings', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
@@ -455,13 +455,13 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
         title: const Text('RECORD', style: TextStyle(
           fontFamily: kArcadeFont,
           fontSize: 18,
-          color: Color(0xFFF55CBD),
+          color: kNeonPink,
           fontWeight: FontWeight.w900,
           letterSpacing: 2,
-          shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 12)]
+          shadows: [Shadow(color: kNeonPink, blurRadius: 12)]
         )),
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Color(0xFF00FFFF)),
+          icon: const Icon(Icons.close_rounded, color: kNeonCyan),
           onPressed: () async {
             if (trackState.status != TrackingStatus.idle) {
               final choice = await _showStopConfirmDialog();
@@ -521,10 +521,10 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
           Container(
             decoration: BoxDecoration(
               color: const Color(0xFF141419),
-              border: const Border(top: BorderSide(color: Color(0xFFF55CBD), width: 2)),
+              border: const Border(top: BorderSide(color: kNeonPink, width: 2)),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFF55CBD).withOpacity(0.3),
+                  color: kNeonPink.withOpacity(0.3),
                   blurRadius: 20,
                   offset: const Offset(0, -4),
                 ),
@@ -554,11 +554,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    color: const Color(0xFF00FFFF).withOpacity(0.1),
+                    color: kNeonCyan.withOpacity(0.1),
                     child: Text(
                       'BOUCLE ${trackState.laps.length + 1} EN COURS  •  Temps : ${trackState.formattedCurrentLapTime}  •  Dist : ${trackState.formattedCurrentLapDistance}',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Color(0xFF00FFFF), fontWeight: FontWeight.w700, fontSize: 12, shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)]),
+                      style: const TextStyle(color: kNeonCyan, fontWeight: FontWeight.w700, fontSize: 12, shadows: [Shadow(color: kNeonCyan, blurRadius: 5)]),
                     ),
                   ),
                 // Stats row
@@ -625,7 +625,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     } else if (status == TrackingStatus.paused) {
       return _StatusPill(
         label: 'PAUSED',
-        color: const Color(0xFFF8FF00), // Néon Jaune
+        color: kNeonAmber, // Néon Jaune
         icon: Icons.pause_rounded,
       );
     }
@@ -657,7 +657,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               Polyline(
                 points: routePoints.toList(), // .toList() force la carte à se rafraîchir en direct !
                 strokeWidth: 5.0,
-                color: const Color(0xFFF55CBD), // Trace Rose Néon
+                color: kNeonPink, // Trace Rose Néon
               ),
             ],
           ),
@@ -670,11 +670,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 height: 32,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF39FF14), // Néon Vert Start
+                    color: kNeonGreen, // Néon Vert Start
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.black, width: 2),
                     boxShadow: [
-                      BoxShadow(color: const Color(0xFF39FF14).withOpacity(0.8), blurRadius: 10)
+                      BoxShadow(color: kNeonGreen.withOpacity(0.8), blurRadius: 10)
                     ],
                   ),
                   child: const Icon(Icons.play_arrow_rounded, color: Colors.black, size: 16),
@@ -688,11 +688,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   height: 20,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF55CBD),
+                      color: kNeonPink,
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.black, width: 2.5),
                       boxShadow: [
-                        BoxShadow(color: const Color(0xFFF55CBD).withOpacity(0.8), blurRadius: 12)
+                        BoxShadow(color: kNeonPink.withOpacity(0.8), blurRadius: 12)
                       ],
                     ),
                   ),
@@ -718,11 +718,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFFF55CBD), // Néon Rose
+                color: kNeonPink, // Néon Rose
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFF55CBD).withOpacity(0.6),
+                    color: kNeonPink.withOpacity(0.6),
                     blurRadius: 25,
                     offset: const Offset(0, 0),
                   ),
@@ -748,11 +748,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00FFFF), // Néon Cyan
+                  color: kNeonCyan, // Néon Cyan
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00FFFF).withOpacity(0.5),
+                      color: kNeonCyan.withOpacity(0.5),
                       blurRadius: 15,
                       offset: const Offset(0, 0),
                     ),
@@ -775,17 +775,17 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF141419),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFF8FF00), width: 2), // Néon Jaune
+                  border: Border.all(color: kNeonAmber, width: 2), // Néon Jaune
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFF8FF00).withOpacity(0.3),
+                      color: kNeonAmber.withOpacity(0.3),
                       blurRadius: 10,
                     )
                   ]
                 ),
                 child: const Icon(
                   Icons.pause_rounded,
-                  color: Color(0xFFF8FF00),
+                  color: kNeonAmber,
                   size: 30,
                 ),
               ),
@@ -804,11 +804,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF39FF14), // Néon Vert
+                  color: kNeonGreen, // Néon Vert
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF39FF14).withOpacity(0.5),
+                      color: kNeonGreen.withOpacity(0.5),
                       blurRadius: 15,
                       offset: const Offset(0, 0),
                     ),
@@ -829,11 +829,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF003C), // Néon Rouge
+                  color: kNeonRed, // Néon Rouge
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFFF003C).withOpacity(0.5),
+                      color: kNeonRed.withOpacity(0.5),
                       blurRadius: 15,
                       offset: const Offset(0, 0),
                     ),
@@ -870,12 +870,12 @@ class _MapButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF141419),
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFF00FFFF), width: 1.5),
+          border: Border.all(color: kNeonCyan, width: 1.5),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF00FFFF).withOpacity(0.4), blurRadius: 10)
+            BoxShadow(color: kNeonCyan.withOpacity(0.4), blurRadius: 10)
           ],
         ),
-        child: Icon(icon, color: const Color(0xFF00FFFF), size: 20),
+        child: Icon(icon, color: kNeonCyan, size: 20),
       ),
     );
   }
@@ -950,9 +950,9 @@ class _RecordingBadgeState extends State<_RecordingBadge>
       builder: (_, __) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: const Color(0xFFF55CBD),
+          color: kNeonPink,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: const Color(0xFFF55CBD).withOpacity(0.6), blurRadius: 12)],
+          boxShadow: [BoxShadow(color: kNeonPink.withOpacity(0.6), blurRadius: 12)],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1012,7 +1012,7 @@ class _TargetKmBanner extends StatelessWidget {
               Text(
                 'OBJECTIF ${targetKm.toStringAsFixed(0)} KM',
                 style: const TextStyle(
-                  color: Color(0xFFF55CBD),
+                  color: kNeonPink,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.8,
@@ -1037,8 +1037,8 @@ class _TargetKmBanner extends StatelessWidget {
                   child: Container(
                       height: 5,
                       color: reached
-                          ? const Color(0xFF39FF14)
-                          : const Color(0xFFF55CBD)),
+                          ? kNeonGreen
+                          : kNeonPink),
                 ),
               ],
             ),
@@ -1070,10 +1070,10 @@ class _StatDisplay extends StatelessWidget {
           label,
           style: const TextStyle(
             fontSize: 10,
-            color: Color(0xFF00FFFF), // Labels en Cyan
+            color: kNeonCyan, // Labels en Cyan
             fontWeight: FontWeight.w800,
             letterSpacing: 1.2,
-            shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
+            shadows: [Shadow(color: kNeonCyan, blurRadius: 5)],
           ),
         ),
         const SizedBox(height: 4),
@@ -1088,7 +1088,7 @@ class _StatDisplay extends StatelessWidget {
                     fontSize: 21,
                     fontWeight: FontWeight.w900,
                     color: Colors.white,
-                    shadows: [Shadow(color: Color(0xFFF55CBD), blurRadius: 10)], // Valeurs blanches avec aura Rose
+                    shadows: [Shadow(color: kNeonPink, blurRadius: 10)], // Valeurs blanches avec aura Rose
                     letterSpacing: 0,
                   ),
                 ),
@@ -1098,8 +1098,8 @@ class _StatDisplay extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF00FFFF),
-                      shadows: [Shadow(color: Color(0xFF00FFFF), blurRadius: 5)],
+                      color: kNeonCyan,
+                      shadows: [Shadow(color: kNeonCyan, blurRadius: 5)],
                     ),
                   ),
               ],

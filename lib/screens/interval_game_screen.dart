@@ -428,7 +428,7 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
                 child: ElevatedButton(
                   onPressed: () => _finish(aborted: true),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF003C),
+                    backgroundColor: kNeonRed,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),

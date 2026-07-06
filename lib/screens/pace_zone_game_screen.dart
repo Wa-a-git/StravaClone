@@ -323,7 +323,7 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
                 child: ElevatedButton(
                   onPressed: _stop,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF003C),
+                    backgroundColor: kNeonRed,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),

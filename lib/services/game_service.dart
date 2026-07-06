@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/activity.dart';
+import '../theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Réglages (à équilibrer librement)
@@ -32,11 +33,11 @@ class Tier {
 
 const List<Tier> kTiers = [
   Tier('Débutant', Color(0xFF9AA0B5), 1),
-  Tier('Régulier', Color(0xFF39FF14), 5),
-  Tier('Confirmé', Color(0xFF00FFFF), 10),
-  Tier('Athlète', Color(0xFF8A5EFF), 15),
-  Tier('Élite', Color(0xFFF55CBD), 20),
-  Tier('Légende', Color(0xFFFFC107), 30),
+  Tier('Régulier', kNeonGreen, 5),
+  Tier('Confirmé', kNeonCyan, 10),
+  Tier('Athlète', kNeonViolet, 15),
+  Tier('Élite', kNeonPink, 20),
+  Tier('Légende', kNeonAmber, 30),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
