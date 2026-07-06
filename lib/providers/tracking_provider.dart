@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/location_service.dart';
 import '../services/hive_service.dart';
+import '../services/vo2_estimator_service.dart';
 import '../models/activity.dart';
 
 // ── Tracking state enum ──────────────────────────────────────────────────────
@@ -290,6 +291,12 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     );
 
     await HiveService.saveActivity(activity);
+    // Même mécanisme que les mini-jeux : une course libre doit aussi
+    // compter pour le VO2 max et l'efficacité cardiaque, pas seulement le
+    // fractionné/zone d'allure (sinon ces cartes restent vides pour qui ne
+    // fait jamais de mini-jeu).
+    unawaited(
+        Vo2EstimatorService.recomputeAndStore(HiveService.getAllActivities()));
     return activity;
   }
 

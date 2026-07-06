@@ -10,6 +10,7 @@ import 'screens/detail_screen.dart';
 import 'screens/health_history_screen.dart';
 import 'services/health_store.dart';
 import 'services/hive_service.dart';
+import 'services/vo2_estimator_service.dart';
 import 'screens/shell_screen.dart';
 import 'widgets/arcade_fx.dart';
 import 'theme.dart';
@@ -38,6 +39,12 @@ void main() async {
   ));
 
   await HiveService.init();
+  // Recalcule VO2 max/efficacité cardiaque à chaque lancement — rattrape
+  // l'historique existant (pas seulement les séances de fractionné) et les
+  // données FC qui ont fini de synchroniser depuis Health Connect entre
+  // deux ouvertures de l'app.
+  unawaited(
+      Vo2EstimatorService.recomputeAndStore(HiveService.getAllActivities()));
   runApp(const ProviderScope(child: ArcadeHealthApp()));
 }
 
