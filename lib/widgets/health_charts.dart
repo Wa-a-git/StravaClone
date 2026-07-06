@@ -235,7 +235,9 @@ class _TrendPainter extends CustomPainter {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 
   void _drawLabel(Canvas canvas, String text, Offset anchor,
-      {required bool alignRight, required bool alignTop}) {
+      {required bool alignRight,
+      required bool alignTop,
+      bool centerVertical = false}) {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
@@ -247,35 +249,84 @@ class _TrendPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     final dx = alignRight ? anchor.dx - painter.width : anchor.dx;
-    final dy = alignTop ? anchor.dy : anchor.dy - painter.height;
+    final dy = centerVertical
+        ? anchor.dy - painter.height / 2
+        : (alignTop ? anchor.dy : anchor.dy - painter.height);
     painter.paint(canvas, Offset(dx, dy));
+  }
+
+  double _labelWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return painter.width;
+  }
+
+  /// Graduations "rondes" (pas en 1/2/5 × 10ⁿ) façon logiciel de graphique,
+  /// pour une échelle lisible plutôt que juste les deux bornes brutes.
+  List<double> _niceTicks(double minV, double maxV, int target) {
+    if ((maxV - minV).abs() < 1e-9) return [minV];
+    final rawStep = (maxV - minV) / target;
+    final mag = math.pow(10, (math.log(rawStep) / math.ln10).floor()).toDouble();
+    final residual = rawStep / mag;
+    final double niceStep = residual > 5
+        ? 10 * mag
+        : residual > 2
+            ? 5 * mag
+            : residual > 1
+                ? 2 * mag
+                : mag;
+    final niceMin = (minV / niceStep).floor() * niceStep;
+    final niceMax = (maxV / niceStep).ceil() * niceStep;
+    final ticks = <double>[];
+    for (double v = niceMin; v <= niceMax + niceStep * 0.5; v += niceStep) {
+      ticks.add(v);
+    }
+    return ticks;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
     const leftPad = 4.0;
-    const rightPad = 4.0;
     const topPad = 14.0;
     // Marge basse agrandie pour laisser la place aux dates de l'axe X.
     final bottomPad = (dates != null && dates!.length >= 2) ? 28.0 : 14.0;
-    final chartW = size.width - leftPad - rightPad;
-    final chartH = size.height - topPad - bottomPad;
 
-    double minV = values.reduce(math.min);
-    double maxV = values.reduce(math.max);
+    double rawMin = values.reduce(math.min);
+    double rawMax = values.reduce(math.max);
     if (baseline != null) {
-      minV = math.min(minV, baseline!);
-      maxV = math.max(maxV, baseline!);
+      rawMin = math.min(rawMin, baseline!);
+      rawMax = math.max(rawMax, baseline!);
     }
     // La bande de référence doit toujours être entièrement visible, même si
     // les valeurs du jour sont loin d'elle — sinon on perdrait justement le
     // repère qui permet de voir "à quel point" on s'en écarte.
     final z = zone;
     if (z != null) {
-      minV = math.min(minV, z.min);
-      maxV = math.max(maxV, z.max);
+      rawMin = math.min(rawMin, z.min);
+      rawMax = math.max(rawMax, z.max);
     }
+
+    // Échelle graduée à valeurs rondes (façon logiciel de graphique) plutôt
+    // que juste les deux bornes brutes — chaque ligne de grille porte son
+    // propre chiffre.
+    final ticks = _niceTicks(rawMin, rawMax, 4);
+    final tickLabels =
+        ticks.map((v) => '${v.toStringAsFixed(fractionDigits)}$unit').toList();
+    final minV = ticks.first;
+    final maxV = ticks.last;
     final range = (maxV - minV).abs() < 1e-6 ? 1.0 : (maxV - minV);
+
+    // Marge droite dédiée aux graduations, dimensionnée sur le libellé le
+    // plus large — les valeurs ne se superposent plus à la courbe.
+    final rightPad =
+        tickLabels.map(_labelWidth).reduce(math.max) + 10.0;
+    final chartW = size.width - leftPad - rightPad;
+    final chartH = size.height - topPad - bottomPad;
 
     double yFor(double v) =>
         topPad + chartH - ((v - minV) / range) * chartH;
@@ -286,32 +337,24 @@ class _TrendPainter extends CustomPainter {
       final zTop = yFor(z.max).clamp(topPad, topPad + chartH);
       final zBottom = yFor(z.min).clamp(topPad, topPad + chartH);
       canvas.drawRect(
-        Rect.fromLTRB(leftPad, zTop, size.width - rightPad, zBottom),
+        Rect.fromLTRB(leftPad, zTop, leftPad + chartW, zBottom),
         Paint()..color = z.color.withOpacity(0.12),
       );
       _drawLabel(canvas, z.label, Offset(leftPad, zTop + 1),
           alignRight: false, alignTop: true);
     }
 
-    // Grille horizontale légère (4 lignes)
+    // Grille horizontale graduée : une ligne + un chiffre par palier rond.
     final gridPaint = Paint()
       ..color = AppColors.border.withOpacity(0.4)
       ..strokeWidth = 1;
-    for (int g = 0; g <= 3; g++) {
-      final y = topPad + chartH * (g / 3);
-      canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y),
-          gridPaint);
+    for (int i = 0; i < ticks.length; i++) {
+      final y = yFor(ticks[i]);
+      canvas.drawLine(
+          Offset(leftPad, y), Offset(leftPad + chartW, y), gridPaint);
+      _drawLabel(canvas, tickLabels[i], Offset(leftPad + chartW + 6, y),
+          alignRight: false, alignTop: false, centerVertical: true);
     }
-
-    // Légende axe Y : valeurs min/max de l'échelle, alignées sur les lignes
-    // de grille extrêmes (plus de courbe "brute" sans repère chiffré).
-    final maxLabel = '${maxV.toStringAsFixed(fractionDigits)}$unit';
-    final minLabel = '${minV.toStringAsFixed(fractionDigits)}$unit';
-    _drawLabel(canvas, maxLabel, Offset(size.width - rightPad, topPad - 2),
-        alignRight: true, alignTop: false);
-    _drawLabel(
-        canvas, minLabel, Offset(size.width - rightPad, topPad + chartH + 2),
-        alignRight: true, alignTop: true);
 
     // Légende axe X : dates de début/fin de la période affichée.
     final ds = dates;

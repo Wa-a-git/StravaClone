@@ -20,7 +20,6 @@ import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'health_history_screen.dart';
 import 'health_metric_detail_screen.dart';
-import 'sleep_detail_screen.dart';
 import 'detail_screen.dart';
 import '../main.dart' show routeObserver;
 
@@ -153,84 +152,38 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    // ── CADRAN : résumé du jour en un coup d'œil + quêtes du
-                    // jour dans la carte héros — inspiré de l'onglet
-                    // "Aujourd'hui" de Fitbit. ──
+                    // ── FEED : la toute première carte est le gros bloc
+                    // "aujourd'hui + cette semaine" (Bio-Score, quêtes,
+                    // semaine, sous-scores, métriques, XP, quêtes de la
+                    // semaine) — pas un bloc séparé au-dessus du feed, juste
+                    // sa première entrée, plus complète que les suivantes.
+                    // Ensuite chaque section redevient un post autonome et
+                    // bordé façon réseau social, jusqu'à tout l'historique
+                    // (courses + journées), du plus récent au plus ancien. ──
                     FadeSlideIn(
-                      child: _BioScorePanel(
+                      child: _TodayCard(
                         scores: scores,
                         snapshot: st.snapshot,
                         dailyQuests: HealthQuestService.daily(now),
                         today: HealthStore.recordFor(now),
                         dayKey: GameService.dayKey(now),
                         todayRunKm: todayRunKm,
-                        onClaim: (dayKey, q) => _claim(context, ref, dayKey, q),
+                        activities: allActivities,
+                        sleepStreak: st.sleepStreak,
+                        weeklyQuests: HealthQuestService.weekly(now),
+                        weekRecords: st.history
+                            .where((r) => !r.date
+                                .isBefore(GameService.startOfWeek(now)))
+                            .toList(),
+                        weekKey: GameService.weekKey(now),
+                        xpToday: st.healthXpToday,
+                        onXpTap: () =>
+                            ref.read(shellIndexProvider.notifier).state = 2,
+                        onClaim: (keyPrefix, q) =>
+                            _claim(context, ref, keyPrefix, q),
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    _WeekDotsStrip(activities: allActivities),
-                    const SizedBox(height: 14),
-                    _SubScoresRow(scores: scores),
-                    const SizedBox(height: 12),
-                    _MetricsGrid(snapshot: st.snapshot),
-                    const SizedBox(height: 12),
-                    _HealthXpBanner(
-                      xpToday: st.healthXpToday,
-                      onTap: () => ref
-                          .read(shellIndexProvider.notifier)
-                          .state = 2,
-                    ),
-                    const SizedBox(height: 24),
-                    const _CadranFeedDivider(),
-                    const SizedBox(height: 20),
-
-                    // ── FEED : chaque section est un post autonome, bordé et
-                    // séparé des autres, comme sur un réseau social. ──
-                    FadeSlideIn(
-                      child: _FeedPost(
-                        icon: Icons.bedtime_rounded,
-                        time: _wakeLabel(st.snapshot.sleep) ?? 'CETTE NUIT',
-                        title: 'Sommeil',
-                        accent: kNeonViolet,
-                        child: _SleepPanel(
-                            sleep: st.snapshot.sleep, score: scores.sleepScore),
-                      ),
-                    ),
-                    if (st.sleepStreak > 0 || allActivities.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      _StreaksRow(
-                          sleepStreak: st.sleepStreak,
-                          runStreak: _runStreak(allActivities)),
-                    ],
                     const SizedBox(height: 22),
-
-                    // Courses GPS du jour, si tu en as enregistré.
-                    if (todayRuns.isNotEmpty) ...[
-                      _FeedPost(
-                        icon: Icons.directions_run_rounded,
-                        time: _timeLabel(todayRuns.first.date),
-                        title: todayRuns.length > 1
-                            ? '${todayRuns.length} activités suivies'
-                            : 'Activité suivie',
-                        accent: kNeonPink,
-                        child: Column(
-                          children: [
-                            for (final run in todayRuns) ...[
-                              _ActivityFeedCard(
-                                activity: run,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => DetailScreen(activity: run)),
-                                ),
-                              ),
-                              if (run != todayRuns.last) const SizedBox(height: 10),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                    ],
 
                     _FeedPost(
                       icon: Icons.insights_rounded,
@@ -239,75 +192,87 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                       accent: kNeonGreen,
                       child: _InsightsPanel(
                         insights: st.insights,
-                        onFeedback: () =>
-                            ref.read(healthDataProvider.notifier).refreshInsights(),
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-
-                    _buildWeeklyQuestPost(context, ref, st),
-                    const SizedBox(height: 20),
-                    Center(
-                      child: TextButton(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const HealthHistoryScreen()),
-                        ),
-                        child: const Text('Voir tout l\'historique santé →'),
+                        onFeedback: () => ref
+                            .read(healthDataProvider.notifier)
+                            .refreshInsights(),
                       ),
                     ),
                   ],
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 22),
                 ],
               ),
             ),
           ),
+          if (!st.isLoading && st.hasPermission && scores != null)
+            _buildHistorySliver(context, allActivities),
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return const PageHeading(eyebrow: 'Données Fitbit', title: 'Aptitude du Jour');
-  }
+  /// Historique complet (courses + journées santé), fusionné et trié du plus
+  /// récent au plus ancien — construit en liste paresseuse (SliverList) car
+  /// il peut contenir des mois d'entrées.
+  Widget _buildHistorySliver(BuildContext context, List<Activity> activities) {
+    final entries = _buildHistoryEntries(activities, HealthStore.all());
+    if (entries.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
-  /// Heure de réveil formatée (HH:mm) pour l'en-tête de feed du sommeil.
-  static String? _wakeLabel(SleepBreakdown sleep) {
-    final w = sleep.wakeTime;
-    if (w == null) return null;
-    return '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
-  }
-
-  /// Heure (HH:mm) d'un événement pour l'en-tête de feed.
-  static String _timeLabel(DateTime d) =>
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-
-  /// Quêtes hebdomadaires — les quotidiennes vivent désormais dans la carte
-  /// héros (_BioScorePanel), au plus près de "l'essentiel" de la journée.
-  Widget _buildWeeklyQuestPost(
-      BuildContext context, WidgetRef ref, HealthDataState st) {
-    final now = DateTime.now();
-    final today = HealthStore.recordFor(now);
-    final weekStart = GameService.startOfWeek(now);
-    final weekRecords =
-        st.history.where((r) => !r.date.isBefore(weekStart)).toList();
-    final weekKey = GameService.weekKey(now);
-
-    return _FeedPost(
-      icon: Icons.emoji_events_rounded,
-      time: 'SEMAINE',
-      title: 'Quêtes santé',
-      accent: kNeonPink,
-      child: _QuestsList(
-        quests: HealthQuestService.weekly(now),
-        accent: kNeonPink,
-        today: today,
-        weekRecords: weekRecords,
-        keyPrefix: weekKey,
-        onClaim: (q) => _claim(context, ref, weekKey, q),
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, i) => Padding(
+            padding: const EdgeInsets.only(top: 22),
+            child: _historyEntryPost(context, entries[i]),
+          ),
+          childCount: entries.length,
+        ),
       ),
     );
+  }
+
+  Widget _historyEntryPost(BuildContext context, _HistoryEntry e) {
+    if (e.kind == _FeedKind.activity) {
+      final a = e.activity!;
+      return _FeedPost(
+        icon: Icons.directions_run_rounded,
+        time: _dayLabel(a.date),
+        title: 'Activité suivie',
+        accent: kNeonPink,
+        child: _ActivityFeedCard(
+          activity: a,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => DetailScreen(activity: a))),
+        ),
+      );
+    }
+    final d = e.day!;
+    return _FeedPost(
+      icon: Icons.bedtime_rounded,
+      time: _dayLabel(d.date),
+      title: 'Résumé du jour',
+      accent: kNeonViolet,
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
+      child: _DayFeedContent(record: d),
+    );
+  }
+
+  /// Libellé relatif (AUJOURD'HUI / HIER) ou date courte pour l'en-tête d'un
+  /// post d'historique.
+  static String _dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final day = DateTime(d.year, d.month, d.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return "AUJOURD'HUI";
+    if (diff == 1) return 'HIER';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildHeader() {
+    return const PageHeading(eyebrow: 'Données Fitbit', title: 'Aptitude du Jour');
   }
 
   Future<void> _claim(BuildContext context, WidgetRef ref, String keyPrefix,
@@ -363,6 +328,117 @@ int _runStreak(List<Activity> activities) {
     cursor = cursor.subtract(const Duration(days: 1));
   }
   return count;
+}
+
+// ── Historique fusionné (courses + journées santé) affiché dans le feed,
+// trié du plus récent au plus ancien. ─────────────────────────────────────────
+enum _FeedKind { activity, day }
+
+class _HistoryEntry {
+  final DateTime date; // jour civil, pour le regroupement/tri par journée
+  final DateTime sortTime; // horodatage exact, pour l'ordre au sein d'un jour
+  final _FeedKind kind;
+  final Activity? activity;
+  final DailyHealthRecord? day;
+
+  _HistoryEntry.activity(Activity a)
+      : date = DateTime(a.date.year, a.date.month, a.date.day),
+        sortTime = a.date,
+        kind = _FeedKind.activity,
+        activity = a,
+        day = null;
+
+  _HistoryEntry.day(DailyHealthRecord d)
+      : date = DateTime(d.date.year, d.date.month, d.date.day),
+        sortTime = d.date,
+        kind = _FeedKind.day,
+        activity = null,
+        day = d;
+}
+
+/// Fusionne courses et journées santé en une seule liste triée du plus
+/// récent au plus ancien — au sein d'une même journée, les courses passent
+/// avant le résumé du jour.
+List<_HistoryEntry> _buildHistoryEntries(
+    List<Activity> activities, List<DailyHealthRecord> days) {
+  final items = <_HistoryEntry>[
+    for (final a in activities) _HistoryEntry.activity(a),
+    for (final d in days) _HistoryEntry.day(d),
+  ];
+  items.sort((a, b) {
+    final dayCmp = b.date.compareTo(a.date);
+    if (dayCmp != 0) return dayCmp;
+    if (a.kind != b.kind) return a.kind == _FeedKind.activity ? -1 : 1;
+    return b.sortTime.compareTo(a.sortTime);
+  });
+  return items;
+}
+
+/// Contenu compact d'un post "résumé du jour" dans l'historique — même
+/// logique que la carte Sommeil du jour, mais à partir d'un DailyHealthRecord
+/// passé plutôt que du snapshot Health Connect en direct.
+class _DayFeedContent extends StatelessWidget {
+  final DailyHealthRecord record;
+  const _DayFeedContent({required this.record});
+
+  String _fmt(double minutes) {
+    final h = minutes ~/ 60;
+    final m = (minutes % 60).round();
+    return '${h}h${m.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sleep = record.sleep;
+    final total = sleep.totalAsleepMin;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (total > 0) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(_fmt(total),
+                  style: const TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900)),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                    'sommeil · score ${record.sleepScore}/100 · efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 11)),
+              ),
+            ],
+          ),
+          if (sleep.segments.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Hypnogram(segments: sleep.segments, height: 72, showAxis: false),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: [
+              _SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
+              _SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
+              _SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
+              _SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
+        _RawStatsRow(
+          steps: record.steps,
+          distanceKm: record.distanceKm,
+          activeCalories: record.activeCalories,
+        ),
+      ],
+    );
+  }
 }
 
 // ── Bannière d'aide à la synchro ──────────────────────────────────────────────
@@ -479,22 +555,41 @@ class _PermissionWarning extends StatelessWidget {
 }
 
 // ── Héros Bio-Score + quêtes du jour ("le principal" en une seule carte) ──────
-class _BioScorePanel extends StatelessWidget {
+/// Carte unique "aujourd'hui + cette semaine" — Bio-Score, chiffres bruts,
+/// quêtes du jour, semaine (points + streaks), sous-scores, métriques,
+/// XP et quêtes de la semaine. Tout ce qui n'est pas "historique" vit ici,
+/// dans une seule carte qui fait office de première entrée du feed — pas un
+/// bloc séparé au-dessus du feed.
+class _TodayCard extends StatelessWidget {
   final HealthScores scores;
   final HealthSnapshot snapshot;
   final List<HealthQuestDef> dailyQuests;
   final DailyHealthRecord? today;
   final String dayKey;
   final double todayRunKm;
-  final void Function(String dayKey, HealthQuestDef q) onClaim;
+  final List<Activity> activities;
+  final int sleepStreak;
+  final List<HealthQuestDef> weeklyQuests;
+  final List<DailyHealthRecord> weekRecords;
+  final String weekKey;
+  final int xpToday;
+  final VoidCallback onXpTap;
+  final void Function(String keyPrefix, HealthQuestDef q) onClaim;
 
-  const _BioScorePanel({
+  const _TodayCard({
     required this.scores,
     required this.snapshot,
     required this.dailyQuests,
     required this.today,
     required this.dayKey,
     required this.todayRunKm,
+    required this.activities,
+    required this.sleepStreak,
+    required this.weeklyQuests,
+    required this.weekRecords,
+    required this.weekKey,
+    required this.xpToday,
+    required this.onXpTap,
     required this.onClaim,
   });
 
@@ -555,7 +650,11 @@ class _BioScorePanel extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          _RawStatsRow(snapshot: snapshot),
+          _RawStatsRow(
+            steps: snapshot.steps,
+            distanceKm: snapshot.distanceKm,
+            activeCalories: snapshot.activeCalories,
+          ),
           if (dailyQuests.isNotEmpty) ...[
             const SizedBox(height: 14),
             const Divider(color: AppColors.border, height: 1),
@@ -572,6 +671,44 @@ class _BioScorePanel extends StatelessWidget {
               onClaim: (q) => onClaim(dayKey, q),
             ),
           ],
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+          const _HPanelTitle('CETTE SEMAINE', color: kNeonPink),
+          const SizedBox(height: 10),
+          _WeekDotsStrip(activities: activities),
+          if (sleepStreak > 0 || activities.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _StreaksRow(
+                sleepStreak: sleepStreak, runStreak: _runStreak(activities)),
+          ],
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+          _SubScoresRow(scores: scores),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+          _MetricsGrid(snapshot: snapshot),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+          _HealthXpBanner(xpToday: xpToday, onTap: onXpTap),
+          if (weeklyQuests.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(color: AppColors.border, height: 1),
+            const SizedBox(height: 14),
+            const _HPanelTitle('QUÊTES DE LA SEMAINE', color: kNeonPink),
+            const SizedBox(height: 10),
+            _QuestsList(
+              quests: weeklyQuests,
+              accent: kNeonPink,
+              today: today,
+              weekRecords: weekRecords,
+              keyPrefix: weekKey,
+              onClaim: (q) => onClaim(weekKey, q),
+            ),
+          ],
         ],
       ),
     );
@@ -582,8 +719,14 @@ class _BioScorePanel extends StatelessWidget {
 // Bio-Score est un score composite, mais on veut aussi les données brutes
 // juste en dessous, sans avoir à descendre jusqu'à "Métriques & tendances". ──
 class _RawStatsRow extends StatelessWidget {
-  final HealthSnapshot snapshot;
-  const _RawStatsRow({required this.snapshot});
+  final int steps;
+  final double distanceKm;
+  final double activeCalories;
+  const _RawStatsRow({
+    required this.steps,
+    required this.distanceKm,
+    required this.activeCalories,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -593,7 +736,7 @@ class _RawStatsRow extends StatelessWidget {
           child: _RawStat(
             icon: Icons.directions_walk_rounded,
             color: kNeonGreen,
-            value: snapshot.steps.toString(),
+            value: steps.toString(),
             unit: 'pas',
           ),
         ),
@@ -602,7 +745,7 @@ class _RawStatsRow extends StatelessWidget {
           child: _RawStat(
             icon: Icons.map_rounded,
             color: kNeonGreen,
-            value: snapshot.distanceKm.toStringAsFixed(2),
+            value: distanceKm.toStringAsFixed(2),
             unit: 'km',
           ),
         ),
@@ -611,7 +754,7 @@ class _RawStatsRow extends StatelessWidget {
           child: _RawStat(
             icon: Icons.local_fire_department_rounded,
             color: kNeonPink,
-            value: snapshot.activeCalories.toStringAsFixed(0),
+            value: activeCalories.toStringAsFixed(0),
             unit: 'kcal',
           ),
         ),
@@ -1007,55 +1150,54 @@ class _MetricsGridState extends State<_MetricsGrid> {
     final visible =
         all.where((m) => !MetricsPreferenceStore.isHidden(m.metric)).toList();
 
-    return _HPanel(
-      accent: kNeonCyan,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _HPanelTitle(
-            'MÉTRIQUES & TENDANCES',
-            trailing: GestureDetector(
-              onTap: () => _openCustomize(context, all),
-              behavior: HitTestBehavior.opaque,
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.tune_rounded, size: 14, color: AppColors.textSecondary),
-                  SizedBox(width: 4),
-                  Text('Personnaliser',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                ],
-              ),
+    // Plus de _HPanel/titre englobant ici : cette grille est désormais une
+    // section parmi d'autres à l'intérieur du conteneur "cadran" unifié.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HPanelTitle(
+          'MÉTRIQUES & TENDANCES',
+          trailing: GestureDetector(
+            onTap: () => _openCustomize(context, all),
+            behavior: HitTestBehavior.opaque,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.tune_rounded, size: 14, color: AppColors.textSecondary),
+                SizedBox(width: 4),
+                Text('Personnaliser',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              ],
             ),
           ),
-          const SizedBox(height: 14),
-          if (visible.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Toutes les métriques sont masquées.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                const spacing = 10.0;
-                // 2 colonnes fiables : on retire une marge de sécurité pour
-                // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
-                final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
-                return Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: visible
-                      .map((m) => SizedBox(
-                            width: cardW,
-                            child: _MetricCard(spec: m),
-                          ))
-                      .toList(),
-                );
-              },
-            ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 14),
+        if (visible.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('Toutes les métriques sont masquées.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              // 2 colonnes fiables : on retire une marge de sécurité pour
+              // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
+              final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: visible
+                    .map((m) => SizedBox(
+                          width: cardW,
+                          child: _MetricCard(spec: m),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+      ],
     );
   }
 
@@ -1239,128 +1381,6 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-// ── Panneau sommeil ───────────────────────────────────────────────────────────
-class _SleepPanel extends StatelessWidget {
-  final SleepBreakdown sleep;
-  final int score;
-  const _SleepPanel({required this.sleep, required this.score});
-
-  String _fmt(double minutes) {
-    final h = minutes ~/ 60;
-    final m = (minutes % 60).round();
-    return '${h}h${m.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = sleep.totalAsleepMin;
-    final hasSegments = sleep.segments.isNotEmpty;
-    // Plus de _HPanel/titre ici : ce panneau est le contenu d'un _FeedPost qui
-    // fournit déjà la carte bordée et le titre "Sommeil".
-    return InkWell(
-      onTap: total > 0
-          ? () {
-              HapticFeedback.selectionClick();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SleepDetailScreen()),
-              );
-            }
-          : null,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text('Score $score/100',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 11)),
-              if (total > 0) ...[
-                const SizedBox(width: 6),
-                const Icon(Icons.chevron_right_rounded,
-                    color: kNeonViolet, size: 18),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (total <= 0)
-              const Text('Aucune donnée de sommeil trouvée pour cette nuit.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12))
-            else ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(_fmt(total),
-                      style: const TextStyle(
-                          fontFamily: kArcadeFont,
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900)),
-                  const SizedBox(width: 10),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('Efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 11)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              // Hypnogramme si on a le détail chronologique, sinon la barre
-              // empilée classique (compat. anciens enregistrements).
-              if (hasSegments)
-                Hypnogram(segments: sleep.segments, height: 96, showAxis: true)
-              else
-                _stackedBar(),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 14,
-                runSpacing: 6,
-                children: [
-                  _SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
-                  _SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
-                  _SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
-                  _SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
-                ],
-              ),
-            ],
-          ],
-        ),
-      );
-  }
-
-  Widget _stackedBar() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: SizedBox(
-        height: 16,
-        child: Row(
-          children: [
-            if (sleep.deepMin > 0)
-              Expanded(
-                  flex: (sleep.deepMin * 100).round().clamp(1, 1000000),
-                  child: Container(color: kNeonViolet)),
-            if (sleep.remMin > 0)
-              Expanded(
-                  flex: (sleep.remMin * 100).round().clamp(1, 1000000),
-                  child: Container(color: kNeonCyan)),
-            if (sleep.lightMin > 0)
-              Expanded(
-                  flex: (sleep.lightMin * 100).round().clamp(1, 1000000),
-                  child: Container(color: SleepStage.light.color)),
-            if (sleep.awakeMin > 0)
-              Expanded(
-                  flex: (sleep.awakeMin * 100).round().clamp(1, 1000000),
-                  child: Container(color: AppColors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SleepLegend extends StatelessWidget {
   final String label;
   final String value;
@@ -1385,46 +1405,6 @@ class _SleepLegend extends StatelessWidget {
   }
 }
 
-// ── Séparateur entre le cadran (résumé chiffré) et le feed (posts) ───────────
-class _CadranFeedDivider extends StatelessWidget {
-  const _CadranFeedDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-                AppColors.border.withOpacity(0),
-                AppColors.border,
-              ]),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text('FEED',
-              style: AppText.sectionLabel.copyWith(color: AppColors.muted)),
-        ),
-        Expanded(
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-                AppColors.border,
-                AppColors.border.withOpacity(0),
-              ]),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ── Post de feed : en-tête (médaillon + heure + titre) et contenu dans une
 // seule carte bordée — chaque section du feed doit se lire comme un post
 // autonome de réseau social, pas comme un titre flottant au-dessus d'un
@@ -1435,18 +1415,21 @@ class _FeedPost extends StatelessWidget {
   final String title;
   final Color accent;
   final Widget child;
+  final VoidCallback? onTap;
   const _FeedPost({
     required this.icon,
     required this.time,
     required this.title,
     required this.accent,
     required this.child,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return _HPanel(
       accent: accent,
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1998,7 +1981,8 @@ class _WeeklyQuestBars extends StatelessWidget {
 // ── Cadre de panneau réutilisable (alias du design system, garde le nom
 // historique pour limiter le diff dans ce fichier) ────────────────────────────
 class _HPanel extends AppPanel {
-  const _HPanel({required super.child, required super.accent, super.hero});
+  const _HPanel(
+      {required super.child, required super.accent, super.hero, super.onTap});
 }
 
 class _HPanelTitle extends PanelTitle {
