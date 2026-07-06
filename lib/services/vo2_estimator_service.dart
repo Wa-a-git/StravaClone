@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import '../models/activity.dart';
+import '../models/hr_efficiency_point.dart';
 import '../models/vo2_estimate.dart';
 import 'health_connect_service.dart';
 import 'health_store.dart';
+import 'hr_efficiency_store.dart';
 import 'vo2_estimate_store.dart';
 
 /// Réglages de l'estimateur — regroupés pour pouvoir les ajuster/tester
@@ -99,12 +101,16 @@ class Vo2EstimatorService {
   /// Une seule requête Health Connect par activité (fenêtre complète) ; le
   /// découpage par répétition se fait localement sur les échantillons FC
   /// horodatés (`hrSeries`), pas de requête supplémentaire par lap.
-  static Future<List<(double, double)>> _pairsForActivity(
+  /// Renvoie aussi la FC moyenne brute de toute l'activité (second élément)
+  /// — réutilisée pour l'efficacité cardiaque sans requête supplémentaire.
+  static Future<(List<(double, double)>, double?)> _pairsForActivity(
       Activity activity, HealthConnectService health) async {
-    if (activity.distance <= 0 || activity.duration <= 0) return const [];
+    if (activity.distance <= 0 || activity.duration <= 0) {
+      return (const <(double, double)>[], null);
+    }
     final end = activity.date.add(Duration(seconds: activity.duration));
     final vitals = await health.getActivityVitals(activity.date, end);
-    if (!vitals.hasHr) return const [];
+    if (!vitals.hasHr) return (const <(double, double)>[], null);
 
     final laps = activity.laps;
     if (activity.workoutType == 'interval' && laps != null && laps.isNotEmpty) {
@@ -128,18 +134,21 @@ class Vo2EstimatorService {
         final vo2 = vo2AtSpeed(speedMPerMin(lapDistance, lapDuration));
         pairs.add((vo2, avgHr));
       }
-      return pairs;
+      return (pairs, vitals.avgHr);
     }
 
     final vo2 = vo2AtSpeed(speedMPerMin(activity.distance, activity.duration));
-    return [(vo2, vitals.avgHr)];
+    return ([(vo2, vitals.avgHr)], vitals.avgHr);
   }
 
   /// Recalcule l'estimation sur la fenêtre glissante ([activities] = tout
   /// l'historique, le filtrage par fenêtre se fait ici) et l'enregistre si
-  /// elle passe les seuils — sinon ne stocke rien. Best-effort : jamais
-  /// d'exception propagée (appelé en fire-and-forget depuis les écrans de
-  /// suivi, ne doit jamais faire planter la fin d'une séance).
+  /// elle passe les seuils — sinon ne stocke rien. Au passage, met aussi à
+  /// jour `HrEfficiencyStore` (un point par course, FC moyenne déjà
+  /// récupérée pour le VO2 max — pas de requête Health Connect en plus).
+  /// Best-effort : jamais d'exception propagée (appelé en fire-and-forget
+  /// depuis les écrans de suivi, ne doit jamais faire planter la fin d'une
+  /// séance).
   static Future<Vo2Estimate?> recomputeAndStore(
     List<Activity> activities, {
     HealthConnectService? healthConnect,
@@ -152,7 +161,14 @@ class Vo2EstimatorService {
 
       final pairs = <(double, double)>[];
       for (final a in recent) {
-        pairs.addAll(await _pairsForActivity(a, health));
+        final (activityPairs, avgHr) = await _pairsForActivity(a, health);
+        pairs.addAll(activityPairs);
+        if (avgHr != null && a.avgSpeedKmhValue > 0) {
+          await HrEfficiencyStore.upsert(HrEfficiencyPoint(
+            date: a.date,
+            ratio: avgHr / a.avgSpeedKmhValue,
+          ));
+        }
       }
 
       final age = HealthProfileStore.age;

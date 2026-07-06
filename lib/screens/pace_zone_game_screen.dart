@@ -46,6 +46,7 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
   // Trace GPS, pour exporter une vraie Activity en fin de séance (voir _stop)
   // — condition nécessaire pour que la séance alimente l'estimation VO2 max.
   final List<List<double>> _route = [];
+  final List<int> _pointSeconds = [];
 
   @override
   void dispose() {
@@ -74,12 +75,14 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
       _status = _ZoneStatus.idle;
     });
     _route.clear();
+    _pointSeconds.clear();
     HapticFeedback.mediumImpact();
     _coach.say('C\'est parti. Allure cible ${formatPace(_targetSec)}.');
 
     _sub = LocationService.getPositionStream().listen((p) {
       _pace.addPosition(p);
       _route.add([p.latitude, p.longitude]);
+      _pointSeconds.add(_elapsed);
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
@@ -158,6 +161,7 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
         route: _route,
         name: 'Zone d\'allure ${formatPace(_targetSec)}/km',
         workoutType: 'pace_zone',
+        pointSeconds: _pointSeconds,
       );
       await HiveService.saveActivity(activity);
       ref.read(activityListProvider.notifier).refresh();

@@ -69,6 +69,7 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
   // fractionné alimente l'estimation VO2 max (paires FC/allure par lap).
   final List<List<double>> _route = [];
   final List<Map<String, dynamic>> _laps = [];
+  final List<int> _pointSeconds = [];
 
   @override
   void initState() {
@@ -129,11 +130,13 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
     });
     _route.clear();
     _laps.clear();
+    _pointSeconds.clear();
     HapticFeedback.mediumImpact();
 
     _sub = LocationService.getPositionStream().listen((p) {
       _speedKmh = _pace.addPosition(p);
       _route.add([p.latitude, p.longitude]);
+      _pointSeconds.add(_elapsed);
     });
     _enterPhase();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
@@ -246,6 +249,7 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
         lapCount: _repsCompleted,
         laps: _laps,
         workoutType: 'interval',
+        pointSeconds: _pointSeconds,
       );
       await HiveService.saveActivity(activity);
       ref.read(activityListProvider.notifier).refresh();

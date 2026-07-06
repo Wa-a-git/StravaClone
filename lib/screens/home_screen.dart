@@ -6,7 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
+import '../services/efficiency_trend.dart';
 import '../services/game_service.dart';
+import '../services/health_score_service.dart' show TrendDir;
+import '../services/hr_efficiency_store.dart';
 import '../services/vo2_estimate_store.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/health_charts.dart';
@@ -140,6 +143,8 @@ class CourseSection extends ConsumerWidget {
           _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
           const SizedBox(height: AppSpacing.xxl),
           const _Vo2TrendCard(),
+          const SizedBox(height: AppSpacing.lg),
+          const _EfficiencyTrendCard(),
           const SizedBox(height: AppSpacing.lg),
           _IntervalSuggestionCard(activities: allActivities),
           const SizedBox(height: AppSpacing.xxl),
@@ -501,6 +506,103 @@ class _Vo2TrendCard extends StatelessWidget {
               'Basé sur ${estimates.last.sampleCount} points de mesure.',
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Signal de progression demandé explicitement : pas la vitesse, mais la FC
+/// nécessaire pour une allure donnée. Un ratio qui baisse dans le temps veut
+/// dire un cœur plus efficace — le signal pour penser à accélérer.
+class _EfficiencyTrendCard extends StatelessWidget {
+  const _EfficiencyTrendCard();
+
+  static const int _minPoints = 6;
+  static const int _groupSize = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final points = HrEfficiencyStore.all();
+    Widget? comparison;
+    if (points.length >= _minPoints) {
+      final n = min(_groupSize, points.length ~/ 2);
+      final recent =
+          points.sublist(points.length - n).map((p) => p.ratio).toList();
+      final previous = points
+          .sublist(points.length - 2 * n, points.length - n)
+          .map((p) => p.ratio)
+          .toList();
+      final trend = EfficiencyTrend.compare(
+        EfficiencyTrend.average(recent),
+        EfficiencyTrend.average(previous),
+      );
+      if (trend.dir != TrendDir.flat) {
+        comparison = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TrendArrow(dir: trend.dir, good: trend.good),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                trend.good
+                    ? 'Cœur plus efficace sur tes $n dernières courses (${trend.label} bpm/km/h) — tu peux penser à accélérer.'
+                    : 'FC un peu plus haute pour la même allure sur tes $n dernières courses (${trend.label} bpm/km/h).',
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 11.5, height: 1.3),
+              ),
+            ),
+          ],
+        );
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonViolet.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Efficacité cardiaque',
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'FC moyenne rapportée à l\'allure moyenne, par course — plus bas '
+            'veut dire un cœur qui bat moins vite pour la même vitesse.',
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 11.5, height: 1.3),
+          ),
+          const SizedBox(height: 14),
+          if (points.length < _minPoints)
+            const Text(
+              'Pas encore assez de courses avec FC pour dégager une tendance '
+              'fiable.',
+              style: TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+            )
+          else ...[
+            TrendChart(
+              values: points.map((p) => p.ratio).toList(),
+              dates: points.map((p) => p.date).toList(),
+              color: kNeonViolet,
+              unit: ' bpm/km/h',
+              fractionDigits: 1,
+              height: 140,
+            ),
+            if (comparison != null) ...[
+              const SizedBox(height: 10),
+              comparison,
+            ],
           ],
         ],
       ),

@@ -24,6 +24,7 @@ class TrackingState {
   final int pauseDurationSeconds;
   final List<Map<String, dynamic>> laps; // Ajout de la mémoire des boucles
   final List<double> elevations; // altitude (m) parallèle à routePoints
+  final List<int> pointSeconds; // secondes écoulées, parallèle à routePoints
 
   const TrackingState({
     this.status = TrackingStatus.idle,
@@ -36,6 +37,7 @@ class TrackingState {
     this.pauseDurationSeconds = 0,
     this.laps = const [],
     this.elevations = const [],
+    this.pointSeconds = const [],
   });
 
   TrackingState copyWith({
@@ -49,6 +51,7 @@ class TrackingState {
     int? pauseDurationSeconds,
     List<Map<String, dynamic>>? laps,
     List<double>? elevations,
+    List<int>? pointSeconds,
   }) {
     return TrackingState(
       status: status ?? this.status,
@@ -63,6 +66,7 @@ class TrackingState {
       pauseDurationSeconds ?? this.pauseDurationSeconds,
       laps: laps ?? this.laps,
       elevations: elevations ?? this.elevations,
+      pointSeconds: pointSeconds ?? this.pointSeconds,
     );
   }
 
@@ -166,6 +170,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       laps: [], // Réinitialisation des boucles au démarrage
       pauseDurationSeconds: 0,
       elevations: [],
+      pointSeconds: [],
     );
     _lastPosition = null;
     _pauseStartTime = null;
@@ -248,6 +253,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     final savedLapCount = state.laps.length;
       final savedLaps = List<Map<String, dynamic>>.from(state.laps);
     final savedElevations = List<double>.from(state.elevations);
+    final savedPointSeconds = List<int>.from(state.pointSeconds);
 
     state = state.copyWith(
       status: TrackingStatus.idle,
@@ -258,6 +264,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       pauseDurationSeconds: 0,
       runName: '',
       elevations: [],
+      pointSeconds: [],
     );
 
     if (savedPoints.isEmpty) return null;
@@ -265,7 +272,12 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
     final route = savedPoints.map((p) => [p.latitude, p.longitude]).toList();
 
     final activity = Activity(
-      date: DateTime.now(),
+      // Reconstitue l'heure de DÉBUT (pas l'instant présent, qui est la fin
+      // de la course) — sinon toute requête Health Connect ancrée sur cette
+      // date interroge la fenêtre d'APRÈS la course (récupération) au lieu
+      // de la course elle-même (bug trouvé en vérifiant le graphe FC).
+      date: DateTime.now()
+          .subtract(Duration(seconds: savedDuration + savedPauseDuration)),
       distance: savedDistance,
       duration: savedDuration,
       route: route,
@@ -274,6 +286,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       lapCount: savedLapCount,
         laps: savedLaps, // <-- On passe maintenant les données des boucles au modèle !
       elevations: savedElevations.isNotEmpty ? savedElevations : null,
+      pointSeconds: savedPointSeconds.isNotEmpty ? savedPointSeconds : null,
     );
 
     await HiveService.saveActivity(activity);
@@ -296,6 +309,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       pauseDurationSeconds: 0,
       runName: '',
       elevations: [],
+      pointSeconds: [],
     );
   }
 
@@ -368,6 +382,7 @@ class TrackingNotifier extends StateNotifier<TrackingState> {
       totalDistance: state.totalDistance + addedDistance,
       currentPosition: newPoint,
       elevations: [...state.elevations, position.altitude],
+      pointSeconds: [...state.pointSeconds, state.elapsedSeconds],
     );
   }
   @override

@@ -5,8 +5,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/activity.dart';
+import '../services/efficiency_trend.dart';
 import '../services/export_service.dart';
 import '../services/health_connect_service.dart';
+import '../services/health_score_service.dart' show TrendDir;
+import '../services/hr_efficiency_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
 
@@ -129,6 +132,10 @@ class _DetailScreenState extends State<DetailScreen> {
                       _buildStatsGrid(),
                       const SizedBox(height: 16),
                       _buildWatchCard(),
+                      if (_activity.speedSeries.length >= 2) ...[
+                        const SizedBox(height: 16),
+                        _buildSpeedCard(),
+                      ],
                       if (_routePoints.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         _buildRouteCard(),
@@ -499,10 +506,53 @@ class _DetailScreenState extends State<DetailScreen> {
                 xLabelFormatter: (d) =>
                     '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}',
               ),
+              if (_buildEfficiencyComparisonLine(v) case final line?) ...[
+                const SizedBox(height: 10),
+                line,
+              ],
             ],
           ],
         ],
       ),
+    );
+  }
+
+  static const int _efficiencyHistoryWindow = 10;
+  static const int _efficiencyMinHistory = 5;
+
+  /// Compare la FC pour l'allure de cette course à la moyenne des courses
+  /// précédentes (voir `EfficiencyTrend`) — `null` tant que l'historique est
+  /// trop court pour qu'une comparaison soit défendable.
+  Widget? _buildEfficiencyComparisonLine(ActivityVitals v) {
+    if (_activity.avgSpeedKmhValue <= 0) return null;
+    final currentRatio = v.avgHr / _activity.avgSpeedKmhValue;
+    final currentMs = _activity.date.millisecondsSinceEpoch;
+    final previous = HrEfficiencyStore.all()
+        .where((p) => p.date.millisecondsSinceEpoch != currentMs)
+        .toList();
+    if (previous.length < _efficiencyMinHistory) return null;
+    final window = previous.length > _efficiencyHistoryWindow
+        ? previous.sublist(previous.length - _efficiencyHistoryWindow)
+        : previous;
+    final baseline = EfficiencyTrend.average(window.map((p) => p.ratio).toList());
+    final trend = EfficiencyTrend.compare(currentRatio, baseline);
+    if (trend.dir == TrendDir.flat) return null;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TrendArrow(dir: trend.dir, good: trend.good),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            trend.good
+                ? 'FC pour cette allure plus basse que d\'habitude (${trend.label} bpm/km/h) — bon signe.'
+                : 'FC pour cette allure plus haute que d\'habitude (${trend.label} bpm/km/h).',
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 11.5, height: 1.3),
+          ),
+        ),
+      ],
     );
   }
 
@@ -573,6 +623,61 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             );
           }),
+        ],
+      ),
+    );
+  }
+
+  /// Vitesse au fil de la course, dérivée du tracé GPS (voir
+  /// `Activity.speedSeries`) — absente pour les activités enregistrées
+  /// avant l'ajout de l'horodatage par point.
+  Widget _buildSpeedCard() {
+    final series = _activity.speedSeries;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141419),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonGreen.withOpacity(0.4), width: 1.2),
+        boxShadow: [BoxShadow(color: kNeonGreen.withOpacity(0.10), blurRadius: 12)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.speed_rounded, color: kNeonGreen, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Vitesse pendant la course',
+                style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: kNeonGreen,
+                  letterSpacing: 0.5,
+                  shadows: [Shadow(color: kNeonGreen, blurRadius: 6)],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          TrendChart(
+            values: [for (final p in series) p.$2],
+            dates: [
+              for (final p in series) _activity.date.add(Duration(seconds: p.$1))
+            ],
+            color: kNeonGreen,
+            unit: ' km/h',
+            fractionDigits: 1,
+            height: 140,
+            xLabelFormatter: (d) {
+              final elapsed = d.difference(_activity.date).inSeconds;
+              final m = elapsed ~/ 60;
+              final s = elapsed % 60;
+              return '$m:${s.toString().padLeft(2, '0')}';
+            },
+          ),
         ],
       ),
     );
