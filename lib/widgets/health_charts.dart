@@ -164,6 +164,9 @@ class TrendChart extends StatelessWidget {
   final String unit;
   final int fractionDigits;
   final ChartZone? zone;
+  /// Formateur de l'axe X (dates de début/fin) — par défaut "jj/mm", mais une
+  /// période intra-journée (ex. le déroulé d'une course) veut plutôt "hh:mm".
+  final String Function(DateTime)? xLabelFormatter;
   const TrendChart({
     super.key,
     required this.values,
@@ -174,6 +177,7 @@ class TrendChart extends StatelessWidget {
     this.unit = '',
     this.fractionDigits = 0,
     this.zone,
+    this.xLabelFormatter,
   });
 
   @override
@@ -204,6 +208,7 @@ class TrendChart extends StatelessWidget {
             unit: unit,
             fractionDigits: fractionDigits,
             zone: zone,
+            xLabelFormatter: xLabelFormatter,
           ),
         ),
       ),
@@ -220,6 +225,7 @@ class _TrendPainter extends CustomPainter {
   final String unit;
   final int fractionDigits;
   final ChartZone? zone;
+  final String Function(DateTime)? xLabelFormatter;
   _TrendPainter({
     required this.values,
     required this.color,
@@ -229,10 +235,13 @@ class _TrendPainter extends CustomPainter {
     this.unit = '',
     this.fractionDigits = 0,
     this.zone,
+    this.xLabelFormatter,
   });
 
   static String _shortDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+  String _xLabel(DateTime d) => (xLabelFormatter ?? _shortDate)(d);
 
   void _drawLabel(Canvas canvas, String text, Offset anchor,
       {required bool alignRight,
@@ -360,9 +369,9 @@ class _TrendPainter extends CustomPainter {
     final ds = dates;
     if (ds != null && ds.length >= 2) {
       final dateY = topPad + chartH + 14;
-      _drawLabel(canvas, _shortDate(ds.first), Offset(leftPad, dateY),
+      _drawLabel(canvas, _xLabel(ds.first), Offset(leftPad, dateY),
           alignRight: false, alignTop: true);
-      _drawLabel(canvas, _shortDate(ds.last), Offset(size.width - rightPad, dateY),
+      _drawLabel(canvas, _xLabel(ds.last), Offset(size.width - rightPad, dateY),
           alignRight: true, alignTop: true);
     }
 

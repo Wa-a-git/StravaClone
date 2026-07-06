@@ -4,6 +4,10 @@ import '../models/daily_health_record.dart';
 import 'health_score_service.dart';
 import 'health_store.dart';
 
+/// Un relevé de FC horodaté — sert à tracer le graphe FC/temps d'une course,
+/// avec de vraies heures sur l'axe X plutôt qu'un simple index de point.
+typedef HrPoint = (DateTime time, double bpm);
+
 /// Données « montre » rattachées à une activité (fenêtre temporelle donnée) :
 /// fréquence cardiaque + calories actives lues depuis Health Connect.
 class ActivityVitals {
@@ -12,6 +16,7 @@ class ActivityVitals {
   final double maxHr;
   final double activeCalories;
   final List<double> hrSamples;
+  final List<HrPoint> hrSeries;
 
   const ActivityVitals({
     this.avgHr = 0,
@@ -19,6 +24,7 @@ class ActivityVitals {
     this.maxHr = 0,
     this.activeCalories = 0,
     this.hrSamples = const [],
+    this.hrSeries = const [],
   });
 
   bool get hasHr => hrSamples.isNotEmpty;
@@ -150,13 +156,15 @@ class HealthConnectService {
       ]);
 
       final hrPoints = results[0] as List<HealthDataPoint>;
-      final hr = <double>[];
+      final series = <HrPoint>[];
       for (final p in hrPoints) {
         if (p.value is NumericHealthValue) {
           final v = (p.value as NumericHealthValue).numericValue.toDouble();
-          if (v > 0) hr.add(v);
+          if (v > 0) series.add((p.dateFrom, v));
         }
       }
+      series.sort((a, b) => a.$1.compareTo(b.$1));
+      final hr = [for (final s in series) s.$2];
       final cal = _sumNumeric(results[1] as List<HealthDataPoint>);
 
       if (hr.isEmpty) {
@@ -171,6 +179,7 @@ class HealthConnectService {
         maxHr: maxV,
         activeCalories: cal,
         hrSamples: hr,
+        hrSeries: series,
       );
     } catch (e) {
       print('getActivityVitals error: $e');

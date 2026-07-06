@@ -33,6 +33,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _loadVitals() async {
+    setState(() => _loadingVitals = true);
     final start = _activity.date;
     final end = start.add(Duration(
         seconds: _activity.duration + _activity.pauseDurationSeconds));
@@ -426,12 +427,26 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ),
             )
-          else if (v == null || !v.hasData)
+          else if (v == null || !v.hasData) ...[
             const Text(
-              'Aucune donnée de la montre sur ce créneau.\nPorte ta Charge 6 pendant la course et synchronise-la.',
+              'Aucune donnée de la montre sur ce créneau.\nSi tu as lancé la course depuis l\'app (pas depuis la montre), '
+              'la Charge 6 doit d\'abord synchroniser vers Health Connect — '
+              'ça peut prendre quelques minutes après la fin de la course.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
-            )
-          else ...[
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _loadVitals,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kNeonCyan,
+                side: BorderSide(color: kNeonCyan.withOpacity(0.5)),
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Réessayer'),
+            ),
+          ] else ...[
             Row(
               children: [
                 Expanded(
@@ -471,11 +486,19 @@ class _DetailScreenState extends State<DetailScreen> {
               ],
             ),
             if (v.hasHr && v.hrSamples.length >= 2) ...[
-              const SizedBox(height: 16),
-              const Text('Fréquence cardiaque',
+              const SizedBox(height: 18),
+              const Text('Fréquence cardiaque pendant la course',
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-              const SizedBox(height: 6),
-              Sparkline(values: v.hrSamples, color: kNeonPink, height: 48),
+              const SizedBox(height: 8),
+              TrendChart(
+                values: v.hrSamples,
+                dates: [for (final s in v.hrSeries) s.$1],
+                color: kNeonPink,
+                unit: ' bpm',
+                height: 140,
+                xLabelFormatter: (d) =>
+                    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}',
+              ),
             ],
           ],
         ],
