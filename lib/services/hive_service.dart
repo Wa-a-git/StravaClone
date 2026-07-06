@@ -15,6 +15,7 @@ class HiveService {
     await Hive.openBox('settings'); // Boîte pour mémoriser le dossier d'export
     await Hive.openBox('game_results'); // Résultats des mini-jeux
     await Hive.openBox('health_history'); // Instantanés santé quotidiens
+    await Hive.openBox('musculation_log'); // Exercices loggés (séries/répétitions)
   }
 
   /// Returns the open box (throws if not initialized).

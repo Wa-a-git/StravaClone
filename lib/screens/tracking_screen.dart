@@ -20,7 +20,11 @@ import '../theme.dart';
 enum _StopChoice { save, discard, keepGoing }
 
 class TrackingScreen extends ConsumerStatefulWidget {
-  const TrackingScreen({super.key});
+  /// Objectif de distance affiché pendant la course (ex. la routine "5 km
+  /// quotidien"). Purement informatif — n'arrête pas le suivi, ne change rien
+  /// à TrackingProvider/TrackingState.
+  final double? targetKm;
+  const TrackingScreen({super.key, this.targetKm});
 
   @override
   ConsumerState<TrackingScreen> createState() => _TrackingScreenState();
@@ -538,6 +542,13 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
+                // Repère d'objectif (ex. routine "5 km quotidien") — purement
+                // informatif, ne coupe jamais la course.
+                if (widget.targetKm != null)
+                  _TargetKmBanner(
+                    targetKm: widget.targetKm!,
+                    currentKm: trackState.totalDistance / 1000,
+                  ),
                 // Indicateur de boucle en cours
                 if (trackState.laps.isNotEmpty && trackState.status != TrackingStatus.idle)
                   Container(
@@ -977,6 +988,64 @@ class _RecordingBadgeState extends State<_RecordingBadge>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+}
+
+// ── Repère d'objectif de distance (ex. routine "5 km quotidien") ─────────────
+class _TargetKmBanner extends StatelessWidget {
+  final double targetKm;
+  final double currentKm;
+  const _TargetKmBanner({required this.targetKm, required this.currentKm});
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = targetKm <= 0 ? 0.0 : (currentKm / targetKm).clamp(0.0, 1.0);
+    final reached = currentKm >= targetKm;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'OBJECTIF ${targetKm.toStringAsFixed(0)} KM',
+                style: const TextStyle(
+                  color: Color(0xFFF55CBD),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              Text(
+                reached
+                    ? 'Objectif atteint !'
+                    : '${(targetKm - currentKm).toStringAsFixed(2)} km restants',
+                style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Stack(
+              children: [
+                Container(height: 5, color: const Color(0xFF2A2A30)),
+                FractionallySizedBox(
+                  widthFactor: ratio,
+                  child: Container(
+                      height: 5,
+                      color: reached
+                          ? const Color(0xFF39FF14)
+                          : const Color(0xFFF55CBD)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

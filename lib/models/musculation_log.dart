@@ -1,0 +1,55 @@
+// lib/models/musculation_log.dart
+import '../data/exercise_library.dart';
+
+/// Un exercice loggé pour un jour donné (séries × répétitions). Persisté en
+/// Map simple (toMap/fromMap), même style que DailyHealthRecord — pas de
+/// génération de code Hive, plus rapide à itérer pour un flux volontairement
+/// minimal ("un truc rapide").
+class MusculationLogEntry {
+  final DateTime date;
+  final String exerciseId;
+  final String exerciseName;
+  final ExerciseCategory category;
+  final int sets;
+  final int reps;
+
+  const MusculationLogEntry({
+    required this.date,
+    required this.exerciseId,
+    required this.exerciseName,
+    required this.category,
+    required this.sets,
+    required this.reps,
+  });
+
+  /// Clé de jour : 'yyyy-MM-dd'.
+  static String keyFor(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  String get dayKey => keyFor(date);
+
+  Map<String, dynamic> toMap() => {
+        'date': date.millisecondsSinceEpoch,
+        'exerciseId': exerciseId,
+        'exerciseName': exerciseName,
+        'category': category.index,
+        'sets': sets,
+        'reps': reps,
+      };
+
+  factory MusculationLogEntry.fromMap(Map<dynamic, dynamic> m) {
+    final categoryIndex = (m['category'] as num?)?.toInt() ?? 0;
+    return MusculationLogEntry(
+      date: DateTime.fromMillisecondsSinceEpoch(
+          (m['date'] as num?)?.toInt() ?? 0),
+      exerciseId: (m['exerciseId'] ?? '').toString(),
+      exerciseName: (m['exerciseName'] ?? '').toString(),
+      category: ExerciseCategory
+          .values[categoryIndex.clamp(0, ExerciseCategory.values.length - 1)],
+      sets: (m['sets'] as num?)?.toInt() ?? 0,
+      reps: (m['reps'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

@@ -19,6 +19,12 @@ import 'theme.dart';
 /// pousser une route depuis l'extérieur de l'arbre de widgets.
 final navigatorKey = GlobalKey<NavigatorState>();
 
+/// Observateur de routes partagé : permet à un écran (ex. le dashboard Santé)
+/// de savoir qu'on est revenu dessus après avoir fermé un écran poussé
+/// par-dessus (RouteAware.didPopNext), pour par exemple réinitialiser son
+/// scroll en haut plutôt que de garder la position laissée avant de partir.
+final routeObserver = RouteObserver<PageRoute>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -108,6 +114,7 @@ class _ArcadeHealthAppState extends State<ArcadeHealthApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
+      navigatorObservers: [routeObserver],
       title: 'Arcade Health',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),

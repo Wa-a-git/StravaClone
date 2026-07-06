@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'home_screen.dart';
+import 'interval_game_screen.dart';
 import 'musculation_screen.dart';
+import 'pace_zone_game_screen.dart';
 
 enum SportTab { course, musculation }
 
@@ -29,6 +31,11 @@ class SportScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: kNeonPink,
+        onPressed: () => _openQuickLaunch(context, ref),
+        child: const Icon(Icons.add_rounded, color: Colors.white),
+      ),
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -80,6 +87,147 @@ class SportScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Lancement rapide (+) : Musculation ouvre directement le flux de log,
+  /// Course propose un choix (libre / 5 km / fractionné / zone d'allure) sans
+  /// repasser par le hub des mini-jeux.
+  Future<void> _openQuickLaunch(BuildContext context, WidgetRef ref) async {
+    if (ref.read(sportTabProvider) == SportTab.musculation) {
+      await openMusculationQuickLog(context);
+      return;
+    }
+    final choice = await showAppSheet<String>(
+      context: context,
+      child: const _CourseQuickLaunchSheet(),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case 'free':
+        startRun(context);
+        break;
+      case '5k':
+        startRun(context, targetKm: 5.0);
+        break;
+      case 'interval':
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const IntervalGameScreen()));
+        break;
+      case 'pace':
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PaceZoneGameScreen()));
+        break;
+    }
+  }
+}
+
+// ── Feuille de lancement rapide (Course) ──────────────────────────────────────
+class _CourseQuickLaunchSheet extends StatelessWidget {
+  const _CourseQuickLaunchSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Lancer une activité',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _QuickLaunchTile(
+          icon: Icons.play_arrow_rounded,
+          color: kNeonPink,
+          title: 'Course libre',
+          subtitle: 'Suivi GPS sans objectif',
+          onTap: () => Navigator.pop(context, 'free'),
+        ),
+        _QuickLaunchTile(
+          icon: Icons.directions_run_rounded,
+          color: kNeonGreen,
+          title: '5 km quotidien',
+          subtitle: 'Ta routine du jour',
+          onTap: () => Navigator.pop(context, '5k'),
+        ),
+        _QuickLaunchTile(
+          icon: Icons.timer_rounded,
+          color: kNeonCyan,
+          title: 'Fractionné',
+          subtitle: 'Intervalles effort/repos guidés',
+          onTap: () => Navigator.pop(context, 'interval'),
+        ),
+        _QuickLaunchTile(
+          icon: Icons.speed_rounded,
+          color: kNeonViolet,
+          title: 'Zone d\'allure',
+          subtitle: 'Maintiens une allure cible',
+          onTap: () => Navigator.pop(context, 'pace'),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickLaunchTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _QuickLaunchTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: AppText.body),
+                    Text(subtitle, style: AppText.caption),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: color, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,12 +1,19 @@
 // lib/screens/musculation_screen.dart
-// Ébauche de la partie Musculation : bibliothèque d'exercices par catégorie
-// + création d'une séance simple (choix d'exercices). Pas de suivi de charge
-// progressive pour l'instant — ça viendra dans une prochaine passe.
+// Musculation : bibliothèque d'exercices par catégorie + flux rapide de log
+// (recherche → exercice → séries/répétitions → persisté immédiatement).
 import 'package:flutter/material.dart';
 import '../data/exercise_library.dart';
+import '../models/musculation_log.dart';
+import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
-import '../widgets/system_window.dart';
+
+/// Ouvre le flux rapide d'ajout d'exercice — appelable depuis le bouton
+/// "NOUVELLE SÉANCE" de cet écran ou depuis le bouton + de lancement rapide
+/// du hub Sport.
+Future<void> openMusculationQuickLog(BuildContext context) {
+  return showAppSheet(context: context, child: const _QuickLogSheet());
+}
 
 /// Contenu du sous-onglet "Musculation" du hub Sport.
 class MusculationSection extends StatefulWidget {
@@ -19,6 +26,11 @@ class MusculationSection extends StatefulWidget {
 class _MusculationSectionState extends State<MusculationSection> {
   ExerciseCategory? _filter;
 
+  Future<void> _openQuickLog() async {
+    await openMusculationQuickLog(context);
+    if (mounted) setState(() {}); // rafraîchit "Séance du jour"
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercises = kExerciseLibrary
@@ -30,18 +42,31 @@ class _MusculationSectionState extends State<MusculationSection> {
       byCategory.putIfAbsent(e.category, () => []).add(e);
     }
 
+    final todayEntries = MusculationStore.todayEntries();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GlowButton(
-            label: 'NOUVELLE SÉANCE',
+            label: 'AJOUTER UN EXERCICE',
             icon: Icons.add_rounded,
             color: kNeonViolet,
             foreground: Colors.white,
-            onPressed: () => _openSessionBuilder(context),
+            onPressed: _openQuickLog,
           ),
+          if (todayEntries.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xl),
+            const Text('Séance du jour', style: AppText.screenTitle),
+            const SizedBox(height: AppSpacing.md),
+            for (final entry in todayEntries)
+              _LoggedEntryTile(
+                logKey: entry.key,
+                entry: entry.value,
+                onDeleted: () => setState(() {}),
+              ),
+          ],
           const SizedBox(height: AppSpacing.xl),
           Text('Bibliothèque d\'exercices', style: AppText.screenTitle),
           const SizedBox(height: AppSpacing.md),
@@ -79,21 +104,49 @@ class _MusculationSectionState extends State<MusculationSection> {
       ),
     );
   }
+}
 
-  Future<void> _openSessionBuilder(BuildContext context) async {
-    final selected = await showAppSheet<Set<String>>(
-      context: context,
-      child: const _SessionBuilderSheet(),
-    );
-    if (selected == null || selected.isEmpty || !context.mounted) return;
-    await showSystemWindow(
-      context,
-      heading: 'SÉANCE CRÉÉE',
-      lines: [
-        '${selected.length} exercice${selected.length > 1 ? 's' : ''} ajouté${selected.length > 1 ? 's' : ''}',
-        'Le suivi complet (séries, charges) arrive bientôt.',
-      ],
-      accent: kNeonViolet,
+// ── Entrée loggée aujourd'hui (avec suppression) ──────────────────────────────
+class _LoggedEntryTile extends StatelessWidget {
+  final String logKey;
+  final MusculationLogEntry entry;
+  final VoidCallback onDeleted;
+  const _LoggedEntryTile(
+      {required this.logKey, required this.entry, required this.onDeleted});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: entry.category.color.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(entry.category.icon, color: entry.category.color, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(entry.exerciseName, style: AppText.body),
+          ),
+          Text('${entry.sets} × ${entry.reps}',
+              style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: entry.category.color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800)),
+          IconButton(
+            icon: const Icon(Icons.close_rounded,
+                color: AppColors.textSecondary, size: 18),
+            onPressed: () async {
+              await MusculationStore.deleteEntry(logKey);
+              onDeleted();
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -178,28 +231,37 @@ class _ExerciseTile extends StatelessWidget {
   }
 }
 
-/// Feuille de création de séance : sélection multiple d'exercices dans la
-/// bibliothèque. Pas encore de séries/reps/charge — juste la composition.
-class _SessionBuilderSheet extends StatefulWidget {
-  const _SessionBuilderSheet();
+// ── Feuille de log rapide : recherche + catégories + tap = ajouter ───────────
+class _QuickLogSheet extends StatefulWidget {
+  const _QuickLogSheet();
 
   @override
-  State<_SessionBuilderSheet> createState() => _SessionBuilderSheetState();
+  State<_QuickLogSheet> createState() => _QuickLogSheetState();
 }
 
-class _SessionBuilderSheetState extends State<_SessionBuilderSheet> {
-  final Set<String> _selected = {};
+class _QuickLogSheetState extends State<_QuickLogSheet> {
+  ExerciseCategory? _filter;
+  String _search = '';
 
   @override
   Widget build(BuildContext context) {
+    final query = _search.trim().toLowerCase();
+    final exercises = kExerciseLibrary.where((e) {
+      if (_filter != null && e.category != _filter) return false;
+      if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.7,
+      height: MediaQuery.of(context).size.height * 0.75,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Nouvelle séance',
+            'Ajouter un exercice',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -209,36 +271,53 @@ class _SessionBuilderSheetState extends State<_SessionBuilderSheet> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Choisis les exercices de ta séance.',
+            'Cherche, tape sur un exercice, indique séries et répétitions.',
             style: AppText.caption,
           ),
           const SizedBox(height: AppSpacing.lg),
-          Expanded(
+          TextField(
+            onChanged: (v) => setState(() => _search = v),
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              hintText: 'Rechercher un exercice…',
+              prefixIcon: Icon(Icons.search_rounded, color: AppColors.textSecondary),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 40,
             child: ListView(
+              scrollDirection: Axis.horizontal,
               children: [
+                _CategoryChip(
+                  label: 'Tout',
+                  color: AppColors.textSecondary,
+                  selected: _filter == null,
+                  onTap: () => setState(() => _filter = null),
+                ),
                 for (final c in ExerciseCategory.values) ...[
-                  PanelTitle(c.label.toUpperCase(), color: c.color),
-                  const SizedBox(height: AppSpacing.sm),
-                  for (final e in kExerciseLibrary.where((e) => e.category == c))
-                    _PickableExerciseTile(
-                      exercise: e,
-                      selected: _selected.contains(e.id),
-                      onTap: () => setState(() {
-                        _selected.contains(e.id) ? _selected.remove(e.id) : _selected.add(e.id);
-                      }),
-                    ),
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(width: 8),
+                  _CategoryChip(
+                    label: c.label,
+                    color: c.color,
+                    selected: _filter == c,
+                    onTap: () => setState(() => _filter = c),
+                  ),
                 ],
               ],
             ),
           ),
-          GlowButton(
-            label: _selected.isEmpty
-                ? 'SÉLECTIONNE AU MOINS UN EXERCICE'
-                : 'CRÉER LA SÉANCE (${_selected.length})',
-            color: kNeonViolet,
-            foreground: Colors.white,
-            onPressed: _selected.isEmpty ? null : () => Navigator.pop(context, _selected),
+          const SizedBox(height: AppSpacing.md),
+          Expanded(
+            child: exercises.isEmpty
+                ? const Center(
+                    child: Text('Aucun exercice trouvé.', style: AppText.caption),
+                  )
+                : ListView.builder(
+                    itemCount: exercises.length,
+                    itemBuilder: (context, i) =>
+                        _LoggableExerciseTile(exercise: exercises[i]),
+                  ),
           ),
         ],
       ),
@@ -246,35 +325,57 @@ class _SessionBuilderSheetState extends State<_SessionBuilderSheet> {
   }
 }
 
-class _PickableExerciseTile extends StatelessWidget {
+class _LoggableExerciseTile extends StatelessWidget {
   final Exercise exercise;
-  final bool selected;
-  final VoidCallback onTap;
+  const _LoggableExerciseTile({required this.exercise});
 
-  const _PickableExerciseTile({
-    required this.exercise,
-    required this.selected,
-    required this.onTap,
-  });
+  Future<void> _logIt(BuildContext context) async {
+    final result = await showDialog<(int, int)>(
+      context: context,
+      builder: (_) => _SetsRepsDialog(exercise: exercise),
+    );
+    if (result == null) return;
+    await MusculationStore.addEntry(MusculationLogEntry(
+      date: DateTime.now(),
+      exerciseId: exercise.id,
+      exerciseName: exercise.name,
+      category: exercise.category,
+      sets: result.$1,
+      reps: result.$2,
+    ));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${exercise.name} ajouté : ${result.$1} × ${result.$2}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => _logIt(context),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? kNeonViolet.withOpacity(0.10) : AppColors.surface,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: selected ? kNeonViolet.withOpacity(0.6) : AppColors.border),
+          border: Border.all(color: AppColors.border),
         ),
         child: Row(
           children: [
-            Icon(
-              selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-              color: selected ? kNeonViolet : AppColors.textSecondary,
-              size: 20,
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: exercise.category.color.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Icon(exercise.category.icon,
+                  color: exercise.category.color, size: 17),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -286,9 +387,102 @@ class _PickableExerciseTile extends StatelessWidget {
                 ],
               ),
             ),
+            Icon(Icons.add_circle_outline_rounded,
+                color: exercise.category.color, size: 22),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SetsRepsDialog extends StatefulWidget {
+  final Exercise exercise;
+  const _SetsRepsDialog({required this.exercise});
+
+  @override
+  State<_SetsRepsDialog> createState() => _SetsRepsDialogState();
+}
+
+class _SetsRepsDialogState extends State<_SetsRepsDialog> {
+  int _sets = 3;
+  int _reps = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text(widget.exercise.name,
+          style: const TextStyle(
+              fontFamily: kArcadeFont, color: AppColors.textPrimary, fontSize: 16)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StepperRow(
+              label: 'Séries',
+              value: _sets,
+              onChanged: (v) => setState(() => _sets = v)),
+          const SizedBox(height: 14),
+          _StepperRow(
+              label: 'Répétitions',
+              value: _reps,
+              onChanged: (v) => setState(() => _reps = v)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: widget.exercise.category.color),
+          onPressed: () => Navigator.pop(context, (_sets, _reps)),
+          child: const Text('Ajouter', style: TextStyle(color: Colors.black)),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepperRow extends StatelessWidget {
+  final String label;
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _StepperRow(
+      {required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: value > 1 ? () => onChanged(value - 1) : null,
+            ),
+            SizedBox(
+              width: 30,
+              child: Text('$value',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: () => onChanged(value + 1),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

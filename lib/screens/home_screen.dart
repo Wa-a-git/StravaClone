@@ -28,26 +28,29 @@ extension on HomePeriod {
 /// Période sélectionnée pour filtrer les statistiques de l'accueil.
 final homePeriodProvider = StateProvider<HomePeriod>((ref) => HomePeriod.week);
 
+/// Lance une course (GPS libre, ou avec un objectif de distance affiché à
+/// titre indicatif — ex. la routine "5 km quotidien"). Public : réutilisé par
+/// le bouton "LANCER UNE COURSE" et par le lancement rapide (+) du hub Sport.
+void startRun(BuildContext context, {double? targetKm}) {
+  HapticFeedback.mediumImpact();
+  Navigator.push(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (_, animation, __) => TrackingScreen(targetKm: targetKm),
+      transitionsBuilder: (_, animation, __, child) => SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+            .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+        child: child,
+      ),
+      transitionDuration: const Duration(milliseconds: 380),
+    ),
+  );
+}
+
 /// Contenu du sous-onglet "Course" du hub Sport (stats, tendance, historique,
 /// mini-jeux). N'a pas son propre Scaffold : il est inséré dans SportScreen.
 class CourseSection extends ConsumerWidget {
   const CourseSection({super.key});
-
-  void _startRun(BuildContext context) {
-    HapticFeedback.mediumImpact();
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, animation, __) => const TrackingScreen(),
-        transitionsBuilder: (_, animation, __, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -108,7 +111,7 @@ class CourseSection extends ConsumerWidget {
               icon: Icons.play_arrow_rounded,
               color: kNeonPink,
               foreground: Colors.white,
-              onPressed: () => _startRun(context),
+              onPressed: () => startRun(context),
             ),
           ),
           const SizedBox(height: AppSpacing.xl),

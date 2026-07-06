@@ -65,7 +65,7 @@ class HealthGameService {
 
 // ── Quêtes santé ──────────────────────────────────────────────────────────────
 enum HealthQuestMetric {
-  daySteps,
+  dayRunKm,
   daySleepHours,
   dayActiveCalories,
   dayBioScore,
@@ -149,11 +149,11 @@ class HealthQuestService {
 
     return [
       const HealthQuestDef(
-        id: 'd_steps',
-        title: 'Marche 10 000 pas aujourd\'hui',
-        metric: HealthQuestMetric.daySteps,
-        target: 10000,
-        unit: 'pas',
+        id: 'd_run5k',
+        title: 'Cours 5 km aujourd\'hui',
+        metric: HealthQuestMetric.dayRunKm,
+        target: 5.0,
+        unit: 'km',
         reward: 60,
       ),
       rotating,
@@ -182,15 +182,18 @@ class HealthQuestService {
     ];
   }
 
-  /// Valeur actuelle d'une quête à partir des enregistrements.
+  /// Valeur actuelle d'une quête à partir des enregistrements. [todayRunKm]
+  /// vient d'une source séparée (activités GPS suivies, pas Health Connect) —
+  /// voir HealthDashboardScreen où c'est calculé depuis activityListProvider.
   static double current(
     HealthQuestDef q,
     DailyHealthRecord? today,
-    List<DailyHealthRecord> weekRecords,
-  ) {
+    List<DailyHealthRecord> weekRecords, {
+    double todayRunKm = 0,
+  }) {
     switch (q.metric) {
-      case HealthQuestMetric.daySteps:
-        return today?.steps.toDouble() ?? 0;
+      case HealthQuestMetric.dayRunKm:
+        return todayRunKm;
       case HealthQuestMetric.daySleepHours:
         return (today?.totalSleepMin ?? 0) / 60.0;
       case HealthQuestMetric.dayActiveCalories:
