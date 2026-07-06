@@ -5,12 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../models/activity.dart';
+import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/audio_coach.dart';
 import '../services/game_result_store.dart';
 import '../services/game_service.dart';
+import '../services/hive_service.dart';
 import '../services/live_pace.dart';
 import '../services/location_service.dart';
+import '../services/vo2_estimator_service.dart';
 import '../widgets/system_window.dart';
 import '../theme.dart';
 
@@ -39,6 +43,10 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
   int _inZoneSeconds = 0;
   _ZoneStatus _status = _ZoneStatus.idle;
 
+  // Trace GPS, pour exporter une vraie Activity en fin de séance (voir _stop)
+  // — condition nécessaire pour que la séance alimente l'estimation VO2 max.
+  final List<List<double>> _route = [];
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -65,11 +73,13 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
       _inZoneSeconds = 0;
       _status = _ZoneStatus.idle;
     });
+    _route.clear();
     HapticFeedback.mediumImpact();
     _coach.say('C\'est parti. Allure cible ${formatPace(_targetSec)}.');
 
     _sub = LocationService.getPositionStream().listen((p) {
       _pace.addPosition(p);
+      _route.add([p.latitude, p.longitude]);
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
@@ -135,6 +145,25 @@ class _PaceZoneGameScreenState extends ConsumerState<PaceZoneGameScreen> {
     });
     await GameStore.addBonusXp(xp);
     ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
+
+    // Enregistre une vraie Activity (GPS) si la séance a produit quelque
+    // chose d'exploitable — même logique que le fractionné : ça permet à
+    // cette séance de compter pour l'estimation VO2 max et d'apparaître dans
+    // le suivi Sport comme une vraie sortie.
+    if (distance > 0) {
+      final activity = Activity(
+        date: DateTime.now().subtract(Duration(seconds: duration)),
+        distance: distance,
+        duration: duration,
+        route: _route,
+        name: 'Zone d\'allure ${formatPace(_targetSec)}/km',
+        workoutType: 'pace_zone',
+      );
+      await HiveService.saveActivity(activity);
+      ref.read(activityListProvider.notifier).refresh();
+      unawaited(Vo2EstimatorService.recomputeAndStore(
+          ref.read(activityListProvider)));
+    }
 
     if (!mounted) return;
     await showSystemWindow(

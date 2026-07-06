@@ -55,7 +55,7 @@ class ExportService {
 
       // --- Frontmatter unifié via mycelium (id/date/type standardisés) ---
       final fields = <String, Object?>{
-        'sport': 'Run',
+        'sport': _sportLabel(activity.workoutType),
         'distance_km': (activity.distance / 1000).toStringAsFixed(2),
         'duration_s': activity.duration,
         'pause_s': activity.pauseDurationSeconds,
@@ -66,6 +66,7 @@ class ExportService {
         if (activity.hasElevation)
           'elevation_loss_m': activity.elevationLossValue.round(),
         if (activity.name?.isNotEmpty == true) 'name': activity.name,
+        if (activity.route.isNotEmpty) 'route': _encodeRoute(activity),
       };
 
       final body =
@@ -244,6 +245,34 @@ class ExportService {
       }
     }
     return note.path;
+  }
+
+  /// Libellé lisible du type de séance, pour le frontmatter `sport:` — sert
+  /// à ce que l'aperçu Marble/Overview distingue fractionné/zone d'allure
+  /// d'une course libre plutôt que de tout afficher comme "Run".
+  static String _sportLabel(String? workoutType) => switch (workoutType) {
+        'interval' => 'Fractionné',
+        'pace_zone' => 'Zone d\'allure',
+        _ => 'Run',
+      };
+
+  /// Trace GPS compacte pour le frontmatter (`lat,lng;lat,lng;...`) — sert à
+  /// afficher un aperçu du tracé dans l'Overview de Marble sans dupliquer la
+  /// carte Leaflet complète du corps. Même sous-échantillonnage (~80 points)
+  /// que la carte, en string plutôt qu'en liste imbriquée (le frontmatter YAML
+  /// de mycelium ne sérialise que des scalaires pour l'instant).
+  static String? _encodeRoute(Activity activity) {
+    final route = activity.route;
+    if (route.isEmpty) return null;
+    final step = (route.length / 80).ceil().clamp(1, route.length);
+    final parts = <String>[];
+    for (int i = 0; i < route.length; i += step) {
+      final pt = route[i];
+      final lat = (pt[0]).toDouble();
+      final lng = (pt[1]).toDouble();
+      parts.add('${lat.toStringAsFixed(5)},${lng.toStringAsFixed(5)}');
+    }
+    return parts.join(';');
   }
 
   /// Ligne de résumé injectée dans la note du jour (modèle "push" du plan).

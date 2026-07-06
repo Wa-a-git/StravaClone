@@ -28,13 +28,14 @@ class ActivityAdapter extends TypeAdapter<Activity> {
       lapCount: fields[6] as int,
       laps: (fields[7] as List?)?.cast<dynamic>(),
       elevations: (fields[8] as List?)?.cast<double>(),
+      workoutType: fields[9] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Activity obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
@@ -52,7 +53,9 @@ class ActivityAdapter extends TypeAdapter<Activity> {
       ..writeByte(7)
       ..write(obj.laps)
       ..writeByte(8)
-      ..write(obj.elevations);
+      ..write(obj.elevations)
+      ..writeByte(9)
+      ..write(obj.workoutType);
   }
 
   @override

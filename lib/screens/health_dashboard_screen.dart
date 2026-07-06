@@ -175,6 +175,11 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                             .where((r) => !r.date
                                 .isBefore(GameService.startOfWeek(now)))
                             .toList(),
+                        weekIntervalCount: allActivities
+                            .where((a) =>
+                                a.workoutType == 'interval' &&
+                                !a.date.isBefore(GameService.startOfWeek(now)))
+                            .length,
                         weekKey: GameService.weekKey(now),
                         xpToday: st.healthXpToday,
                         onXpTap: () =>
@@ -571,6 +576,7 @@ class _TodayCard extends StatelessWidget {
   final int sleepStreak;
   final List<HealthQuestDef> weeklyQuests;
   final List<DailyHealthRecord> weekRecords;
+  final int weekIntervalCount;
   final String weekKey;
   final int xpToday;
   final VoidCallback onXpTap;
@@ -587,6 +593,7 @@ class _TodayCard extends StatelessWidget {
     required this.sleepStreak,
     required this.weeklyQuests,
     required this.weekRecords,
+    required this.weekIntervalCount,
     required this.weekKey,
     required this.xpToday,
     required this.onXpTap,
@@ -705,6 +712,7 @@ class _TodayCard extends StatelessWidget {
               accent: kNeonPink,
               today: today,
               weekRecords: weekRecords,
+              weekIntervalCount: weekIntervalCount,
               keyPrefix: weekKey,
               onClaim: (q) => onClaim(weekKey, q),
             ),
@@ -1738,6 +1746,7 @@ class _QuestsList extends StatelessWidget {
   final List<DailyHealthRecord> weekRecords;
   final String keyPrefix;
   final double todayRunKm;
+  final int weekIntervalCount;
   final void Function(HealthQuestDef) onClaim;
 
   const _QuestsList({
@@ -1747,6 +1756,7 @@ class _QuestsList extends StatelessWidget {
     required this.weekRecords,
     required this.keyPrefix,
     this.todayRunKm = 0,
+    this.weekIntervalCount = 0,
     required this.onClaim,
   });
 
@@ -1757,7 +1767,7 @@ class _QuestsList extends StatelessWidget {
       children: [
         ...quests.map((q) {
           final current = HealthQuestService.current(q, today, weekRecords,
-              todayRunKm: todayRunKm);
+              todayRunKm: todayRunKm, weekIntervalCount: weekIntervalCount);
           final claimed = GameStore.isClaimed('hq:$keyPrefix:${q.id}');
           final progress = HealthQuestProgress(
               def: q, current: current, claimed: claimed);

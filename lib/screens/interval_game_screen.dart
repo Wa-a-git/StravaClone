@@ -5,12 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../models/activity.dart';
+import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/audio_coach.dart';
 import '../services/game_result_store.dart';
 import '../services/game_service.dart';
+import '../services/hive_service.dart';
 import '../services/live_pace.dart';
 import '../services/location_service.dart';
+import '../services/vo2_estimator_service.dart';
 import '../widgets/system_window.dart';
 import '../theme.dart';
 
@@ -23,8 +27,13 @@ class _Phase {
   const _Phase(this.kind, this.seconds, this.repIndex);
 }
 
+/// Préréglage à appliquer à l'ouverture (ex. depuis la suggestion
+/// "Lance un 4×4" du hub Sport) — évite de repasser par les boutons +/-.
+typedef IntervalPreset = ({int work, int rest, int reps, int warmup});
+
 class IntervalGameScreen extends ConsumerStatefulWidget {
-  const IntervalGameScreen({super.key});
+  final IntervalPreset? initialPreset;
+  const IntervalGameScreen({super.key, this.initialPreset});
 
   @override
   ConsumerState<IntervalGameScreen> createState() => _IntervalGameScreenState();
@@ -54,6 +63,24 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
   double _workDistanceTotal = 0;
   int _workSecondsTotal = 0;
   int _repsCompleted = 0;
+
+  // Trace GPS + repères par répétition, pour exporter une vraie Activity en
+  // fin de séance (voir _finish) — condition nécessaire pour que le
+  // fractionné alimente l'estimation VO2 max (paires FC/allure par lap).
+  final List<List<double>> _route = [];
+  final List<Map<String, dynamic>> _laps = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.initialPreset;
+    if (p != null) {
+      _work = p.work;
+      _rest = p.rest;
+      _reps = p.reps;
+      _warmup = p.warmup;
+    }
+  }
 
   @override
   void dispose() {
@@ -100,10 +127,13 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
       _workSecondsTotal = 0;
       _repsCompleted = 0;
     });
+    _route.clear();
+    _laps.clear();
     HapticFeedback.mediumImpact();
 
     _sub = LocationService.getPositionStream().listen((p) {
       _speedKmh = _pace.addPosition(p);
+      _route.add([p.latitude, p.longitude]);
     });
     _enterPhase();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
@@ -140,6 +170,15 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
       _workDistanceTotal += repDist;
       _workSecondsTotal += leaving.seconds;
       _repsCompleted++;
+      // Un lap par répétition d'effort : c'est ce qui permet à l'estimateur
+      // VO2 max de découper la FC par intervalle plutôt que sur la moyenne
+      // de toute la séance (qui mélangerait effort et récup).
+      _laps.add({
+        'lapNumber': _repsCompleted,
+        'duration': leaving.seconds,
+        'distance': repDist,
+        'totalTimeAtLap': _elapsed,
+      });
     }
     _idx++;
     if (_idx >= _phases.length) {
@@ -191,6 +230,28 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
     });
     await GameStore.addBonusXp(xp);
     ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
+
+    // Enregistre une vraie Activity (GPS + laps par répétition) si la séance
+    // a produit quelque chose d'exploitable — sinon (arrêt immédiat) inutile
+    // d'ajouter une entrée vide à l'historique. C'est ce qui permet à cette
+    // séance de compter pour l'estimation VO2 max et d'apparaître dans le
+    // suivi Sport comme une vraie sortie.
+    if (_repsCompleted > 0 && _pace.totalDistance > 0) {
+      final activity = Activity(
+        date: DateTime.now().subtract(Duration(seconds: _elapsed)),
+        distance: _pace.totalDistance,
+        duration: _elapsed,
+        route: _route,
+        name: 'Fractionné $_reps× ($_work s / $_rest s)',
+        lapCount: _repsCompleted,
+        laps: _laps,
+        workoutType: 'interval',
+      );
+      await HiveService.saveActivity(activity);
+      ref.read(activityListProvider.notifier).refresh();
+      unawaited(Vo2EstimatorService.recomputeAndStore(
+          ref.read(activityListProvider)));
+    }
 
     if (!mounted) return;
     await showSystemWindow(
@@ -244,6 +305,7 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
               _preset('45/15 ×10', 45, 15, 10),
               _preset('1min/1min ×6', 60, 60, 6),
               _preset('2min/2min ×5', 120, 120, 5),
+              _preset('4min/3min ×4', 240, 180, 4, warmup: 300),
             ],
           ),
           const SizedBox(height: 24),
@@ -283,10 +345,10 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
     );
   }
 
-  Widget _preset(String label, int w, int r, int reps) {
+  Widget _preset(String label, int w, int r, int reps, {int warmup = 60}) {
     final active = _work == w && _rest == r && _reps == reps;
     return GestureDetector(
-      onTap: () => _applyPreset(w, r, reps),
+      onTap: () => _applyPreset(w, r, reps, warmup: warmup),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(

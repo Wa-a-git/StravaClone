@@ -16,6 +16,7 @@ class HiveService {
     await Hive.openBox('game_results'); // Résultats des mini-jeux
     await Hive.openBox('health_history'); // Instantanés santé quotidiens
     await Hive.openBox('musculation_log'); // Exercices loggés (séries/répétitions)
+    await Hive.openBox('vo2_estimates'); // Historique des estimations VO2 max locales
   }
 
   /// Returns the open box (throws if not initialized).

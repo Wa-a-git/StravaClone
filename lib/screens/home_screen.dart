@@ -7,10 +7,13 @@ import '../models/activity.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/game_service.dart';
+import '../services/vo2_estimate_store.dart';
 import '../widgets/arcade_fx.dart';
+import '../widgets/health_charts.dart';
 import '../widgets/ui_kit.dart';
 import '../theme.dart';
 import 'shell_screen.dart';
+import 'interval_game_screen.dart';
 import 'mini_games_screen.dart';
 import 'history_screen.dart';
 import 'tracking_screen.dart';
@@ -135,6 +138,10 @@ class CourseSection extends ConsumerWidget {
           _buildTrendChart(recentRuns),
           const SizedBox(height: AppSpacing.xxl),
           _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
+          const SizedBox(height: AppSpacing.xxl),
+          const _Vo2TrendCard(),
+          const SizedBox(height: AppSpacing.lg),
+          _IntervalSuggestionCard(activities: allActivities),
           const SizedBox(height: AppSpacing.xxl),
           _MiniGamesEntry(
             onTap: () => Navigator.push(
@@ -435,6 +442,147 @@ class CourseSection extends ConsumerWidget {
   String _shortDate(DateTime date) {
     const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
     return days[date.weekday - 1];
+  }
+}
+
+/// VO2 max estimé localement (régression FC↔VO2 sur les courses suivies) —
+/// distinct du VO2 max cloud affiché côté Santé. Rien ne s'affiche tant que
+/// l'estimation n'a pas assez de données pour être défendable (voir
+/// `Vo2EstimatorService`) : jamais un chiffre nu sans le contexte derrière.
+class _Vo2TrendCard extends StatelessWidget {
+  const _Vo2TrendCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final estimates = Vo2EstimateStore.all();
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonCyan.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'VO2 max estimé',
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Calculé depuis tes courses (allure + FC), pas depuis le capteur cloud.',
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 11.5, height: 1.3),
+          ),
+          const SizedBox(height: 14),
+          if (estimates.isEmpty)
+            const Text(
+              'Pas encore assez de données — plusieurs courses avec FC, avec '
+              'un peu de variété d\'allure (le fractionné aide beaucoup), sont '
+              'nécessaires pour une estimation fiable.',
+              style: TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+            )
+          else ...[
+            TrendChart(
+              values: Vo2EstimateStore.series(90).map((e) => e.value).toList(),
+              dates: Vo2EstimateStore.series(90).map((e) => e.key).toList(),
+              color: kNeonCyan,
+              unit: ' ml/kg/min',
+              fractionDigits: 1,
+              height: 140,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Basé sur ${estimates.last.sampleCount} points de mesure.',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Suggestion simple (règle, pas d'IA) : pousse vers le fractionné quand
+/// aucune séance à haute intensité n'a eu lieu cette semaine — le protocole
+/// le plus documenté pour progresser en VO2 max. Disparaît dès qu'une séance
+/// a eu lieu (pas de bruit une fois l'objectif atteint).
+class _IntervalSuggestionCard extends StatelessWidget {
+  final List<Activity> activities;
+  const _IntervalSuggestionCard({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final didIntervalThisWeek = activities
+        .any((a) => a.workoutType == 'interval' && a.date.isAfter(weekAgo));
+    if (didIntervalThisWeek) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonPink.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.bolt_rounded, color: kNeonPink, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Aucune séance à haute intensité cette semaine',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Le fractionné améliore le VO2 max plus efficacement qu\'une '
+            'sortie tranquille — le 4×4 (4 min d\'effort / 3 min de récup, '
+            '×4) est l\'un des protocoles les plus documentés.',
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const IntervalGameScreen(
+                    initialPreset: (work: 240, rest: 180, reps: 4, warmup: 300),
+                  ),
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kNeonPink,
+                side: BorderSide(color: kNeonPink.withOpacity(0.6)),
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              icon: const Icon(Icons.repeat_rounded, size: 18),
+              label: const Text('LANCER LE 4×4',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

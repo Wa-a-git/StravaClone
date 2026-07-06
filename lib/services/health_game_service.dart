@@ -71,6 +71,7 @@ enum HealthQuestMetric {
   dayBioScore,
   weekSteps,
   weekSleepNights,
+  weekIntervalSessions,
 }
 
 class HealthQuestDef {
@@ -91,7 +92,8 @@ class HealthQuestDef {
 
   bool get isWeekly =>
       metric == HealthQuestMetric.weekSteps ||
-      metric == HealthQuestMetric.weekSleepNights;
+      metric == HealthQuestMetric.weekSleepNights ||
+      metric == HealthQuestMetric.weekIntervalSessions;
 }
 
 class HealthQuestProgress {
@@ -179,17 +181,27 @@ class HealthQuestService {
         unit: 'nuits',
         reward: 240,
       ),
+      HealthQuestDef(
+        id: 'w_interval',
+        title: 'Fais une séance de fractionné cette semaine',
+        metric: HealthQuestMetric.weekIntervalSessions,
+        target: 1,
+        unit: 'séance',
+        reward: 150,
+      ),
     ];
   }
 
   /// Valeur actuelle d'une quête à partir des enregistrements. [todayRunKm]
-  /// vient d'une source séparée (activités GPS suivies, pas Health Connect) —
-  /// voir HealthDashboardScreen où c'est calculé depuis activityListProvider.
+  /// et [weekIntervalCount] viennent d'une source séparée (activités GPS
+  /// suivies, pas Health Connect) — voir HealthDashboardScreen où c'est
+  /// calculé depuis activityListProvider.
   static double current(
     HealthQuestDef q,
     DailyHealthRecord? today,
     List<DailyHealthRecord> weekRecords, {
     double todayRunKm = 0,
+    int weekIntervalCount = 0,
   }) {
     switch (q.metric) {
       case HealthQuestMetric.dayRunKm:
@@ -207,6 +219,8 @@ class HealthQuestService {
             .where((r) => r.totalSleepMin >= 7 * 60)
             .length
             .toDouble();
+      case HealthQuestMetric.weekIntervalSessions:
+        return weekIntervalCount.toDouble();
     }
   }
 }

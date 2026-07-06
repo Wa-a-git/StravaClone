@@ -32,6 +32,13 @@ class Activity extends HiveObject {
   @HiveField(8)
   List<double>? elevations; // altitude (m) parallèle aux points de route
 
+  /// Type de séance : `null` = course libre (comportement historique),
+  /// `'interval'` = fractionné, `'pace_zone'` = zone d'allure. Sert à choisir
+  /// comment exploiter les données (ex. paires FC/allure par lap pour
+  /// l'estimation VO2 max) et à afficher le bon libellé dans le vault.
+  @HiveField(9)
+  String? workoutType;
+
   Activity({
     required this.date,
     required this.distance,
@@ -42,6 +49,7 @@ class Activity extends HiveObject {
     this.lapCount = 0,
     this.laps,
     this.elevations,
+    this.workoutType,
   });
 
   /// Distance in kilometers (formatted string)

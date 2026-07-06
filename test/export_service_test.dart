@@ -55,6 +55,8 @@ void main() {
     expect(content, contains('sport: Run'));
     expect(content, contains('distance_km: 2.04'));
     expect(content, contains('duration_s: 1018'));
+    // trace GPS compacte (aperçu du tracé côté Marble/Overview)
+    expect(content, contains('route: "14.61900,-61.10000;14.62200,-61.09800"'));
     // le corps riche est préservé
     expect(content, contains('Statistiques Globales'));
     expect(content, contains('```leaflet'));
