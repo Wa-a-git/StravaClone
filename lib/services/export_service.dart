@@ -1,8 +1,10 @@
 import 'dart:io';
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ExportService {
   /// URL Windroid par défaut (Tailscale du PC), partagée avec les autres apps.
@@ -34,6 +36,29 @@ class ExportService {
 
   static Future<void> saveWindroidBaseUrl(String url) async {
     await Hive.box('settings').put('windroid_base_url', url.trim());
+  }
+
+  /// Résout le dossier d'export (déjà configuré, ou demande la permission +
+  /// le sélecteur si c'est la toute première fois) puis exporte l'activité.
+  /// Utilisé par tous les écrans qui produisent une vraie sortie (course
+  /// libre, fractionné, zone d'allure) — évite de dupliquer la résolution
+  /// de dossier dans chacun.
+  static Future<String?> exportActivityToConfiguredDirectory(
+      Activity activity) async {
+    String? dirPath = getSavedExportDirectory();
+    if (dirPath == null) {
+      if (await Permission.manageExternalStorage.request().isGranted ||
+          await Permission.storage.request().isGranted) {
+        final selectedDir =
+            await FilePicker.getDirectoryPath(dialogTitle: 'Choisir le dossier lié à Drive');
+        if (selectedDir != null) {
+          await saveExportDirectory(selectedDir);
+          dirPath = selectedDir;
+        }
+      }
+    }
+    if (dirPath == null) return null;
+    return saveActivityAsMarkdown(activity);
   }
 
   static Future<String?> saveActivityAsMarkdown(

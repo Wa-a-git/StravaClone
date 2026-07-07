@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:file_picker/file_picker.dart';
 import '../providers/tracking_provider.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
@@ -144,22 +143,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
       await _maybeLevelUp(activity);
       if (!mounted) return;
 
-      // Vérifier et configurer le dossier d'export choisi par l'utilisateur
-      String? dirPath = ExportService.getSavedExportDirectory();
-      if (dirPath == null) {
-        if (await Permission.manageExternalStorage.request().isGranted || await Permission.storage.request().isGranted) {
-          final selectedDir = await FilePicker.getDirectoryPath(dialogTitle: 'Choisir le dossier lié à Drive');
-          if (selectedDir != null) {
-            await ExportService.saveExportDirectory(selectedDir);
-            dirPath = selectedDir;
-          }
-        }
-      }
-
-      String? exportedPath;
-      if (dirPath != null) {
-        exportedPath = await ExportService.saveActivityAsMarkdown(activity);
-      }
+      final exportedPath =
+          await ExportService.exportActivityToConfiguredDirectory(activity);
 
       if (exportedPath != null) {
         ScaffoldMessenger.of(context).showSnackBar(

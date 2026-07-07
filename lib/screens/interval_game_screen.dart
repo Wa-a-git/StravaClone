@@ -9,6 +9,7 @@ import '../models/activity.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../services/audio_coach.dart';
+import '../services/export_service.dart';
 import '../services/game_result_store.dart';
 import '../services/game_service.dart';
 import '../services/hive_service.dart';
@@ -255,6 +256,7 @@ class _IntervalGameScreenState extends ConsumerState<IntervalGameScreen> {
       ref.read(activityListProvider.notifier).refresh();
       unawaited(Vo2EstimatorService.recomputeAndStore(
           ref.read(activityListProvider)));
+      unawaited(ExportService.exportActivityToConfiguredDirectory(activity));
     }
 
     if (!mounted) return;
