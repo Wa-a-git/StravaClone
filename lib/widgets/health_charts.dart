@@ -41,6 +41,34 @@ class TrendArrow extends StatelessWidget {
   }
 }
 
+/// Petit badge "PROVISOIRE" — pour une valeur calculée mais qui n'a pas
+/// encore assez de données pour être pleinement fiable (ex. VO2 max estimé
+/// avec peu de courses). Jamais un chiffre nu sans ce genre de contexte.
+class ProvisionalBadge extends StatelessWidget {
+  const ProvisionalBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: kNeonAmber.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kNeonAmber.withOpacity(0.5)),
+      ),
+      child: const Text(
+        'PROVISOIRE',
+        style: TextStyle(
+          color: kNeonAmber,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
 /// Mini-courbe sans axes, pour les cartes. Anime le tracé au premier rendu.
 class Sparkline extends StatelessWidget {
   final List<double> values;
@@ -444,6 +472,32 @@ class _TrendPainter extends CustomPainter {
 /// Hypnogramme : tracé chronologique des stades de sommeil sur la nuit.
 /// 4 lanes (Éveil en haut → Profond en bas), chaque segment dessiné à sa
 /// position temporelle réelle, avec des liaisons verticales entre stades.
+/// Légende d'un stade de sommeil (pastille couleur + libellé + durée) —
+/// utilisée sous `Hypnogram` pour détailler les minutes par stade.
+class SleepLegend extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const SleepLegend(this.label, this.value, this.color, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text('$label $value',
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+      ],
+    );
+  }
+}
+
 class Hypnogram extends StatelessWidget {
   final List<SleepSegment> segments;
   final double height;

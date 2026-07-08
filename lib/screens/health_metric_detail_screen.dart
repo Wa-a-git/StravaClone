@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/daily_health_record.dart';
+import '../models/vo2_estimate.dart';
 import '../services/health_store.dart';
+import '../services/vo2_estimate_store.dart';
+import '../services/vo2_estimator_service.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
 
@@ -25,12 +28,27 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final meta = _metaFor(widget.metric);
-    final series = HealthStore.series(widget.metric, _range)
-        .where((e) => e.value > 0)
-        .toList();
+    // VO2 max : source locale (régression FC↔allure), pas Health Connect —
+    // HealthStore n'a jamais de série pour cette métrique dans notre cas.
+    final isVo2Max = widget.metric == HealthMetric.vo2Max;
+    final vo2Estimates = isVo2Max ? Vo2EstimateStore.all() : const <Vo2Estimate>[];
+    final cutoff = DateTime.now().subtract(Duration(days: _range));
+    final series = isVo2Max
+        ? [
+            for (final e in vo2Estimates)
+              if (e.date.isAfter(cutoff)) MapEntry(e.date, e.value)
+          ]
+        : HealthStore.series(widget.metric, _range)
+            .where((e) => e.value > 0)
+            .toList();
     final values = series.map((e) => e.value).toList();
     final dates = series.map((e) => e.key).toList();
-    final baseline = HealthStore.baseline(widget.metric, window: _range);
+    final baseline = isVo2Max
+        ? (values.length > 1
+            ? values.sublist(0, values.length - 1).reduce((a, b) => a + b) /
+                (values.length - 1)
+            : 0.0)
+        : HealthStore.baseline(widget.metric, window: _range);
 
     final hasData = values.isNotEmpty;
     final current = hasData ? values.last : 0.0;
@@ -38,6 +56,9 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
     final maxV = hasData ? values.reduce(math.max) : 0.0;
     final avgV =
         hasData ? values.reduce((a, b) => a + b) / values.length : 0.0;
+    final vo2Confidence = isVo2Max && vo2Estimates.isNotEmpty
+        ? Vo2EstimatorService.confidenceFor(vo2Estimates.last)
+        : null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -81,11 +102,20 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
               ),
+              if (vo2Confidence?.isProvisional == true) ...[
+                const SizedBox(width: 8),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: ProvisionalBadge(),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
-          const Text('valeur du jour',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text(
+            vo2Confidence?.caption ?? 'valeur du jour',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 20),
 
           // Sélecteur de plage
@@ -464,8 +494,9 @@ _MetricMeta _metaFor(HealthMetric m) {
           explainTitle: 'À PROPOS',
           explain: 'Volume maximal d\'oxygène que ton corps peut utiliser à '
               'l\'effort — un des meilleurs indicateurs de ta condition '
-              'cardiovasculaire. Mesuré par ta montre et lu via Google Health '
-              'API (nécessite d\'être connecté depuis le profil).');
+              'cardiovasculaire. Estimé localement par régression FC↔allure '
+              'sur tes courses avec FC (pas une mesure directe de la montre) '
+              '— voir Sport pour le détail du calcul.');
     case HealthMetric.weightKg:
       return const _MetricMeta(
           title: 'Poids',

@@ -4,8 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'sport_screen.dart';
 import 'system_screen.dart';
 import 'health_dashboard_screen.dart';
+import 'home_screen.dart' show startRun;
+import 'musculation_screen.dart' show openMusculationQuickLog;
+import 'interval_game_screen.dart';
+import 'pace_zone_game_screen.dart';
 import 'profile_screen.dart';
 import '../theme.dart';
+import '../widgets/ui_kit.dart';
 
 /// Index de l'onglet courant (permet de naviguer depuis n'importe quel écran).
 /// 0 = Santé, 1 = Sport, 2 = Niveau, 3 = Profil.
@@ -25,6 +30,11 @@ class ShellScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentIndex = ref.watch(shellIndexProvider);
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: kNeonPink,
+        onPressed: () => _openQuickLaunch(context, ref),
+        child: const Icon(Icons.add_rounded, color: Colors.white),
+      ),
       body: IndexedStack(
         index: currentIndex,
         children: _tabs,
@@ -34,6 +44,40 @@ class ShellScreen extends ConsumerWidget {
         onTabTap: (i) => ref.read(shellIndexProvider.notifier).state = i,
       ),
     );
+  }
+
+  /// Lancement rapide (+), visible sur les 4 onglets. Sur l'onglet Sport
+  /// avec le sous-onglet Musculation sélectionné, ouvre directement le flux
+  /// de log — partout ailleurs, propose le choix Course (libre / 5 km /
+  /// fractionné / zone d'allure).
+  Future<void> _openQuickLaunch(BuildContext context, WidgetRef ref) async {
+    final onMusculationTab = ref.read(shellIndexProvider) == 1 &&
+        ref.read(sportTabProvider) == SportTab.musculation;
+    if (onMusculationTab) {
+      await openMusculationQuickLog(context);
+      return;
+    }
+    final choice = await showAppSheet<String>(
+      context: context,
+      child: const CourseQuickLaunchSheet(),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case 'free':
+        startRun(context);
+        break;
+      case '5k':
+        startRun(context, targetKm: 5.0);
+        break;
+      case 'interval':
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const IntervalGameScreen()));
+        break;
+      case 'pace':
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PaceZoneGameScreen()));
+        break;
+    }
   }
 }
 

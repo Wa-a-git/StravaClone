@@ -9,9 +9,21 @@ import 'vo2_estimate_store.dart';
 
 /// Réglages de l'estimateur — regroupés pour pouvoir les ajuster/tester
 /// facilement sans fouiller la logique.
+/// Verdict de confiance pour une estimation VO2 max — voir
+/// `Vo2EstimatorService.confidenceFor`.
+class Vo2Confidence {
+  final bool isProvisional;
+  final String caption;
+  const Vo2Confidence({required this.isProvisional, required this.caption});
+}
+
 class Vo2EstimatorTuning {
   static const int windowDays = 90;
-  static const int minPairs = 8;
+  /// Plancher absolu — en dessous, rien ne s'affiche.
+  static const int minPairsProvisional = 4;
+  /// À partir de ce nombre de paires, l'estimation est étiquetée "fiable"
+  /// plutôt que "provisoire".
+  static const int minPairsStable = 8;
   static const double minHrSpread = 25; // bpm — sinon rien à extrapoler
   static const int minLapSeconds = 90; // FC pas stabilisée en dessous
   static const double minPlausible = 20; // ml/kg/min
@@ -59,6 +71,24 @@ class Vo2EstimatorService {
   /// Estimation FC max par âge (Tanaka et al. — plus fidèle que 220-âge).
   static double ageBasedHrMax(int age) => 208 - 0.7 * age;
 
+  /// Libellé de confiance partagé entre les cartes (hub Sport + grille
+  /// Santé) — jamais le même texte dupliqué à deux endroits. `isProvisional`
+  /// pilote l'affichage d'un badge ; `caption` est le texte sous le graphe.
+  static Vo2Confidence confidenceFor(Vo2Estimate estimate) {
+    final n = estimate.sampleCount;
+    if (n < Vo2EstimatorTuning.minPairsStable) {
+      return Vo2Confidence(
+        isProvisional: true,
+        caption:
+            'Estimation provisoire — $n/${Vo2EstimatorTuning.minPairsStable} courses avec FC pour une estimation stable.',
+      );
+    }
+    return Vo2Confidence(
+      isProvisional: false,
+      caption: 'Basé sur $n points de mesure.',
+    );
+  }
+
   /// Calcule le VO2 max à partir de paires (VO2, FC) déjà construites.
   /// Renvoie `null` tant que les seuils de confiance ne sont pas atteints —
   /// jamais de chiffre affiché s'il n'est pas défendable.
@@ -68,7 +98,7 @@ class Vo2EstimatorService {
     List<(double vo2, double hr)> pairs, {
     double? ageBasedHrMax,
   }) {
-    if (pairs.length < Vo2EstimatorTuning.minPairs) return null;
+    if (pairs.length < Vo2EstimatorTuning.minPairsProvisional) return null;
 
     final hrValues = pairs.map((p) => p.$2).toList();
     final hrSpread = hrValues.reduce(math.max) - hrValues.reduce(math.min);

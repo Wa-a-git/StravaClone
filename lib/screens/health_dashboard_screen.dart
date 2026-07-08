@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
+import '../models/vo2_estimate.dart';
 import '../providers/activity_provider.dart';
 import '../providers/health_provider.dart';
 import '../providers/game_provider.dart';
@@ -12,6 +13,8 @@ import '../services/game_service.dart';
 import '../services/health_game_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
+import '../services/vo2_estimate_store.dart';
+import '../services/vo2_estimator_service.dart';
 import '../theme.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/health_charts.dart';
@@ -20,6 +23,7 @@ import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'health_history_screen.dart';
 import 'health_metric_detail_screen.dart';
+import 'score_breakdown_screen.dart';
 import 'detail_screen.dart';
 import '../main.dart' show routeObserver;
 
@@ -428,10 +432,10 @@ class _DayFeedContent extends StatelessWidget {
             spacing: 14,
             runSpacing: 6,
             children: [
-              _SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
-              _SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
-              _SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
-              _SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
+              SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
+              SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
+              SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
+              SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
             ],
           ),
           const SizedBox(height: 14),
@@ -692,7 +696,7 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          _SubScoresRow(scores: scores),
+          _SubScoresRow(scores: scores, snapshot: snapshot),
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
@@ -893,7 +897,8 @@ class _WeekDotsStrip extends StatelessWidget {
 // ── Sous-scores (tappables) ───────────────────────────────────────────────────
 class _SubScoresRow extends StatelessWidget {
   final HealthScores scores;
-  const _SubScoresRow({required this.scores});
+  final HealthSnapshot snapshot;
+  const _SubScoresRow({required this.scores, required this.snapshot});
 
   @override
   Widget build(BuildContext context) {
@@ -905,6 +910,7 @@ class _SubScoresRow extends StatelessWidget {
             score: scores.sleepScore,
             color: kNeonViolet,
             metric: HealthMetric.sleepScore,
+            snapshot: snapshot,
           ),
         ),
         const SizedBox(width: 10),
@@ -914,6 +920,7 @@ class _SubScoresRow extends StatelessWidget {
             score: scores.recoveryScore,
             color: kNeonCyan,
             metric: HealthMetric.recoveryScore,
+            snapshot: snapshot,
           ),
         ),
         const SizedBox(width: 10),
@@ -923,6 +930,7 @@ class _SubScoresRow extends StatelessWidget {
             score: scores.activityScore,
             color: kNeonGreen,
             metric: HealthMetric.activityScore,
+            snapshot: snapshot,
           ),
         ),
       ],
@@ -935,11 +943,13 @@ class _SubScoreCard extends StatelessWidget {
   final int score;
   final Color color;
   final HealthMetric metric;
+  final HealthSnapshot snapshot;
   const _SubScoreCard({
     required this.label,
     required this.score,
     required this.color,
     required this.metric,
+    required this.snapshot,
   });
 
   @override
@@ -948,8 +958,12 @@ class _SubScoreCard extends StatelessWidget {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              HealthMetricDetailScreen(metric: metric, accent: color),
+          builder: (_) => ScoreBreakdownScreen(
+            scoreMetric: metric,
+            accent: color,
+            scoreValue: score,
+            snapshot: snapshot,
+          ),
         ),
       ),
       child: Container(
@@ -1099,17 +1113,8 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
           'ms',
           Icons.monitor_heart_rounded,
           kNeonCyan),
-      // VO2 max / Poids : sources premium ou peu fréquentes, affichées
-      // seulement s'il y a une valeur réelle (pas de carte "--" pour une
-      // donnée jamais connectée).
-      if (snapshot.vo2Max > 0)
-        _MetricSpec(
-            'VO2 max',
-            HealthMetric.vo2Max,
-            snapshot.vo2Max.toStringAsFixed(1),
-            'ml/kg/min',
-            Icons.speed_rounded,
-            kNeonGreen),
+      // Poids : source peu fréquente, affichée seulement s'il y a une
+      // valeur réelle (pas de carte "--" pour une donnée jamais connectée).
       if (snapshot.weightKg > 0)
         _MetricSpec(
             'Poids',
@@ -1118,13 +1123,17 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
             'kg',
             Icons.monitor_weight_rounded,
             kNeonAmber),
-      _MetricSpec(
-          'SpO2',
-          HealthMetric.spo2,
-          snapshot.spo2 > 0 ? snapshot.spo2.toStringAsFixed(0) : '--',
-          '%',
-          Icons.bloodtype_rounded,
-          kNeonViolet),
+      // VO2 max : estimation locale (régression FC↔allure, Vo2EstimatorService)
+      // à la place de SpO2 — la Charge 6 ne remonte pas de SpO2 exploitable
+      // vers Health Connect, cette case restait toujours "en attente".
+      if (Vo2EstimateStore.all().isNotEmpty)
+        _MetricSpec(
+            'VO2 max',
+            HealthMetric.vo2Max,
+            Vo2EstimateStore.all().last.value.toStringAsFixed(1),
+            'ml/kg/min',
+            Icons.speed_rounded,
+            kNeonGreen),
       _MetricSpec(
           'Respiration',
           HealthMetric.respiratoryRate,
@@ -1279,12 +1288,27 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final noData = spec.value == '--';
-    final series = HealthStore.series(spec.metric, 7)
-        .map((e) => e.value)
-        .where((v) => v > 0)
-        .toList();
+    // VO2 max : source locale (Vo2EstimateStore), pas Health Connect —
+    // HealthStore n'a jamais rien pour cette métrique dans notre cas d'usage.
+    final isVo2Max = spec.metric == HealthMetric.vo2Max;
+    final vo2Estimates =
+        isVo2Max ? Vo2EstimateStore.all() : const <Vo2Estimate>[];
+    final series = isVo2Max
+        ? vo2Estimates.map((e) => e.value).toList()
+        : HealthStore.series(spec.metric, 7)
+            .map((e) => e.value)
+            .where((v) => v > 0)
+            .toList();
     final current = series.isNotEmpty ? series.last : 0.0;
-    final baseline = HealthStore.baseline(spec.metric);
+    final baseline = isVo2Max
+        ? (series.length > 1
+            ? series.sublist(0, series.length - 1).reduce((a, b) => a + b) /
+                (series.length - 1)
+            : 0.0)
+        : HealthStore.baseline(spec.metric);
+    final vo2Provisional = isVo2Max &&
+        vo2Estimates.isNotEmpty &&
+        Vo2EstimatorService.confidenceFor(vo2Estimates.last).isProvisional;
     final trend = HealthScoreService.trend(
       spec.metric,
       current,
@@ -1376,39 +1400,24 @@ class _MetricCard extends StatelessWidget {
                       color: AppColors.muted,
                       fontSize: 9,
                       fontStyle: FontStyle.italic)),
-            ]
-            // Sparkline seulement s'il y a un historique à tracer.
-            else if (series.length >= 2) ...[
-              const SizedBox(height: 6),
-              Sparkline(values: series, color: spec.color, height: 28),
+            ] else ...[
+              if (vo2Provisional) ...[
+                const SizedBox(height: 4),
+                const Text('provisoire',
+                    style: TextStyle(
+                        color: kNeonAmber,
+                        fontSize: 9,
+                        fontStyle: FontStyle.italic)),
+              ],
+              // Sparkline seulement s'il y a un historique à tracer.
+              if (series.length >= 2) ...[
+                const SizedBox(height: 6),
+                Sparkline(values: series, color: spec.color, height: 28),
+              ],
             ],
           ],
         ),
       ),
-    );
-  }
-}
-
-class _SleepLegend extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _SleepLegend(this.label, this.value, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text('$label $value',
-            style:
-                const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-      ],
     );
   }
 }

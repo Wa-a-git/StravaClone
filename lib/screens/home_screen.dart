@@ -11,6 +11,7 @@ import '../services/game_service.dart';
 import '../services/health_score_service.dart' show TrendDir;
 import '../services/hr_efficiency_store.dart';
 import '../services/vo2_estimate_store.dart';
+import '../services/vo2_estimator_service.dart';
 import '../widgets/arcade_fx.dart';
 import '../widgets/health_charts.dart';
 import '../widgets/ui_kit.dart';
@@ -470,12 +471,22 @@ class _Vo2TrendCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'VO2 max estimé',
-            style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700),
+          Row(
+            children: [
+              const Text(
+                'VO2 max estimé',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700),
+              ),
+              if (estimates.isNotEmpty &&
+                  Vo2EstimatorService.confidenceFor(estimates.last)
+                      .isProvisional) ...[
+                const SizedBox(width: 8),
+                const ProvisionalBadge(),
+              ],
+            ],
           ),
           const SizedBox(height: 4),
           const Text(
@@ -503,7 +514,7 @@ class _Vo2TrendCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Basé sur ${estimates.last.sampleCount} points de mesure.',
+              Vo2EstimatorService.confidenceFor(estimates.last).caption,
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
             ),
           ],

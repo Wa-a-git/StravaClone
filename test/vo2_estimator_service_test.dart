@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:arcade_health/models/vo2_estimate.dart';
 import 'package:arcade_health/services/vo2_estimator_service.dart';
 
 void main() {
@@ -102,12 +103,47 @@ void main() {
       final pairs = _linearPairs(a, b, vo2s);
       expect(Vo2EstimatorService.estimateFromPairs(pairs), isNull);
     });
+
+    test('entre le seuil provisoire (4) et le seuil fiable (8) -> résultat '
+        'non-null quand même (estimation provisoire, pas rien du tout)', () {
+      const a = 60.0, b = 2.0;
+      final pairs = _linearPairs(a, b, [30, 35, 40, 45, 50, 55]); // 6 paires
+      expect(Vo2EstimatorService.estimateFromPairs(pairs), isNotNull);
+    });
+
+    test('sous le seuil provisoire (< 4) -> null même avec une droite parfaite',
+        () {
+      const a = 60.0, b = 2.0;
+      final pairs = _linearPairs(a, b, [30, 35, 40]); // 3 paires
+      expect(Vo2EstimatorService.estimateFromPairs(pairs), isNull);
+    });
   });
 
   group('Vo2EstimatorService.ageBasedHrMax', () {
     test('formule de Tanaka (208 - 0,7×âge)', () {
       expect(Vo2EstimatorService.ageBasedHrMax(30), closeTo(187, 0.01));
       expect(Vo2EstimatorService.ageBasedHrMax(40), closeTo(180, 0.01));
+    });
+  });
+
+  group('Vo2EstimatorService.confidenceFor', () {
+    Vo2Estimate estimateWith(int sampleCount) => Vo2Estimate(
+          date: DateTime(2026, 1, 1),
+          value: 45,
+          sampleCount: sampleCount,
+        );
+
+    test('sous le seuil fiable -> provisoire', () {
+      final c = Vo2EstimatorService.confidenceFor(estimateWith(6));
+      expect(c.isProvisional, isTrue);
+      expect(c.caption, contains('6/8'));
+    });
+
+    test('au seuil fiable ou au-dessus -> fiable, pas de mention "provisoire"',
+        () {
+      final c = Vo2EstimatorService.confidenceFor(estimateWith(8));
+      expect(c.isProvisional, isFalse);
+      expect(c.caption, isNot(contains('provisoire')));
     });
   });
 }

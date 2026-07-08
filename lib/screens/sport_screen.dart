@@ -7,9 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'home_screen.dart';
-import 'interval_game_screen.dart';
 import 'musculation_screen.dart';
-import 'pace_zone_game_screen.dart';
 
 enum SportTab { course, musculation }
 
@@ -31,11 +29,6 @@ class SportScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: kNeonPink,
-        onPressed: () => _openQuickLaunch(context, ref),
-        child: const Icon(Icons.add_rounded, color: Colors.white),
-      ),
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -90,42 +83,12 @@ class SportScreen extends ConsumerWidget {
       ),
     );
   }
-
-  /// Lancement rapide (+) : Musculation ouvre directement le flux de log,
-  /// Course propose un choix (libre / 5 km / fractionné / zone d'allure) sans
-  /// repasser par le hub des mini-jeux.
-  Future<void> _openQuickLaunch(BuildContext context, WidgetRef ref) async {
-    if (ref.read(sportTabProvider) == SportTab.musculation) {
-      await openMusculationQuickLog(context);
-      return;
-    }
-    final choice = await showAppSheet<String>(
-      context: context,
-      child: const _CourseQuickLaunchSheet(),
-    );
-    if (choice == null || !context.mounted) return;
-    switch (choice) {
-      case 'free':
-        startRun(context);
-        break;
-      case '5k':
-        startRun(context, targetKm: 5.0);
-        break;
-      case 'interval':
-        Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const IntervalGameScreen()));
-        break;
-      case 'pace':
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const PaceZoneGameScreen()));
-        break;
-    }
-  }
 }
 
-// ── Feuille de lancement rapide (Course) ──────────────────────────────────────
-class _CourseQuickLaunchSheet extends StatelessWidget {
-  const _CourseQuickLaunchSheet();
+// ── Feuille de lancement rapide (Course) — publique : le bouton "+" global
+// (voir shell_screen.dart) l'ouvre depuis n'importe quel onglet. ─────────────
+class CourseQuickLaunchSheet extends StatelessWidget {
+  const CourseQuickLaunchSheet({super.key});
 
   @override
   Widget build(BuildContext context) {
