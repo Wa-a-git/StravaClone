@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
+import '../models/health_snapshot.dart';
 import '../providers/activity_provider.dart';
 import '../services/health_store.dart';
 import '../theme.dart';
