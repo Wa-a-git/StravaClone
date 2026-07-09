@@ -1,6 +1,8 @@
 import 'dart:io';
+import '../data/exercise_library.dart' show ExerciseCategoryX;
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
+import '../models/musculation_log.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
@@ -234,6 +236,75 @@ class ExportService {
     }
   }
 
+  /// Écrit la séance de musculation du jour dans `Sport/Musculation/` (une
+  /// fiche par jour, ré-écrite à chaque exercice ajouté/retiré — même
+  /// principe idempotent que `saveHealthDayAsMarkdown`) + injecte un résumé
+  /// sous `## Sport` dans la note du jour. Best-effort, jamais d'exception
+  /// propagée. [entries] doit couvrir tout le jour [day] (voir
+  /// `MusculationStore.entriesFor` côté appelant) ; rien n'est écrit si vide,
+  /// pour ne pas créer de fiche "0 exercice" au premier tap annulé.
+  static Future<String?> saveMusculationDayAsMarkdown(
+      DateTime day, List<MusculationLogEntry> entries) async {
+    if (entries.isEmpty) return null;
+    try {
+      final fileBase = MusculationLogEntry.keyFor(day); // yyyy-MM-dd
+      final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+      final fields = <String, Object?>{
+        'exercises': entries.length,
+        'total_sets': totalSets,
+        'categories': entries.map((e) => e.category.label).toSet().join(', '),
+      };
+      final body = _buildMusculationBody(entries);
+      final dailyLine = _musculationDailyLine(fileBase, entries);
+      // id stable (minuit du jour) : une fiche musculation par jour, comme
+      // les fiches santé.
+      final id = DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
+
+      final windroidUrl = getWindroidBaseUrl();
+      if (windroidUrl.isNotEmpty) {
+        final http = HttpVaultSource(windroidUrl,
+            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
+        if (await http.available()) {
+          try {
+            final path = await writeToVault(http,
+                subdir: 'Sport/Musculation',
+                fileBase: fileBase,
+                id: id,
+                date: day,
+                myceliumClass: 'musculation',
+                fields: fields,
+                body: body,
+                dailySection: 'Sport',
+                dailyLine: dailyLine);
+            return 'Windroid: $path';
+          } catch (_) {
+            // fallback local ci-dessous
+          }
+        }
+      }
+
+      final savedPath = getSavedExportDirectory();
+      if (savedPath == null) return null;
+      final vaultRoot = _findVaultRoot(savedPath);
+      if (vaultRoot != null) {
+        final path = await writeToVault(LocalVaultSource(vaultRoot),
+            subdir: 'Sport/Musculation',
+            fileBase: fileBase,
+            id: id,
+            date: day,
+            myceliumClass: 'musculation',
+            fields: fields,
+            body: body,
+            dailySection: 'Sport',
+            dailyLine: dailyLine);
+        return '$vaultRoot/$path';
+      }
+      return null; // pas de racine de vault connue : pas de fiche isolée hors contexte
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Écrit une fiche (+ éventuellement le résumé du jour) via une source vault
   /// quelconque (Windroid `HttpVaultSource` ou locale `LocalVaultSource`).
   /// Isolé et public pour être testable avec une source en mémoire. Renvoie
@@ -312,6 +383,15 @@ class ExportService {
     final m = (record.totalSleepMin % 60).round();
     return '- 🫀 [[${record.key}]] — Bio-Score ${record.bioScore}/100, '
         'sommeil ${h}h${m.toString().padLeft(2, '0')}, ${record.steps} pas';
+  }
+
+  /// Ligne de résumé musculation injectée dans la note du jour.
+  static String _musculationDailyLine(
+      String fileBase, List<MusculationLogEntry> entries) {
+    final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+    final n = entries.length;
+    return '- 🏋️ [[$fileBase]] — $n exercice${n > 1 ? 's' : ''}, '
+        '$totalSets série${totalSets > 1 ? 's' : ''}';
   }
 
   /// Remonte depuis [start] jusqu'à trouver un dossier contenant `.obsidian`
@@ -572,6 +652,50 @@ marker: default, $endPt
       buffer.writeln('- Paradoxal : ${remH}h${remM.toString().padLeft(2, '0')}');
       buffer.writeln('- Léger : ${lightH}h${lightM.toString().padLeft(2, '0')}');
     }
+
+    return buffer.toString();
+  }
+
+  /// Construit le corps markdown de la fiche musculation — même habillage
+  /// néon que les fiches de course/santé, pour rester au même niveau visuel.
+  static String _buildMusculationBody(List<MusculationLogEntry> entries) {
+    final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+
+    final buffer = StringBuffer();
+    buffer.writeln();
+    buffer.writeln(
+        '<h1 style="color: #F55CBD; border-bottom: 2px solid #00FFFF; padding-bottom: 10px; text-shadow: 0 0 10px rgba(245, 92, 189, 0.4); margin-bottom: 5px;">🏋️ Séance musculation</h1>');
+    buffer.writeln();
+    buffer.writeln('> [!quote] 📋 **Rapport Technique**');
+    buffer.writeln('> *Données enregistrées via Arcade Health.*');
+    buffer.writeln();
+    buffer.writeln('## 📊 Résumé');
+    buffer.writeln();
+    buffer.writeln(
+        '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-around; background-color: #141419; padding: 20px; border-radius: 12px; border: 1px solid #F55CBD; box-shadow: 0 4px 15px rgba(245, 92, 189, 0.15); text-align: center; margin-bottom: 20px; font-family: sans-serif;">');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🏋️</span><br/><strong style="color: #00FFFF; font-size: 18px;">${entries.length}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Exercices</span></div>');
+    buffer.writeln(
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🔁</span><br/><strong style="color: #F55CBD; font-size: 18px;">$totalSets</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Séries totales</span></div>');
+    buffer.writeln('</div>');
+    buffer.writeln();
+
+    buffer.writeln('## 💪 Détail des exercices');
+    buffer.writeln();
+    buffer.writeln(
+        '<table style="width: 100%; text-align: center; border-collapse: collapse; margin-bottom: 20px; font-family: sans-serif;">');
+    buffer.writeln(
+        '  <tr style="background-color: #141419; color: #00FFFF; border-bottom: 2px solid #F55CBD;">');
+    buffer.writeln(
+        '    <th style="padding: 12px;">Exercice</th><th style="padding: 12px;">Catégorie</th><th style="padding: 12px;">Séries × Reps</th>');
+    buffer.writeln('  </tr>');
+    for (final e in entries) {
+      buffer.writeln('  <tr style="border-bottom: 1px solid #333333;">');
+      buffer.writeln(
+          '    <td style="padding: 10px; font-weight: bold;">${e.exerciseName}</td><td style="padding: 10px; color: #AAAAAA;">${e.category.label}</td><td style="padding: 10px; color: #F55CBD;">${e.sets} × ${e.reps}</td>');
+      buffer.writeln('  </tr>');
+    }
+    buffer.writeln('</table>');
 
     return buffer.toString();
   }

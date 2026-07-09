@@ -87,12 +87,20 @@ Décisions validées à reprendre lors de l'implémentation réelle :
   (`0xFF141419`, `0xFF333333`, etc.). Jamais migrés vers `AppColors`, même
   avant le changement de thème. Pas touché, hors périmètre de la passe
   couleur. À migrer si on veut une cohérence totale.
-- **Vault Obsidian / "Marble"** : mis de côté explicitement, à traiter dans
-  une session dédiée. Le repère visuel (icône + chemin) sous chaque post du
-  Feed est pour l'instant décoratif uniquement. Note : le code contient déjà
-  une référence à "Marble" comme source de deep links (`lib/main.dart`,
-  commentaire sur `navigatorKey`) — a priori un projet/app compagnon déjà
-  identifié côté utilisateur, pas à inventer from scratch.
+- **Vault Obsidian / "Marble"** : en fait déjà largement branché, pas à
+  construire from scratch — voir `lib/services/export_service.dart`
+  (package `mycelium`, dépendance locale `../../mycelium` absente de ce repo
+  donc jamais testable ici). Courses (libre/5 km/fractionné/zone d'allure) et
+  santé du jour s'exportaient déjà automatiquement vers le vault + une ligne
+  dans la note du jour (`## Sport` / rien à faire ici). **Trou comblé cette
+  session** : la musculation n'exportait rien du tout — ajouté
+  `ExportService.saveMusculationDayAsMarkdown` (fiche par jour dans
+  `Sport/Musculation/`, ligne résumé sous `## Sport`), appelé après chaque
+  ajout/suppression d'exercice dans `musculation_screen.dart`. Tests dans
+  `test/export_service_test.dart` (non exécutés ici, pas de toolchain
+  Flutter/Dart disponible — à lancer en priorité à la reprise). Le repère
+  visuel (icône + chemin) sous chaque post du Feed prototypé en HTML reste à
+  brancher sur ce même système une fois l'onglet Feed codé.
 - **Onglet Feed, Santé restructuré, Sport restructuré, champ charge
   musculation, carte records personnels, fusion stat Force** : tout ça reste
   à coder — seulement prototypé en HTML pour l'instant (liens ci-dessus).

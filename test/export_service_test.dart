@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mycelium/mycelium.dart';
 
+import 'package:arcade_health/data/exercise_library.dart';
 import 'package:arcade_health/models/activity.dart';
+import 'package:arcade_health/models/musculation_log.dart';
 import 'package:arcade_health/services/export_service.dart';
 
 void main() {
@@ -126,6 +128,88 @@ void main() {
     expect(daily, isNotNull);
     expect(daily, contains('## Sport'));
     expect(daily, contains('[[tour_test-2026-06-13_07h25]]'));
+  });
+
+  // Musculation n'avait jusqu'ici aucun export — rien ne remontait dans le
+  // vault ni dans la note du jour. Mêmes garanties que pour une course :
+  // fiche par jour (ré-écrite, pas dupliquée) + résumé injecté sous ## Sport.
+  group('musculation', () {
+    final day = DateTime(2026, 6, 13);
+    List<MusculationLogEntry> pushDay() => [
+          MusculationLogEntry(
+              date: day,
+              exerciseId: 'bench',
+              exerciseName: 'Développé couché',
+              category: ExerciseCategory.barbell,
+              sets: 4,
+              reps: 8),
+          MusculationLogEntry(
+              date: day,
+              exerciseId: 'ohp',
+              exerciseName: 'Développé militaire',
+              category: ExerciseCategory.dumbbell,
+              sets: 3,
+              reps: 10),
+        ];
+
+    test('écrit la fiche avec un frontmatter unifié (mycelium)', () async {
+      final path =
+          await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
+      expect(path, isNotNull);
+
+      final content = File(path!).readAsStringSync();
+      expect(content, contains('type: "[[musculation]]"'));
+      expect(content,
+          contains('id: ${DateTime(2026, 6, 13).millisecondsSinceEpoch}'));
+      expect(content, contains('exercises: 2'));
+      expect(content, contains('total_sets: 7'));
+      expect(content, contains('Développé couché'));
+      expect(content, contains('Développé militaire'));
+      expect(content, contains('4 × 8'));
+      expect(content, contains('3 × 10'));
+    });
+
+    test('injecte un résumé dans la note du jour', () async {
+      await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
+
+      final daily = File('$vaultRoot/Notes/260613.md');
+      expect(daily.existsSync(), isTrue);
+      final content = daily.readAsStringSync();
+      expect(content, contains('## Sport'));
+      expect(content, contains('[[2026-06-13]]'));
+      expect(content, contains('2 exercices'));
+      expect(content, contains('7 séries'));
+    });
+
+    test('ré-export du même jour = même fichier écrasé, pas de doublon',
+        () async {
+      await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
+      // Un exercice de plus, réexporté (comme après chaque ajout dans l'app).
+      final updated = [
+        ...pushDay(),
+        MusculationLogEntry(
+            date: day,
+            exerciseId: 'dips',
+            exerciseName: 'Dips lestés',
+            category: ExerciseCategory.bodyweight,
+            sets: 3,
+            reps: 12),
+      ];
+      await ExportService.saveMusculationDayAsMarkdown(day, updated);
+
+      final mdFiles = Directory('$vaultRoot/Sport/Musculation')
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.md'))
+          .toList();
+      expect(mdFiles.length, 1);
+      expect(mdFiles.first.readAsStringSync(), contains('Dips lestés'));
+    });
+
+    test('liste vide -> rien écrit (pas de fiche "0 exercice")', () async {
+      final path = await ExportService.saveMusculationDayAsMarkdown(day, []);
+      expect(path, isNull);
+    });
   });
 }
 

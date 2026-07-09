@@ -1,9 +1,11 @@
 // lib/screens/musculation_screen.dart
 // Musculation : bibliothèque d'exercices par catégorie + flux rapide de log
 // (recherche → exercice → séries/répétitions → persisté immédiatement).
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/exercise_library.dart';
 import '../models/musculation_log.dart';
+import '../services/export_service.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
@@ -13,6 +15,16 @@ import '../widgets/ui_kit.dart';
 /// du hub Sport.
 Future<void> openMusculationQuickLog(BuildContext context) {
   return showAppSheet(context: context, child: const _QuickLogSheet());
+}
+
+/// Réexporte toute la séance du jour vers le vault (mycelium) — appelé après
+/// chaque ajout/suppression d'exercice, best-effort et fire-and-forget comme
+/// le reste des exports (santé, activités). Contrairement à celles-ci, la
+/// musculation n'avait jusqu'ici aucun export : rien ne remontait dans la
+/// note du jour côté Marble.
+void _syncMusculationDayToVault() {
+  final today = MusculationStore.todayEntries().map((e) => e.value).toList();
+  unawaited(ExportService.saveMusculationDayAsMarkdown(DateTime.now(), today));
 }
 
 /// Contenu du sous-onglet "Musculation" du hub Sport.
@@ -142,6 +154,7 @@ class _LoggedEntryTile extends StatelessWidget {
                 color: AppColors.textSecondary, size: 18),
             onPressed: () async {
               await MusculationStore.deleteEntry(logKey);
+              _syncMusculationDayToVault();
               onDeleted();
             },
           ),
@@ -343,6 +356,7 @@ class _LoggableExerciseTile extends StatelessWidget {
       sets: result.$1,
       reps: result.$2,
     ));
+    _syncMusculationDayToVault();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
