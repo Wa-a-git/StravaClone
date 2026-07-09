@@ -49,7 +49,7 @@ class HealthTier {
 
 const List<HealthTier> kHealthTiers = [
   HealthTier('Critique', kNeonPink, 0),
-  HealthTier('Instable', Color(0xFFFFC107), 40),
+  HealthTier('Instable', kNeonAmber, 40),
   HealthTier('Stable', kNeonCyan, 60),
   HealthTier('Optimal', kNeonGreen, 75),
   HealthTier('Pic de Forme', kNeonViolet, 90),
@@ -231,7 +231,7 @@ class HealthScoreService {
         out.add(HealthInsight(
             'hrv_low',
             'HRV basse aujourd\'hui : privilégie une séance légère.',
-            const Color(0xFFFFC107),
+            kNeonAmber,
             Icons.monitor_heart_rounded));
       }
     }
@@ -243,7 +243,7 @@ class HealthScoreService {
         out.add(HealthInsight(
             'sleep_short',
             'Nuit courte (${sleepH.toStringAsFixed(1)} h) : vise 7-8 h pour recharger.',
-            const Color(0xFFFFC107),
+            kNeonAmber,
             Icons.bedtime_rounded));
       } else if (sleepH >= 7.5) {
         out.add(HealthInsight(

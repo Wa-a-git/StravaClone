@@ -314,7 +314,7 @@ class _StatsPanel extends StatelessWidget {
           _StatRow(label: 'FORCE', sub: 'dénivelé', value: stats.force, max: maxVal, color: kNeonGreen),
           _StatRow(label: 'ENDURANCE', sub: 'distance', value: stats.endurance, max: maxVal, color: kNeonCyan),
           _StatRow(label: 'AGILITÉ', sub: 'allure', value: stats.agilite, max: maxVal, color: kNeonPink),
-          _StatRow(label: 'VITALITÉ', sub: 'temps', value: stats.vitalite, max: maxVal, color: const Color(0xFFFFC107)),
+          _StatRow(label: 'VITALITÉ', sub: 'temps', value: stats.vitalite, max: maxVal, color: kNeonAmber),
         ],
       ),
     );
@@ -510,7 +510,7 @@ class _QuestTile extends StatelessWidget {
                 color: progress.claimed
                     ? kNeonGreen
                     : (progress.completed
-                        ? const Color(0xFFFFC107)
+                        ? kNeonAmber
                         : AppColors.textSecondary),
                 size: 18,
               ),

@@ -1,35 +1,46 @@
 import 'package:flutter/material.dart';
 
 /// Police "arcade / techno" utilisée UNIQUEMENT pour les nombres-clés et les
-/// titres de section — jamais pour le corps de texte (lisibilité).
+/// titres de section — jamais pour le corps de texte (lisibilité). Référencée
+/// par 94 usages dans 20 écrans : ne pas changer sans repasser sur chacun,
+/// voir `kArcadePixelFont` ci-dessous pour le remplacement pixel ciblé.
 const String kArcadeFont = 'Orbitron';
 
-/// Couleurs d'accent — tons "pierre précieuse" plutôt que néon pur : même
-/// famille de teintes qu'avant (identité arcade conservée) mais assourdies
-/// pour lire comme élégantes plutôt que synthwave/glow. Réservées aux
-/// accents, CTA et moments forts — jamais pour du texte courant.
-const Color kNeonCyan = Color(0xFF2FA9A0);
-const Color kNeonPink = Color(0xFFC85A87);
-const Color kNeonGreen = Color(0xFF2E9E63);
-const Color kNeonViolet = Color(0xFF7C6AD6);
-const Color kNeonAmber = Color(0xFFCC9640);
-const Color kNeonRed = Color(0xFFC94D5C);
+/// Police pixel 8-bit (thème rétro-arcade) — disponible mais volontairement
+/// PAS branchée sur `kArcadeFont` : ses glyphes sont bien plus larges
+/// qu'Orbitron, donc sûre uniquement sur des libellés courts vérifiés au cas
+/// par cas (un score, "43,8", "NIVEAU 14"...), jamais sur un titre d'écran ou
+/// un libellé de section qui peut être long ("SUPERPOSITION & ACTIONNABLE").
+/// À adopter progressivement, écran par écran, en vérifiant chaque fois à
+/// l'affichage réel — jamais en remplaçant `kArcadeFont` globalement.
+const String kArcadePixelFont = 'Press Start 2P';
+
+/// Couleurs d'accent — palette rétro-arcade saturée (rose électrique, jaune
+/// doré, cyan, violet néon) sur fond violet-noir profond, à la place des
+/// tons "pierre précieuse" assourdis précédents. Réservées aux accents, CTA
+/// et moments forts — jamais pour du texte courant.
+const Color kNeonCyan = Color(0xFF29F1E0);
+const Color kNeonPink = Color(0xFFFF3EA5);
+const Color kNeonGreen = Color(0xFF3DDC84);
+const Color kNeonViolet = Color(0xFFA34BFF);
+const Color kNeonAmber = Color(0xFFFFD23F);
+const Color kNeonRed = Color(0xFFFF4D6D);
 
 class AppColors {
   static const arcadePink = kNeonPink;
   static const arcadeCyan = kNeonCyan;
   static const arcadeViolet = kNeonViolet;
 
-  // Base sombre premium — moins de violet saturé, plus neutre/profond.
-  static const background = Color(0xFF0A0A10);
-  static const surface = Color(0xFF15151D);
-  static const surfaceAlt = Color(0xFF1B1B26);
-  static const surfaceLight = Color(0xFF23232F);
+  // Base violet-noir profond façon borne d'arcade, plus tons neutres.
+  static const background = Color(0xFF120A1E);
+  static const surface = Color(0xFF1E1030);
+  static const surfaceAlt = Color(0xFF26123E);
+  static const surfaceLight = Color(0xFF33184F);
 
-  static const textPrimary = Color(0xFFF4F4F8);
-  static const textSecondary = Color(0xFFA3A3B5);
-  static const border = Color(0xFF2A2A38);
-  static const muted = Color(0xFF6E6E82);
+  static const textPrimary = Color(0xFFFFF6FC);
+  static const textSecondary = Color(0xFFC9A8E8);
+  static const border = Color(0xFF4A2A73);
+  static const muted = Color(0xFF8A6BB0);
 }
 
 /// Échelle d'espacement — utiliser ces valeurs plutôt que des nombres ad hoc.

@@ -457,7 +457,7 @@ class _SyncHintBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const amber = Color(0xFFFFC107);
+    const amber = kNeonAmber;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1149,7 +1149,7 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
           snapshot.flightsClimbed.toString(),
           'étages',
           Icons.stairs_rounded,
-          const Color(0xFFFFC107)),
+          kNeonAmber),
     ];
 
 class _MetricsGrid extends StatefulWidget {
@@ -1710,7 +1710,7 @@ class _StreakChip extends StatelessWidget {
       child: Row(
         children: [
           const Icon(Icons.local_fire_department_rounded,
-              color: Color(0xFFFFC107), size: 22),
+              color: kNeonAmber, size: 22),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1838,7 +1838,7 @@ class _HealthQuestTile extends StatelessWidget {
                 color: progress.claimed
                     ? kNeonGreen
                     : (progress.completed
-                        ? const Color(0xFFFFC107)
+                        ? kNeonAmber
                         : AppColors.textSecondary),
                 size: 18,
               ),
