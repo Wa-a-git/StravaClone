@@ -1,4 +1,8 @@
 // lib/screens/system_screen.dart
+// Contenu du sous-onglet "Progression" du hub Sport (niveau, XP, stats RPG,
+// quêtes, déblocages) — anciennement l'onglet "Niveau" à part entière. N'a
+// pas son propre Scaffold : il est inséré dans SportScreen, même principe
+// que CourseSection/MusculationSection.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +14,8 @@ import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import '../theme.dart';
 
-class SystemScreen extends ConsumerWidget {
-  const SystemScreen({super.key});
+class ProgressionSection extends ConsumerWidget {
+  const ProgressionSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,66 +30,36 @@ class SystemScreen extends ConsumerWidget {
     final weekKey = GameService.weekKey(now);
     final dayKey = GameService.dayKey(now);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 110,
-            pinned: true,
-            backgroundColor: AppColors.surface,
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            flexibleSpace: const FlexibleSpaceBar(
-              titlePadding: EdgeInsets.only(left: 20, bottom: 14),
-              title: Text(
-                'PROGRESSION',
-                style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: kNeonCyan,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  shadows: [Shadow(color: kNeonCyan, blurRadius: 14)],
-                ),
-              ),
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _StatusPanel(profile: profile),
+          const SizedBox(height: 18),
+          _StatsPanel(stats: profile.stats),
+          const SizedBox(height: 18),
+          _QuestsPanel(
+            title: 'QUÊTES DU JOUR',
+            accent: kNeonGreen,
+            quests: dailyQuests,
+            acts: todayActs,
+            keyPrefix: dayKey,
+            resetIn: _timeUntilMidnight(now),
+            onClaim: (q) => _claimQuest(context, ref, dayKey, q),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _StatusPanel(profile: profile),
-                  const SizedBox(height: 18),
-                  _StatsPanel(stats: profile.stats),
-                  const SizedBox(height: 18),
-                  _QuestsPanel(
-                    title: 'QUÊTES DU JOUR',
-                    accent: kNeonGreen,
-                    quests: dailyQuests,
-                    acts: todayActs,
-                    keyPrefix: dayKey,
-                    resetIn: _timeUntilMidnight(now),
-                    onClaim: (q) => _claimQuest(context, ref, dayKey, q),
-                  ),
-                  const SizedBox(height: 18),
-                  _QuestsPanel(
-                    title: 'QUÊTES HEBDO',
-                    accent: kNeonPink,
-                    quests: weeklyQuests,
-                    acts: weekActs,
-                    keyPrefix: weekKey,
-                    resetIn: _timeUntilWeekReset(now),
-                    onClaim: (q) => _claimQuest(context, ref, weekKey, q),
-                  ),
-                  const SizedBox(height: 18),
-                  _UnlocksPanel(level: profile.level),
-                ],
-              ),
-            ),
+          const SizedBox(height: 18),
+          _QuestsPanel(
+            title: 'QUÊTES HEBDO',
+            accent: kNeonPink,
+            quests: weeklyQuests,
+            acts: weekActs,
+            keyPrefix: weekKey,
+            resetIn: _timeUntilWeekReset(now),
+            onClaim: (q) => _claimQuest(context, ref, weekKey, q),
           ),
+          const SizedBox(height: 18),
+          _UnlocksPanel(level: profile.level),
         ],
       ),
     );
@@ -311,7 +285,7 @@ class _StatsPanel extends StatelessWidget {
         children: [
           const _PanelTitle('CARACTÉRISTIQUES', color: kNeonPink),
           const SizedBox(height: 14),
-          _StatRow(label: 'FORCE', sub: 'dénivelé', value: stats.force, max: maxVal, color: kNeonGreen),
+          _StatRow(label: 'FORCE', sub: 'dénivelé + muscu', value: stats.force, max: maxVal, color: kNeonGreen),
           _StatRow(label: 'ENDURANCE', sub: 'distance', value: stats.endurance, max: maxVal, color: kNeonCyan),
           _StatRow(label: 'AGILITÉ', sub: 'allure', value: stats.agilite, max: maxVal, color: kNeonPink),
           _StatRow(label: 'VITALITÉ', sub: 'temps', value: stats.vitalite, max: maxVal, color: kNeonAmber),

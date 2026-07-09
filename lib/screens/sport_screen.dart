@@ -8,13 +8,15 @@ import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'home_screen.dart';
 import 'musculation_screen.dart';
+import 'system_screen.dart';
 
-enum SportTab { course, musculation }
+enum SportTab { course, musculation, progression }
 
 extension on SportTab {
   String get label => switch (this) {
         SportTab.course => 'Course',
         SportTab.musculation => 'Musculation',
+        SportTab.progression => 'Progression',
       };
 }
 
@@ -76,6 +78,7 @@ class SportScreen extends ConsumerWidget {
               child: switch (tab) {
                 SportTab.course => const CourseSection(key: ValueKey('course')),
                 SportTab.musculation => const MusculationSection(key: ValueKey('muscu')),
+                SportTab.progression => const ProgressionSection(key: ValueKey('progression')),
               },
             ),
           ),

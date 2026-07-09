@@ -21,10 +21,10 @@ import '../widgets/health_charts.dart';
 import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
-import 'health_history_screen.dart';
+import 'sport_screen.dart' show sportTabProvider, SportTab;
 import 'health_metric_detail_screen.dart';
 import 'score_breakdown_screen.dart';
-import 'detail_screen.dart';
+import 'sleep_detail_screen.dart';
 import '../main.dart' show routeObserver;
 
 class HealthDashboardScreen extends ConsumerStatefulWidget {
@@ -70,7 +70,7 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
     // Revenu sur l'onglet Santé depuis un autre onglet (IndexedStack garde
     // l'état, donc aucun événement de route ne se déclenche pour ce cas).
     ref.listen(shellIndexProvider, (prev, next) {
-      if (next == 0 && prev != 0) _scrollToTop();
+      if (next == 1 && prev != 1) _scrollToTop();
     });
 
     final st = ref.watch(healthDataProvider);
@@ -156,14 +156,11 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    // ── FEED : la toute première carte est le gros bloc
-                    // "aujourd'hui + cette semaine" (Bio-Score, quêtes,
-                    // semaine, sous-scores, métriques, XP, quêtes de la
-                    // semaine) — pas un bloc séparé au-dessus du feed, juste
-                    // sa première entrée, plus complète que les suivantes.
-                    // Ensuite chaque section redevient un post autonome et
-                    // bordé façon réseau social, jusqu'à tout l'historique
-                    // (courses + journées), du plus récent au plus ancien. ──
+                    // ── Carte héros "aujourd'hui + cette semaine" (Bio-Score,
+                    // quêtes, semaine, sous-scores, XP, quêtes de la semaine).
+                    // Le feed d'activité (historique courses + journées) a
+                    // été déplacé dans son propre onglet — Santé se concentre
+                    // sur l'état du jour, regroupé court/moyen/long terme. ──
                     FadeSlideIn(
                       child: _TodayCard(
                         scores: scores,
@@ -186,98 +183,77 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                             .length,
                         weekKey: GameService.weekKey(now),
                         xpToday: st.healthXpToday,
-                        onXpTap: () =>
-                            ref.read(shellIndexProvider.notifier).state = 2,
+                        onXpTap: () {
+                          ref.read(sportTabProvider.notifier).state =
+                              SportTab.progression;
+                          ref.read(shellIndexProvider.notifier).state = 2;
+                        },
                         onClaim: (keyPrefix, q) =>
                             _claim(context, ref, keyPrefix, q),
                       ),
                     ),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 18),
 
-                    _FeedPost(
-                      icon: Icons.insights_rounded,
-                      time: 'ANALYSE',
-                      title: 'Recommandations',
-                      accent: kNeonGreen,
-                      child: _InsightsPanel(
-                        insights: st.insights,
-                        onFeedback: () => ref
-                            .read(healthDataProvider.notifier)
-                            .refreshInsights(),
+                    // ── Court terme : métriques brutes du jour + sparklines
+                    // 7 jours (ex-"Métriques & tendances" de la carte héros,
+                    // extrait pour laisser respirer le reste). ──────────────
+                    _HPanel(
+                      accent: kNeonCyan,
+                      child: _MetricsGrid(snapshot: st.snapshot),
+                    ),
+
+                    if (st.insights.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      _HPanel(
+                        accent: kNeonGreen,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _HPanelTitle('RECOMMANDATIONS',
+                                color: kNeonGreen),
+                            const SizedBox(height: 14),
+                            _InsightsPanel(
+                              insights: st.insights,
+                              onFeedback: () => ref
+                                  .read(healthDataProvider.notifier)
+                                  .refreshInsights(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 18),
+                    _HPanel(
+                      accent: kNeonViolet,
+                      child: const _SuperpositionCard(),
+                    ),
+
+                    const SizedBox(height: 18),
+                    _HPanel(
+                      accent: kNeonPink,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          _HPanelTitle('MOYEN TERME · 30 JOURS'),
+                          SizedBox(height: 14),
+                          _MidTermSection(),
+                        ],
                       ),
                     ),
+
+                    const SizedBox(height: 18),
+                    const _LongTermPanel(),
                   ],
                   const SizedBox(height: 22),
                 ],
               ),
             ),
           ),
-          if (!st.isLoading && st.hasPermission && scores != null)
-            _buildHistorySliver(context, allActivities),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
-  }
-
-  /// Historique complet (courses + journées santé), fusionné et trié du plus
-  /// récent au plus ancien — construit en liste paresseuse (SliverList) car
-  /// il peut contenir des mois d'entrées.
-  Widget _buildHistorySliver(BuildContext context, List<Activity> activities) {
-    final entries = _buildHistoryEntries(activities, HealthStore.all());
-    if (entries.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
-
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, i) => Padding(
-            padding: const EdgeInsets.only(top: 22),
-            child: _historyEntryPost(context, entries[i]),
-          ),
-          childCount: entries.length,
-        ),
-      ),
-    );
-  }
-
-  Widget _historyEntryPost(BuildContext context, _HistoryEntry e) {
-    if (e.kind == _FeedKind.activity) {
-      final a = e.activity!;
-      return _FeedPost(
-        icon: Icons.directions_run_rounded,
-        time: _dayLabel(a.date),
-        title: 'Activité suivie',
-        accent: kNeonPink,
-        child: _ActivityFeedCard(
-          activity: a,
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => DetailScreen(activity: a))),
-        ),
-      );
-    }
-    final d = e.day!;
-    return _FeedPost(
-      icon: Icons.bedtime_rounded,
-      time: _dayLabel(d.date),
-      title: 'Résumé du jour',
-      accent: kNeonViolet,
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
-      child: _DayFeedContent(record: d),
-    );
-  }
-
-  /// Libellé relatif (AUJOURD'HUI / HIER) ou date courte pour l'en-tête d'un
-  /// post d'historique.
-  static String _dayLabel(DateTime d) {
-    final now = DateTime.now();
-    final day = DateTime(d.year, d.month, d.day);
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return "AUJOURD'HUI";
-    if (diff == 1) return 'HIER';
-    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
   }
 
   Widget _buildHeader() {
@@ -337,117 +313,6 @@ int _runStreak(List<Activity> activities) {
     cursor = cursor.subtract(const Duration(days: 1));
   }
   return count;
-}
-
-// ── Historique fusionné (courses + journées santé) affiché dans le feed,
-// trié du plus récent au plus ancien. ─────────────────────────────────────────
-enum _FeedKind { activity, day }
-
-class _HistoryEntry {
-  final DateTime date; // jour civil, pour le regroupement/tri par journée
-  final DateTime sortTime; // horodatage exact, pour l'ordre au sein d'un jour
-  final _FeedKind kind;
-  final Activity? activity;
-  final DailyHealthRecord? day;
-
-  _HistoryEntry.activity(Activity a)
-      : date = DateTime(a.date.year, a.date.month, a.date.day),
-        sortTime = a.date,
-        kind = _FeedKind.activity,
-        activity = a,
-        day = null;
-
-  _HistoryEntry.day(DailyHealthRecord d)
-      : date = DateTime(d.date.year, d.date.month, d.date.day),
-        sortTime = d.date,
-        kind = _FeedKind.day,
-        activity = null,
-        day = d;
-}
-
-/// Fusionne courses et journées santé en une seule liste triée du plus
-/// récent au plus ancien — au sein d'une même journée, les courses passent
-/// avant le résumé du jour.
-List<_HistoryEntry> _buildHistoryEntries(
-    List<Activity> activities, List<DailyHealthRecord> days) {
-  final items = <_HistoryEntry>[
-    for (final a in activities) _HistoryEntry.activity(a),
-    for (final d in days) _HistoryEntry.day(d),
-  ];
-  items.sort((a, b) {
-    final dayCmp = b.date.compareTo(a.date);
-    if (dayCmp != 0) return dayCmp;
-    if (a.kind != b.kind) return a.kind == _FeedKind.activity ? -1 : 1;
-    return b.sortTime.compareTo(a.sortTime);
-  });
-  return items;
-}
-
-/// Contenu compact d'un post "résumé du jour" dans l'historique — même
-/// logique que la carte Sommeil du jour, mais à partir d'un DailyHealthRecord
-/// passé plutôt que du snapshot Health Connect en direct.
-class _DayFeedContent extends StatelessWidget {
-  final DailyHealthRecord record;
-  const _DayFeedContent({required this.record});
-
-  String _fmt(double minutes) {
-    final h = minutes ~/ 60;
-    final m = (minutes % 60).round();
-    return '${h}h${m.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sleep = record.sleep;
-    final total = sleep.totalAsleepMin;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (total > 0) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(_fmt(total),
-                  style: const TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900)),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                    'sommeil · score ${record.sleepScore}/100 · efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 11)),
-              ),
-            ],
-          ),
-          if (sleep.segments.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Hypnogram(segments: sleep.segments, height: 72, showAxis: false),
-          ],
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 14,
-            runSpacing: 6,
-            children: [
-              SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
-              SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
-              SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
-              SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
-            ],
-          ),
-          const SizedBox(height: 14),
-        ],
-        _RawStatsRow(
-          steps: record.steps,
-          distanceKm: record.distanceKm,
-          activeCalories: record.activeCalories,
-        ),
-      ],
-    );
-  }
 }
 
 // ── Bannière d'aide à la synchro ──────────────────────────────────────────────
@@ -661,7 +526,7 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          _RawStatsRow(
+          RawStatsRow(
             steps: snapshot.steps,
             distanceKm: snapshot.distanceKm,
             activeCalories: snapshot.activeCalories,
@@ -700,10 +565,6 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          _MetricsGrid(snapshot: snapshot),
-          const SizedBox(height: 16),
-          const Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 14),
           _HealthXpBanner(xpToday: xpToday, onTap: onXpTap),
           if (weeklyQuests.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -729,12 +590,12 @@ class _TodayCard extends StatelessWidget {
 
 // ── Chiffres bruts du jour, visibles directement dans la carte héros — le
 // Bio-Score est un score composite, mais on veut aussi les données brutes
-// juste en dessous, sans avoir à descendre jusqu'à "Métriques & tendances". ──
-class _RawStatsRow extends StatelessWidget {
+// juste en dessous, sans avoir à descendre jusqu'à la section "Court terme". ──
+class RawStatsRow extends StatelessWidget {
   final int steps;
   final double distanceKm;
   final double activeCalories;
-  const _RawStatsRow({
+  const RawStatsRow({
     required this.steps,
     required this.distanceKm,
     required this.activeCalories,
@@ -745,7 +606,7 @@ class _RawStatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _RawStat(
+          child: RawStat(
             icon: Icons.directions_walk_rounded,
             color: kNeonGreen,
             value: steps.toString(),
@@ -754,7 +615,7 @@ class _RawStatsRow extends StatelessWidget {
         ),
         Container(width: 1, height: 30, color: AppColors.border),
         Expanded(
-          child: _RawStat(
+          child: RawStat(
             icon: Icons.map_rounded,
             color: kNeonGreen,
             value: distanceKm.toStringAsFixed(2),
@@ -763,7 +624,7 @@ class _RawStatsRow extends StatelessWidget {
         ),
         Container(width: 1, height: 30, color: AppColors.border),
         Expanded(
-          child: _RawStat(
+          child: RawStat(
             icon: Icons.local_fire_department_rounded,
             color: kNeonPink,
             value: activeCalories.toStringAsFixed(0),
@@ -775,12 +636,12 @@ class _RawStatsRow extends StatelessWidget {
   }
 }
 
-class _RawStat extends StatelessWidget {
+class RawStat extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String value;
   final String unit;
-  const _RawStat({
+  const RawStat({
     required this.icon,
     required this.color,
     required this.value,
@@ -955,15 +816,19 @@ class _SubScoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      // Le sommeil a son propre écran de détail (hypnogramme, nuit par
+      // nuit) — les autres sous-scores restent sur le détail générique.
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ScoreBreakdownScreen(
-            scoreMetric: metric,
-            accent: color,
-            scoreValue: score,
-            snapshot: snapshot,
-          ),
+          builder: (_) => metric == HealthMetric.sleepScore
+              ? const SleepDetailScreen()
+              : ScoreBreakdownScreen(
+                  scoreMetric: metric,
+                  accent: color,
+                  scoreValue: score,
+                  snapshot: snapshot,
+                ),
         ),
       ),
       child: Container(
@@ -1173,7 +1038,8 @@ class _MetricsGridState extends State<_MetricsGrid> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _HPanelTitle(
-          'MÉTRIQUES & TENDANCES',
+          'COURT TERME',
+          color: kNeonCyan,
           trailing: GestureDetector(
             onTap: () => _openCustomize(context, all),
             behavior: HitTestBehavior.opaque,
@@ -1422,125 +1288,279 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-// ── Post de feed : en-tête (médaillon + heure + titre) et contenu dans une
-// seule carte bordée — chaque section du feed doit se lire comme un post
-// autonome de réseau social, pas comme un titre flottant au-dessus d'un
-// panneau séparé. ─────────────────────────────────────────────────────────────
-class _FeedPost extends StatelessWidget {
-  final IconData icon;
-  final String time;
-  final String title;
-  final Color accent;
-  final Widget child;
-  final VoidCallback? onTap;
-  const _FeedPost({
-    required this.icon,
-    required this.time,
-    required this.title,
-    required this.accent,
-    required this.child,
-    this.onTap,
-  });
+// ── Superposition personnalisable : croise deux métriques au choix sur la
+// même période — chacune normalisée sur sa propre échelle (0-1), donc ce
+// n'est pas une comparaison quantitative exacte, juste un repère visuel pour
+// spotter des liens (ex. sommeil ↔ récupération). Défaut générique pertinent
+// plutôt que de forcer l'utilisateur à choisir avant d'avoir vu le résultat. ─
+const List<_SuperpositionOption> _superpositionOptions = [
+  _SuperpositionOption(HealthMetric.sleepScore, 'Sommeil'),
+  _SuperpositionOption(HealthMetric.recoveryScore, 'Récupération'),
+  _SuperpositionOption(HealthMetric.activityScore, 'Activité'),
+  _SuperpositionOption(HealthMetric.restingHeartRate, 'FC repos'),
+  _SuperpositionOption(HealthMetric.hrv, 'HRV'),
+  _SuperpositionOption(HealthMetric.steps, 'Pas'),
+  _SuperpositionOption(HealthMetric.distanceKm, 'Distance'),
+  _SuperpositionOption(HealthMetric.respiratoryRate, 'Respiration'),
+  _SuperpositionOption(HealthMetric.weightKg, 'Poids'),
+];
+
+class _SuperpositionOption {
+  final HealthMetric metric;
+  final String label;
+  const _SuperpositionOption(this.metric, this.label);
+}
+
+class _SuperpositionCard extends StatefulWidget {
+  const _SuperpositionCard();
+
+  @override
+  State<_SuperpositionCard> createState() => _SuperpositionCardState();
+}
+
+class _SuperpositionCardState extends State<_SuperpositionCard> {
+  HealthMetric _metricA = HealthMetric.sleepScore;
+  HealthMetric _metricB = HealthMetric.recoveryScore;
+
+  String _labelFor(HealthMetric m) =>
+      _superpositionOptions.firstWhere((o) => o.metric == m).label;
 
   @override
   Widget build(BuildContext context) {
-    return _HPanel(
-      accent: accent,
+    final seriesA = HealthStore.series(_metricA, 30);
+    final seriesB = HealthStore.series(_metricB, 30);
+    final valuesA = seriesA.map((e) => e.value).toList();
+    final valuesB = seriesB.map((e) => e.value).toList();
+    final dates = seriesA.map((e) => e.key).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _HPanelTitle('SUPERPOSITION · 30 JOURS', color: kNeonViolet),
+        const SizedBox(height: 4),
+        const Text(
+          'Croise deux métriques sur la même période pour repérer des liens.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _SuperpositionPicker(
+                color: kNeonCyan,
+                label: _labelFor(_metricA),
+                onTap: () => _pick(context, forA: true),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _SuperpositionPicker(
+                color: kNeonPink,
+                label: _labelFor(_metricB),
+                onTap: () => _pick(context, forA: false),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        OverlayTrendChart(
+          valuesA: valuesA,
+          valuesB: valuesB,
+          colorA: kNeonCyan,
+          colorB: kNeonPink,
+          dates: dates,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pick(BuildContext context, {required bool forA}) async {
+    final chosen = await showAppSheet<HealthMetric>(
+      context: context,
+      child: _SuperpositionPickSheet(current: forA ? _metricA : _metricB),
+    );
+    if (chosen == null) return;
+    setState(() {
+      if (forA) {
+        _metricA = chosen;
+      } else {
+        _metricB = chosen;
+      }
+    });
+  }
+}
+
+class _SuperpositionPicker extends StatelessWidget {
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+  const _SuperpositionPicker(
+      {required this.color, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
       onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: accent, size: 15),
-              ),
-              const SizedBox(width: 10),
-              Text(time, style: AppText.sectionLabel.copyWith(color: accent)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                  ),
-                ),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 12),
-          child,
-        ],
+            ),
+            const Icon(Icons.unfold_more_rounded,
+                size: 15, color: AppColors.textSecondary),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── Carte d'activité dans le feed santé ───────────────────────────────────────
-class _ActivityFeedCard extends StatelessWidget {
-  final Activity activity;
-  final VoidCallback onTap;
-  const _ActivityFeedCard({required this.activity, required this.onTap});
+class _SuperpositionPickSheet extends StatelessWidget {
+  final HealthMetric current;
+  const _SuperpositionPickSheet({required this.current});
 
   @override
   Widget build(BuildContext context) {
-    return AppPanel(
-      accent: kNeonPink,
-      padding: const EdgeInsets.all(14),
-      onTap: onTap,
-      child: Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'CHOISIR UNE MÉTRIQUE',
+          style: TextStyle(
+              fontFamily: kArcadeFont,
+              color: kNeonCyan,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1),
+        ),
+        const SizedBox(height: 12),
+        for (final opt in _superpositionOptions)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(opt.label,
+                style:
+                    const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+            trailing: opt.metric == current
+                ? const Icon(Icons.check_rounded, color: kNeonCyan)
+                : null,
+            onTap: () => Navigator.pop(context, opt.metric),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Moyen terme : tendances 30 jours des trois sous-scores. ──────────────────
+class _MidTermSection extends StatelessWidget {
+  const _MidTermSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        _MidTermChart(
+            metric: HealthMetric.sleepScore,
+            label: 'Sommeil',
+            color: kNeonViolet),
+        SizedBox(height: 18),
+        _MidTermChart(
+            metric: HealthMetric.recoveryScore,
+            label: 'Récupération',
+            color: kNeonCyan),
+        SizedBox(height: 18),
+        _MidTermChart(
+            metric: HealthMetric.activityScore,
+            label: 'Activité',
+            color: kNeonGreen),
+      ],
+    );
+  }
+}
+
+class _MidTermChart extends StatelessWidget {
+  final HealthMetric metric;
+  final String label;
+  final Color color;
+  const _MidTermChart(
+      {required this.metric, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final series = HealthStore.series(metric, 30);
+    final values = series.map((e) => e.value).where((v) => v > 0).toList();
+    final dates =
+        series.where((e) => e.value > 0).map((e) => e.key).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label.toUpperCase(),
+            style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6)),
+        const SizedBox(height: 8),
+        TrendChart(values: values, color: color, dates: dates, height: 130),
+      ],
+    );
+  }
+}
+
+// ── Long terme : poids sur 90 jours — masqué s'il n'y a pas de donnée (la
+// balance n'est pas une source régulière pour tout le monde). ────────────────
+class _LongTermPanel extends StatelessWidget {
+  const _LongTermPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final series = HealthStore.series(HealthMetric.weightKg, 90);
+    final values = series.map((e) => e.value).where((v) => v > 0).toList();
+    final dates =
+        series.where((e) => e.value > 0).map((e) => e.key).toList();
+    if (values.length < 2) return const SizedBox.shrink();
+    return _HPanel(
+      accent: kNeonAmber,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: kNeonPink.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: const Icon(Icons.directions_run_rounded,
-                color: kNeonPink, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(activity.title,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text('${activity.distanceKm} km',
-                        style: const TextStyle(
-                            fontFamily: kArcadeFont,
-                            color: kNeonPink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800)),
-                    const SizedBox(width: 10),
-                    Text(
-                      '${activity.durationFormatted} · ${activity.avgPace}/km',
-                      style: AppText.caption,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: kNeonPink, size: 20),
+          const _HPanelTitle('LONG TERME · 90 JOURS', color: kNeonAmber),
+          const SizedBox(height: 14),
+          const Text('POIDS',
+              style: TextStyle(
+                  color: kNeonAmber,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6)),
+          const SizedBox(height: 8),
+          TrendChart(
+              values: values,
+              color: kNeonAmber,
+              dates: dates,
+              height: 150,
+              fractionDigits: 1,
+              unit: ' kg'),
         ],
       ),
     );
@@ -1556,7 +1576,7 @@ class _InsightsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (insights.isEmpty) return const SizedBox.shrink();
-    // Pas de carte englobante ici : ce panneau est le contenu d'un _FeedPost
+    // Pas de carte englobante ici : ce panneau est le contenu d'un _HPanel
     // qui fournit déjà la carte bordée et le titre "Recommandations".
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1745,9 +1765,9 @@ class _StreakChip extends StatelessWidget {
 }
 
 // ── Panneau de quêtes santé (réclamables → XP pool commun) ────────────────────
-// ── Liste de quêtes réutilisable, sans carte englobante — appelée depuis la
-// carte héros (quêtes du jour) et depuis un _FeedPost (quêtes semaine), qui
-// fournissent chacun déjà leur propre carte/titre. ───────────────────────────
+// ── Liste de quêtes réutilisable, sans carte englobante — appelée deux fois
+// depuis la carte héros (quêtes du jour, quêtes de la semaine), qui fournit
+// déjà sa propre carte/titre pour chaque section. ─────────────────────────────
 class _QuestsList extends StatelessWidget {
   final List<HealthQuestDef> quests;
   final Color accent;

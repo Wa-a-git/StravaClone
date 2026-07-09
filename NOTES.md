@@ -1,106 +1,87 @@
 # Notes de session — refonte Feed / Santé / Sport + thème arcade
 
-Contexte pour reprendre le travail dans une session ultérieure. Discussion menée
-sur la branche `claude/vo2-max-data-display-43e3ee`.
+Contexte pour reprendre le travail dans une session ultérieure. Développé sur
+la branche `claude/vo2-max-data-display-43e3ee`.
 
-## État actuel
+## État actuel — tout ce qui suit est codé et poussé sur la branche
 
-### Fait et poussé sur la branche
 - **VO2 max** : détail des données du calcul (courses/points utilisés, plage
   FC/allure), catégorie fitness (Faible → Élite) par âge/sexe, champ sexe
-  optionnel dans le profil. Voir `lib/services/vo2_estimator_service.dart`
-  (`categoryFor`) et `lib/screens/health_metric_detail_screen.dart`.
-- **Thème rétro-arcade** : nouvelle palette (fond violet-noir, accents rose
-  électrique / jaune doré / cyan / violet néon saturés) dans `lib/theme.dart`.
-  Se propage automatiquement partout puisque l'app référence déjà
-  `AppColors`/`kNeon*` plutôt que des couleurs codées en dur.
-- Police **Press Start 2P** ajoutée aux assets (`assets/fonts/`, déclarée dans
-  `pubspec.yaml`) sous la constante `kArcadePixelFont` — **disponible mais pas
-  branchée** sur `kArcadeFont` (voir "À faire" ci-dessous).
+  optionnel dans le profil. `lib/services/vo2_estimator_service.dart`
+  (`categoryFor`), `lib/screens/health_metric_detail_screen.dart`.
+- **Thème rétro-arcade** : palette dans `lib/theme.dart` (fond violet-noir,
+  accents rose électrique / jaune doré / cyan / violet néon). Se propage
+  partout via `AppColors`/`kNeon*`. Police pixel `Press Start 2P` disponible
+  (`kArcadePixelFont`) mais **volontairement pas branchée** sur `kArcadeFont`
+  (risque de débordement, voir "Points ouverts").
+- **Onglets** : `Feed / Santé / Sport / Profil` (`shell_screen.dart`,
+  `shellIndexProvider` : 0=Feed, 1=Santé, 2=Sport, 3=Profil). "Niveau" est
+  maintenant le 3ᵉ sous-onglet de Sport (`sport_screen.dart`, `SportTab` :
+  `course / musculation / progression`), plus d'onglet dédié en bas.
+  `system_screen.dart` exporte `ProgressionSection` (plus de `Scaffold`
+  propre, inséré comme `CourseSection`/`MusculationSection`).
+- **Feed** (`lib/screens/feed_screen.dart`, nouvel écran) : calendrier
+  minimaliste en haut (`_FeedCalendar`, pastilles rose=activité/violet=santé,
+  surbrillance cyan aujourd'hui) + fil chronologique de posts (courses,
+  résumés santé du jour), du plus récent au plus ancien. Ancien code déplacé
+  depuis `health_dashboard_screen.dart` (`_HistoryEntry`, `_buildHistoryEntries`,
+  `_DayFeedContent`, `_FeedPost`, `_ActivityFeedCard`) — ces classes n'existent
+  plus dans `health_dashboard_screen.dart`.
+- **Santé** (`health_dashboard_screen.dart`) : le feed/historique est parti
+  dans son propre onglet. Structure actuelle : hero `_TodayCard` (Bio-Score +
+  quêtes jour/semaine + sous-scores + XP, **sans** la grille de métriques,
+  extraite) → section **COURT TERME** (`_MetricsGrid`, ex-"Métriques &
+  tendances") → **RECOMMANDATIONS** (`_InsightsPanel`, affiché seulement si
+  des insights existent) → **SUPERPOSITION · 30 JOURS** (`_SuperpositionCard`,
+  2 sélecteurs de métrique, défaut Sommeil × Récupération, rendu par
+  `OverlayTrendChart` dans `lib/widgets/health_charts.dart` — chaque courbe
+  normalisée 0-1 indépendamment, pas de double axe chiffré) → **MOYEN TERME ·
+  30 JOURS** (3 `TrendChart` : sommeil/récupération/activité) → **LONG TERME ·
+  90 JOURS** (`_LongTermPanel`, poids, masqué si aucune donnée). La carte
+  Sommeil (`_SubScoreCard`) route maintenant vers `SleepDetailScreen` (plus
+  `ScoreBreakdownScreen`) — cet écran existait déjà mais n'était jamais appelé.
+- **Sport / Course** : nouvelle carte **Records personnels**
+  (`_PersonalRecordsCard` dans `home_screen.dart`) — distance/allure/D+ les
+  plus performants tous temps confondus (même logique que la célébration en
+  fin de course dans `tracking_screen.dart`, mais affichée en continu).
+- **Sport / Musculation** : champ **charge (kg)** optionnel dans le flux de
+  log rapide (`_ChargeStepperRow`, incréments de 2,5 kg), stocké dans
+  `MusculationLogEntry.chargeKg` (défaut 0, rétro-compatible). `volumeKg`
+  getter (séries × reps × charge). Export vault mis à jour (colonne Charge,
+  volume total dans le frontmatter `total_volume_kg` et la ligne de note du
+  jour).
+- **Sport / Progression — fusion stat Force** : `GameService.statsFor`/
+  `profileFor` acceptent `musculationVolumeKg` ; `force = dénivelé/10 +
+  volumeMuscu/100` (arrondi). `playerProfileProvider` lit
+  `MusculationStore.all()` et recalcule à chaque changement — un
+  `musculationRevisionProvider` (StateProvider<int>, bumpé après chaque
+  ajout/suppression d'exercice dans `musculation_screen.dart`) force le
+  recalcul puisque `MusculationStore` (Hive) n'a pas de flux réactif propre.
+- **Bouton +** : inchangé, toujours dans `shell_screen.dart`.
 
-### Pas encore implémenté (validé sur maquette seulement)
-La restructuration Feed / Santé / Sport / Profil discutée n'est **pas** codée
-dans l'app — seulement prototypée en HTML. Deux maquettes cliquables existent
-(visibles depuis un compte claude.ai avec accès à cette session) :
-- Version thème actuel (sombre, validée) :
-  `https://claude.ai/code/artifact/8e620a0c-de77-4938-9e4b-573b5b888387`
-- Version thème arcade (validée, celle dont la palette a été appliquée) :
-  `https://claude.ai/code/artifact/ec538ba7-78c1-4da5-8932-6b8aaa192326`
+## Tests
 
-Décisions validées à reprendre lors de l'implémentation réelle :
+- `test/vo2_estimator_service_test.dart`, `test/export_service_test.dart`
+  (musculation : frontmatter, note du jour, ré-export, charge/volume),
+  `test/game_service_test.dart` (fusion Force). **Aucun n'a été exécuté** —
+  pas de toolchain Flutter/Dart dans cet environnement. À lancer en priorité
+  à la reprise (`flutter test`).
 
-1. **Onglets** : `Feed / Santé / Sport / Profil` (4 au lieu de 5) — "Niveau"
-   devient un 3ᵉ sous-onglet de Sport (`Course / Musculation / Progression`),
-   plus d'onglet dédié en bas.
-2. **Feed** (`shell_screen.dart` → nouvel onglet) :
-   - Calendrier minimaliste en haut (façon plugin Calendar d'Obsidian —
-     grille compacte, pastilles colorées par type d'événement).
-   - Fil chronologique de posts (courses, séances muscu, résumés santé du
-     jour précédent) — **jamais le jour courant** (il vit dans le hero de
-     Santé tant qu'il n'est pas terminé).
-   - Pas de label "Historique" : effet fil d'activité (bouton kudos/flamme
-     toggle par post, aperçu de trace stylisé pour les courses).
-   - Chaque post porte un repère visuel vers une note liée (icône + chemin,
-     ex. `Journal/2026-07-08.md`) — **rien de branché**, voir "Marble"
-     ci-dessous.
-3. **Santé** : hero Bio-Score conservé en tête (avec les chiffres bruts du
-   jour). Reste de l'écran regroupé en 3 blocs : court terme (aujourd'hui/7j),
-   moyen terme (30j), long terme (90j+). Section "actionnable" (bandeau
-   coloré + icône, ex. HRV basse) explicitement séparée des tuiles de
-   données passives neutres (FC repos, pas, poids...).
-   - **Graphique de superposition personnalisable** : deux sélecteurs — une
-     métrique principale, puis soit un *repère* (jours de fractionné/
-     musculation/nuit courte, en ticks sur un seul axe), soit une *seconde
-     métrique* (FC repos/HRV/sommeil/poids/VO2 max/pas), rendue en courbe
-     indexée sur sa propre plage min-max pour partager un seul axe — jamais
-     de double axe. Défaut : FC repos × jours de fractionné.
-   - Carte "Sommeil" doit router vers `SleepDetailScreen` (déjà codé,
-     actuellement **orphelin**, jamais appelé nulle part dans l'app !) au
-     lieu de `ScoreBreakdownScreen` — voir `lib/screens/sleep_detail_screen.dart`.
-4. **Sport** — sous-onglet **Musculation** : ajouter un champ **charge (kg)**
-   optionnel au flux de log rapide (`lib/models/musculation_log.dart`,
-   `lib/screens/musculation_screen.dart`, actuellement séries×répétitions
-   seulement, aucune charge). Permet volume de séance, 1RM estimé (formule
-   d'Epley), progression par exercice. Sous-onglet **Course** : ajouter une
-   carte "Records personnels" permanente (distance/allure/D+ — déjà calculés
-   et célébrés à la volée dans `tracking_screen.dart`, mais jamais affichés
-   en continu). Sous-onglet **Progression** : la stat RPG "Force" (dénivelé
-   cumulé course uniquement aujourd'hui, voir `game_service.dart`) doit
-   fusionner dénivelé + volume musculation une fois la charge trackée.
-5. **Bouton +** : déjà présent dans l'app réelle (`shell_screen.dart`), rien
-   à ajouter — juste à garder lors de la refonte.
+## Points ouverts
 
-## À faire / points ouverts
-
-- **Press Start 2P pas encore appliquée à l'app réelle.** 94 usages de
-  `kArcadeFont` répartis sur 20 écrans — police bien plus large qu'Orbitron,
-  plusieurs cas de débordement rencontrés même sur les 4 écrans de la
-  maquette. Pas de toolchain Flutter dans l'environnement où ce travail a
-  été fait (impossible de lancer/screenshotter l'app pour vérifier). À
-  appliquer écran par écran, uniquement sur du texte court (scores, XP,
-  "NIVEAU 14"...), jamais sur un titre ou libellé de section, en vérifiant
-  l'affichage réel à chaque fois.
+- **Press Start 2P pas branchée à l'app réelle.** 94 usages de `kArcadeFont`
+  sur ~20 écrans, police bien plus large qu'Orbitron. À appliquer écran par
+  écran, uniquement sur du texte court, en vérifiant l'affichage réel à
+  chaque fois (impossible à vérifier depuis cet environnement).
 - **Écrans avec palette codée en dur, indépendante de `theme.dart`** :
   `tracking_screen.dart`, `history_screen.dart`, `detail_screen.dart`,
-  `widgets/system_window.dart`, `widgets/record_celebration.dart` —
-  n'importent même pas `theme.dart`, utilisent leurs propres gris
-  (`0xFF141419`, `0xFF333333`, etc.). Jamais migrés vers `AppColors`, même
-  avant le changement de thème. Pas touché, hors périmètre de la passe
-  couleur. À migrer si on veut une cohérence totale.
-- **Vault Obsidian / "Marble"** : en fait déjà largement branché, pas à
-  construire from scratch — voir `lib/services/export_service.dart`
-  (package `mycelium`, dépendance locale `../../mycelium` absente de ce repo
-  donc jamais testable ici). Courses (libre/5 km/fractionné/zone d'allure) et
-  santé du jour s'exportaient déjà automatiquement vers le vault + une ligne
-  dans la note du jour (`## Sport` / rien à faire ici). **Trou comblé cette
-  session** : la musculation n'exportait rien du tout — ajouté
-  `ExportService.saveMusculationDayAsMarkdown` (fiche par jour dans
-  `Sport/Musculation/`, ligne résumé sous `## Sport`), appelé après chaque
-  ajout/suppression d'exercice dans `musculation_screen.dart`. Tests dans
-  `test/export_service_test.dart` (non exécutés ici, pas de toolchain
-  Flutter/Dart disponible — à lancer en priorité à la reprise). Le repère
-  visuel (icône + chemin) sous chaque post du Feed prototypé en HTML reste à
-  brancher sur ce même système une fois l'onglet Feed codé.
-- **Onglet Feed, Santé restructuré, Sport restructuré, champ charge
-  musculation, carte records personnels, fusion stat Force** : tout ça reste
-  à coder — seulement prototypé en HTML pour l'instant (liens ci-dessus).
+  `widgets/system_window.dart`, `widgets/record_celebration.dart` — hors
+  périmètre de cette session, à migrer si on veut une cohérence totale.
+- **Rien de tout ce travail n'a été compilé, testé ou vu à l'écran** — pas de
+  toolchain Flutter dans cet environnement, pas d'accès au téléphone. Relu
+  attentivement fichier par fichier (imports, symboles, types) mais un
+  `flutter analyze` + `flutter test` + test manuel sur device restent à faire
+  avant de considérer que c'est du solide.
+- Le package `mycelium` (export vault) reste une dépendance locale
+  (`../../mycelium`) absente de ce repo — `flutter pub get` échouerait ici,
+  jamais testable dans cet environnement.

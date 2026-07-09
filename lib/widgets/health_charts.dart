@@ -500,6 +500,179 @@ class _TrendPainter extends CustomPainter {
       old.color != color;
 }
 
+/// Superpose deux séries sur le même axe temporel, chacune normalisée
+/// indépendamment sur sa propre échelle (0-1) — permet de croiser deux
+/// métriques d'unités différentes visuellement, sans prétendre à une
+/// comparaison quantitative exacte entre elles.
+class OverlayTrendChart extends StatelessWidget {
+  final List<double> valuesA;
+  final List<double> valuesB;
+  final Color colorA;
+  final Color colorB;
+  final double height;
+  final List<DateTime>? dates;
+  const OverlayTrendChart({
+    super.key,
+    required this.valuesA,
+    required this.valuesB,
+    required this.colorA,
+    required this.colorB,
+    this.height = 180,
+    this.dates,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (valuesA.length < 2 || valuesB.length < 2) {
+      return SizedBox(
+        height: height,
+        child: const Center(
+          child: Text('Pas assez de données pour croiser ces courbes.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        ),
+      );
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => CustomPaint(
+          painter: _OverlayTrendPainter(
+            valuesA: valuesA,
+            valuesB: valuesB,
+            colorA: colorA,
+            colorB: colorB,
+            progress: t,
+            dates: dates,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlayTrendPainter extends CustomPainter {
+  final List<double> valuesA;
+  final List<double> valuesB;
+  final Color colorA;
+  final Color colorB;
+  final double progress;
+  final List<DateTime>? dates;
+  _OverlayTrendPainter({
+    required this.valuesA,
+    required this.valuesB,
+    required this.colorA,
+    required this.colorB,
+    required this.progress,
+    this.dates,
+  });
+
+  static String _shortDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+  void _drawLabel(Canvas canvas, String text, Offset anchor,
+      {required bool alignRight, required bool alignTop}) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final dx = alignRight ? anchor.dx - painter.width : anchor.dx;
+    final dy = alignTop ? anchor.dy : anchor.dy - painter.height;
+    painter.paint(canvas, Offset(dx, dy));
+  }
+
+  List<Offset> _normalizedPoints(
+      List<double> values, double chartW, double chartH, double leftPad, double topPad) {
+    final minV = values.reduce(math.min);
+    final maxV = values.reduce(math.max);
+    final range = (maxV - minV).abs() < 1e-6 ? 1.0 : (maxV - minV);
+    return List.generate(values.length, (i) {
+      final x = leftPad + chartW * (i / (values.length - 1));
+      final norm = (values[i] - minV) / range;
+      final y = topPad + chartH - norm * chartH;
+      return Offset(x, y);
+    });
+  }
+
+  void _drawSeries(Canvas canvas, List<Offset> pts, Color color) {
+    final count = pts.length;
+    final drawnCount = (count * progress).clamp(2, count).toInt();
+    final path = Path();
+    for (int i = 0; i < drawnCount; i++) {
+      if (i == 0) {
+        path.moveTo(pts[i].dx, pts[i].dy);
+      } else {
+        path.lineTo(pts[i].dx, pts[i].dy);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    if (drawnCount > 0) {
+      final last = pts[drawnCount - 1];
+      canvas.drawCircle(last, 5, Paint()..color = color.withOpacity(0.25));
+      canvas.drawCircle(last, 3, Paint()..color = color);
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const leftPad = 4.0;
+    const topPad = 10.0;
+    final bottomPad = (dates != null && dates!.length >= 2) ? 26.0 : 10.0;
+    final chartW = size.width - leftPad - 4;
+    final chartH = size.height - topPad - bottomPad;
+
+    final ptsA = _normalizedPoints(valuesA, chartW, chartH, leftPad, topPad);
+    final ptsB = _normalizedPoints(valuesB, chartW, chartH, leftPad, topPad);
+
+    // Grille horizontale légère : pas de graduation chiffrée puisque les
+    // deux courbes n'ont pas la même échelle réelle, juste un repère visuel.
+    final gridPaint = Paint()
+      ..color = AppColors.border.withOpacity(0.3)
+      ..strokeWidth = 1;
+    for (int i = 0; i <= 3; i++) {
+      final y = topPad + chartH * i / 3;
+      canvas.drawLine(Offset(leftPad, y), Offset(leftPad + chartW, y), gridPaint);
+    }
+
+    final ds = dates;
+    if (ds != null && ds.length >= 2) {
+      final dateY = topPad + chartH + 14;
+      _drawLabel(canvas, _shortDate(ds.first), Offset(leftPad, dateY),
+          alignRight: false, alignTop: true);
+      _drawLabel(canvas, _shortDate(ds.last), Offset(leftPad + chartW, dateY),
+          alignRight: true, alignTop: true);
+    }
+
+    _drawSeries(canvas, ptsA, colorA);
+    _drawSeries(canvas, ptsB, colorB);
+  }
+
+  @override
+  bool shouldRepaint(covariant _OverlayTrendPainter old) =>
+      old.progress != progress ||
+      old.valuesA != valuesA ||
+      old.valuesB != valuesB ||
+      old.colorA != colorA ||
+      old.colorB != colorB;
+}
+
 /// Hypnogramme : tracé chronologique des stades de sommeil sur la nuit.
 /// 4 lanes (Éveil en haut → Profond en bas), chaque segment dessiné à sa
 /// position temporelle réelle, avec des liaisons verticales entre stades.

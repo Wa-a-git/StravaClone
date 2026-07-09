@@ -18,6 +18,7 @@ import '../widgets/health_charts.dart';
 import '../widgets/ui_kit.dart';
 import '../theme.dart';
 import 'shell_screen.dart';
+import 'sport_screen.dart' show sportTabProvider, SportTab;
 import 'interval_game_screen.dart';
 import 'mini_games_screen.dart';
 import 'history_screen.dart';
@@ -127,7 +128,11 @@ class CourseSection extends ConsumerWidget {
             delay: const Duration(milliseconds: 60),
             child: _LevelBanner(
               profile: ref.watch(playerProfileProvider),
-              onTap: () => ref.read(shellIndexProvider.notifier).state = 2,
+              onTap: () {
+                ref.read(sportTabProvider.notifier).state =
+                    SportTab.progression;
+                ref.read(shellIndexProvider.notifier).state = 2;
+              },
             ),
           ),
           const SizedBox(height: AppSpacing.xl),
@@ -143,6 +148,8 @@ class CourseSection extends ConsumerWidget {
           _buildTrendChart(recentRuns),
           const SizedBox(height: AppSpacing.xxl),
           _buildPerformanceRow(avgPaceSeconds, bestPaceSeconds, longestDistanceKm, totalElevation),
+          const SizedBox(height: AppSpacing.xxl),
+          _PersonalRecordsCard(activities: allActivities),
           const SizedBox(height: AppSpacing.xxl),
           const _Vo2TrendCard(),
           const SizedBox(height: AppSpacing.lg),
@@ -449,6 +456,154 @@ class CourseSection extends ConsumerWidget {
   String _shortDate(DateTime date) {
     const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
     return days[date.weekday - 1];
+  }
+}
+
+// ── Records personnels : records battus, tous confondus (jamais filtrés par
+// période) — même logique que la célébration en fin de course
+// (_maybeCelebrateRecords dans tracking_screen.dart), affichée en continu
+// plutôt qu'une seule fois au moment où le record tombe. ─────────────────────
+class _PersonalRecordsCard extends StatelessWidget {
+  final List<Activity> activities;
+  const _PersonalRecordsCard({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
+    if (activities.isEmpty) return const SizedBox.shrink();
+
+    final longest = activities
+        .reduce((a, b) => a.distanceKmValue >= b.distanceKmValue ? a : b);
+
+    final pacedRuns =
+        activities.where((a) => a.distanceKmValue >= 0.5).toList();
+    Activity? bestPaceRun;
+    if (pacedRuns.isNotEmpty) {
+      bestPaceRun = pacedRuns.reduce((a, b) =>
+          (a.duration / a.distanceKmValue) <=
+                  (b.duration / b.distanceKmValue)
+              ? a
+              : b);
+    }
+
+    final elevatedRuns = activities
+        .where((a) => a.hasElevation && a.elevationGainValue > 0)
+        .toList();
+    Activity? bestElevationRun;
+    if (elevatedRuns.isNotEmpty) {
+      bestElevationRun = elevatedRuns.reduce(
+          (a, b) => a.elevationGainValue >= b.elevationGainValue ? a : b);
+    }
+
+    return AppPanel(
+      accent: kNeonAmber,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const PanelTitle('RECORDS PERSONNELS', color: kNeonAmber),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _RecordTile(
+                  icon: Icons.terrain_rounded,
+                  label: 'Plus longue',
+                  value: '${longest.distanceKm} km',
+                  date: longest.date,
+                ),
+              ),
+              Container(width: 1, height: 48, color: AppColors.border),
+              Expanded(
+                child: bestPaceRun != null
+                    ? _RecordTile(
+                        icon: Icons.whatshot_rounded,
+                        label: 'Meilleure allure',
+                        value: '${bestPaceRun.avgPace}/km',
+                        date: bestPaceRun.date,
+                      )
+                    : const _RecordTilePlaceholder(label: 'Meilleure allure'),
+              ),
+              Container(width: 1, height: 48, color: AppColors.border),
+              Expanded(
+                child: bestElevationRun != null
+                    ? _RecordTile(
+                        icon: Icons.landscape_rounded,
+                        label: 'Plus gros D+',
+                        value: '${bestElevationRun.elevationGain} m',
+                        date: bestElevationRun.date,
+                      )
+                    : const _RecordTilePlaceholder(label: 'Plus gros D+'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecordTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final DateTime date;
+  const _RecordTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.date,
+  });
+
+  static String _shortDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year.toString().substring(2)}';
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, color: kNeonAmber, size: 16),
+        const SizedBox(height: 6),
+        Text(value,
+            style: const TextStyle(
+                fontFamily: kArcadeFont,
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(label,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 9.5)),
+        const SizedBox(height: 2),
+        Text(_shortDate(date),
+            style: const TextStyle(color: AppColors.muted, fontSize: 9)),
+      ],
+    );
+  }
+}
+
+class _RecordTilePlaceholder extends StatelessWidget {
+  final String label;
+  const _RecordTilePlaceholder({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Icon(Icons.remove_rounded, color: AppColors.muted, size: 16),
+        const SizedBox(height: 6),
+        const Text('--',
+            style: TextStyle(
+                fontFamily: kArcadeFont,
+                color: AppColors.muted,
+                fontSize: 14,
+                fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(label,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 9.5)),
+      ],
+    );
   }
 }
 

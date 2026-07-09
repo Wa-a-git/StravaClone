@@ -2,9 +2,12 @@
 // Musculation : bibliothèque d'exercices par catégorie + flux rapide de log
 // (recherche → exercice → séries/répétitions → persisté immédiatement).
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/exercise_library.dart';
 import '../models/musculation_log.dart';
+import '../providers/game_provider.dart' show musculationRevisionProvider;
 import '../services/export_service.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
@@ -28,14 +31,15 @@ void _syncMusculationDayToVault() {
 }
 
 /// Contenu du sous-onglet "Musculation" du hub Sport.
-class MusculationSection extends StatefulWidget {
+class MusculationSection extends ConsumerStatefulWidget {
   const MusculationSection({super.key});
 
   @override
-  State<MusculationSection> createState() => _MusculationSectionState();
+  ConsumerState<MusculationSection> createState() =>
+      _MusculationSectionState();
 }
 
-class _MusculationSectionState extends State<MusculationSection> {
+class _MusculationSectionState extends ConsumerState<MusculationSection> {
   ExerciseCategory? _filter;
 
   Future<void> _openQuickLog() async {
@@ -119,7 +123,7 @@ class _MusculationSectionState extends State<MusculationSection> {
 }
 
 // ── Entrée loggée aujourd'hui (avec suppression) ──────────────────────────────
-class _LoggedEntryTile extends StatelessWidget {
+class _LoggedEntryTile extends ConsumerWidget {
   final String logKey;
   final MusculationLogEntry entry;
   final VoidCallback onDeleted;
@@ -127,7 +131,7 @@ class _LoggedEntryTile extends StatelessWidget {
       {required this.logKey, required this.entry, required this.onDeleted});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -143,7 +147,10 @@ class _LoggedEntryTile extends StatelessWidget {
           Expanded(
             child: Text(entry.exerciseName, style: AppText.body),
           ),
-          Text('${entry.sets} × ${entry.reps}',
+          Text(
+              entry.chargeKg > 0
+                  ? '${entry.sets} × ${entry.reps} · ${_formatCharge(entry.chargeKg)} kg'
+                  : '${entry.sets} × ${entry.reps}',
               style: TextStyle(
                   fontFamily: kArcadeFont,
                   color: entry.category.color,
@@ -155,6 +162,7 @@ class _LoggedEntryTile extends StatelessWidget {
             onPressed: () async {
               await MusculationStore.deleteEntry(logKey);
               _syncMusculationDayToVault();
+              ref.read(musculationRevisionProvider.notifier).state++;
               onDeleted();
             },
           ),
@@ -338,12 +346,12 @@ class _QuickLogSheetState extends State<_QuickLogSheet> {
   }
 }
 
-class _LoggableExerciseTile extends StatelessWidget {
+class _LoggableExerciseTile extends ConsumerWidget {
   final Exercise exercise;
   const _LoggableExerciseTile({required this.exercise});
 
-  Future<void> _logIt(BuildContext context) async {
-    final result = await showDialog<(int, int)>(
+  Future<void> _logIt(BuildContext context, WidgetRef ref) async {
+    final result = await showDialog<(int, int, double)>(
       context: context,
       builder: (_) => _SetsRepsDialog(exercise: exercise),
     );
@@ -355,12 +363,17 @@ class _LoggableExerciseTile extends StatelessWidget {
       category: exercise.category,
       sets: result.$1,
       reps: result.$2,
+      chargeKg: result.$3,
     ));
     _syncMusculationDayToVault();
+    ref.read(musculationRevisionProvider.notifier).state++;
     if (context.mounted) {
+      final chargeLabel =
+          result.$3 > 0 ? ' à ${_formatCharge(result.$3)} kg' : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${exercise.name} ajouté : ${result.$1} × ${result.$2}'),
+          content: Text(
+              '${exercise.name} ajouté : ${result.$1} × ${result.$2}$chargeLabel'),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -368,9 +381,9 @@ class _LoggableExerciseTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: () => _logIt(context),
+      onTap: () => _logIt(context, ref),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -421,6 +434,7 @@ class _SetsRepsDialog extends StatefulWidget {
 class _SetsRepsDialogState extends State<_SetsRepsDialog> {
   int _sets = 3;
   int _reps = 10;
+  double _charge = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +455,9 @@ class _SetsRepsDialogState extends State<_SetsRepsDialog> {
               label: 'Répétitions',
               value: _reps,
               onChanged: (v) => setState(() => _reps = v)),
+          const SizedBox(height: 14),
+          _ChargeStepperRow(
+              value: _charge, onChanged: (v) => setState(() => _charge = v)),
         ],
       ),
       actions: [
@@ -451,13 +468,64 @@ class _SetsRepsDialogState extends State<_SetsRepsDialog> {
         ElevatedButton(
           style: ElevatedButton.styleFrom(
               backgroundColor: widget.exercise.category.color),
-          onPressed: () => Navigator.pop(context, (_sets, _reps)),
+          onPressed: () => Navigator.pop(context, (_sets, _reps, _charge)),
           child: const Text('Ajouter', style: TextStyle(color: Colors.black)),
         ),
       ],
     );
   }
 }
+
+/// Charge par répétition — poids du corps par défaut (0, affiché "--"),
+/// incréments de 2,5 kg (le pas usuel d'une paire de disques).
+class _ChargeStepperRow extends StatelessWidget {
+  final double value;
+  final ValueChanged<double> onChanged;
+  const _ChargeStepperRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Charge (kg)',
+            style: TextStyle(color: AppColors.textSecondary)),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed:
+                  value > 0 ? () => onChanged(max(0, value - 2.5)) : null,
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                value > 0 ? _formatCharge(value) : '--',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: () => onChanged(value + 2.5),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Formate une charge sans décimale inutile ("40" plutôt que "40.0", mais
+/// "42.5" reste tel quel).
+String _formatCharge(double kg) =>
+    kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
 
 class _StepperRow extends StatelessWidget {
   final String label;

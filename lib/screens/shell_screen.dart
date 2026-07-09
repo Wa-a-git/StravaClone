@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'sport_screen.dart';
-import 'system_screen.dart';
+import 'feed_screen.dart';
 import 'health_dashboard_screen.dart';
 import 'home_screen.dart' show startRun;
 import 'musculation_screen.dart' show openMusculationQuickLog;
@@ -13,16 +13,16 @@ import '../theme.dart';
 import '../widgets/ui_kit.dart';
 
 /// Index de l'onglet courant (permet de naviguer depuis n'importe quel écran).
-/// 0 = Santé, 1 = Sport, 2 = Niveau, 3 = Profil.
+/// 0 = Feed, 1 = Santé, 2 = Sport, 3 = Profil.
 final shellIndexProvider = StateProvider<int>((ref) => 0);
 
 class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key});
 
   static const _tabs = [
+    FeedScreen(),
     HealthDashboardScreen(),
     SportScreen(),
-    SystemScreen(),
     ProfileScreen(),
   ];
 
@@ -51,7 +51,7 @@ class ShellScreen extends ConsumerWidget {
   /// de log — partout ailleurs, propose le choix Course (libre / 5 km /
   /// fractionné / zone d'allure).
   Future<void> _openQuickLaunch(BuildContext context, WidgetRef ref) async {
-    final onMusculationTab = ref.read(shellIndexProvider) == 1 &&
+    final onMusculationTab = ref.read(shellIndexProvider) == 2 &&
         ref.read(sportTabProvider) == SportTab.musculation;
     if (onMusculationTab) {
       await openMusculationQuickLog(context);
@@ -90,9 +90,9 @@ class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.currentIndex, required this.onTabTap});
 
   static const _items = [
+    (icon: Icons.dynamic_feed_rounded, label: 'Feed'),
     (icon: Icons.health_and_safety_rounded, label: 'Santé'),
     (icon: Icons.directions_run_rounded, label: 'Sport'),
-    (icon: Icons.military_tech_rounded, label: 'Niveau'),
     (icon: Icons.person_rounded, label: 'Profil'),
   ];
 

@@ -12,6 +12,10 @@ class MusculationLogEntry {
   final ExerciseCategory category;
   final int sets;
   final int reps;
+  /// Charge par répétition, en kg. 0 = poids du corps / non renseignée (les
+  /// entrées créées avant l'ajout de ce champ retombent sur 0, sans casser
+  /// leur affichage — juste pas de volume calculable pour elles).
+  final double chargeKg;
 
   const MusculationLogEntry({
     required this.date,
@@ -20,7 +24,12 @@ class MusculationLogEntry {
     required this.category,
     required this.sets,
     required this.reps,
+    this.chargeKg = 0,
   });
+
+  /// Volume total de la série : séries × répétitions × charge — mesure
+  /// standard en musculation pour comparer l'effort d'une séance à l'autre.
+  double get volumeKg => sets * reps * chargeKg;
 
   /// Clé de jour : 'yyyy-MM-dd'.
   static String keyFor(DateTime day) {
@@ -37,6 +46,7 @@ class MusculationLogEntry {
         'category': category.index,
         'sets': sets,
         'reps': reps,
+        'chargeKg': chargeKg,
       };
 
   factory MusculationLogEntry.fromMap(Map<dynamic, dynamic> m) {
@@ -50,6 +60,7 @@ class MusculationLogEntry {
           .values[categoryIndex.clamp(0, ExerciseCategory.values.length - 1)],
       sets: (m['sets'] as num?)?.toInt() ?? 0,
       reps: (m['reps'] as num?)?.toInt() ?? 0,
+      chargeKg: (m['chargeKg'] as num?)?.toDouble() ?? 0,
     );
   }
 }

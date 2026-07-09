@@ -169,6 +169,26 @@ void main() {
       expect(content, contains('3 × 10'));
     });
 
+    test('inclut la charge et le volume quand renseignés', () async {
+      final entries = [
+        MusculationLogEntry(
+            date: day,
+            exerciseId: 'bench',
+            exerciseName: 'Développé couché',
+            category: ExerciseCategory.barbell,
+            sets: 4,
+            reps: 8,
+            chargeKg: 60),
+      ];
+      final path = await ExportService.saveMusculationDayAsMarkdown(day, entries);
+      final content = File(path!).readAsStringSync();
+      expect(content, contains('total_volume_kg: 1920.0'));
+      expect(content, contains('60.0 kg'));
+
+      final daily = File('$vaultRoot/Notes/260613.md').readAsStringSync();
+      expect(daily, contains('1920 kg soulevés'));
+    });
+
     test('injecte un résumé dans la note du jour', () async {
       await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
 

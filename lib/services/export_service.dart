@@ -249,9 +249,11 @@ class ExportService {
     try {
       final fileBase = MusculationLogEntry.keyFor(day); // yyyy-MM-dd
       final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+      final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
       final fields = <String, Object?>{
         'exercises': entries.length,
         'total_sets': totalSets,
+        'total_volume_kg': totalVolumeKg.toStringAsFixed(1),
         'categories': entries.map((e) => e.category.label).toSet().join(', '),
       };
       final body = _buildMusculationBody(entries);
@@ -389,9 +391,12 @@ class ExportService {
   static String _musculationDailyLine(
       String fileBase, List<MusculationLogEntry> entries) {
     final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+    final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
     final n = entries.length;
+    final volumeSuffix =
+        totalVolumeKg > 0 ? ', ${totalVolumeKg.toStringAsFixed(0)} kg soulevés' : '';
     return '- 🏋️ [[$fileBase]] — $n exercice${n > 1 ? 's' : ''}, '
-        '$totalSets série${totalSets > 1 ? 's' : ''}';
+        '$totalSets série${totalSets > 1 ? 's' : ''}$volumeSuffix';
   }
 
   /// Remonte depuis [start] jusqu'à trouver un dossier contenant `.obsidian`
@@ -660,6 +665,7 @@ marker: default, $endPt
   /// néon que les fiches de course/santé, pour rester au même niveau visuel.
   static String _buildMusculationBody(List<MusculationLogEntry> entries) {
     final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
+    final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
 
     final buffer = StringBuffer();
     buffer.writeln();
@@ -677,6 +683,10 @@ marker: default, $endPt
         '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🏋️</span><br/><strong style="color: #00FFFF; font-size: 18px;">${entries.length}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Exercices</span></div>');
     buffer.writeln(
         '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🔁</span><br/><strong style="color: #F55CBD; font-size: 18px;">$totalSets</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Séries totales</span></div>');
+    if (totalVolumeKg > 0) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">⚖️</span><br/><strong style="color: #FFD23F; font-size: 18px;">${totalVolumeKg.toStringAsFixed(0)}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">kg (volume)</span></div>');
+    }
     buffer.writeln('</div>');
     buffer.writeln();
 
@@ -687,12 +697,13 @@ marker: default, $endPt
     buffer.writeln(
         '  <tr style="background-color: #141419; color: #00FFFF; border-bottom: 2px solid #F55CBD;">');
     buffer.writeln(
-        '    <th style="padding: 12px;">Exercice</th><th style="padding: 12px;">Catégorie</th><th style="padding: 12px;">Séries × Reps</th>');
+        '    <th style="padding: 12px;">Exercice</th><th style="padding: 12px;">Catégorie</th><th style="padding: 12px;">Séries × Reps</th><th style="padding: 12px;">Charge</th>');
     buffer.writeln('  </tr>');
     for (final e in entries) {
+      final charge = e.chargeKg > 0 ? '${e.chargeKg.toStringAsFixed(1)} kg' : '—';
       buffer.writeln('  <tr style="border-bottom: 1px solid #333333;">');
       buffer.writeln(
-          '    <td style="padding: 10px; font-weight: bold;">${e.exerciseName}</td><td style="padding: 10px; color: #AAAAAA;">${e.category.label}</td><td style="padding: 10px; color: #F55CBD;">${e.sets} × ${e.reps}</td>');
+          '    <td style="padding: 10px; font-weight: bold;">${e.exerciseName}</td><td style="padding: 10px; color: #AAAAAA;">${e.category.label}</td><td style="padding: 10px; color: #F55CBD;">${e.sets} × ${e.reps}</td><td style="padding: 10px; color: #FFD23F;">$charge</td>');
       buffer.writeln('  </tr>');
     }
     buffer.writeln('</table>');

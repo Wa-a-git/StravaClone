@@ -44,7 +44,7 @@ const List<Tier> kTiers = [
 // Stats RPG dérivées de l'effort réel
 // ─────────────────────────────────────────────────────────────────────────────
 class GameStats {
-  final int force; // ← dénivelé cumulé
+  final int force; // ← dénivelé cumulé + volume musculation (séries × reps × charge)
   final int endurance; // ← distance cumulée
   final int agilite; // ← meilleure allure
   final int vitalite; // ← temps de mouvement cumulé
@@ -168,7 +168,13 @@ class GameService {
   }
 
   // ── Stats ────────────────────────────────────────────────────────────────────
-  static GameStats statsFor(List<Activity> acts) {
+  /// [musculationVolumeKg] : volume cumulé (séries × reps × charge, tous
+  /// exercices/jours confondus) — la Force ne venait jusqu'ici que du
+  /// dénivelé de course, ce qui ignorait totalement la musculation. Diviseur
+  /// choisi pour rester du même ordre de grandeur que le dénivelé (500 m de
+  /// D+ ≈ 50 pts, 5000 kg de volume ≈ 50 pts).
+  static GameStats statsFor(List<Activity> acts,
+      {double musculationVolumeKg = 0}) {
     final totalDist =
         acts.fold<double>(0, (s, a) => s + a.distanceKmValue);
     final totalElev =
@@ -185,7 +191,7 @@ class GameService {
         : 0;
 
     return GameStats(
-      force: (totalElev / 10).round(),
+      force: (totalElev / 10 + musculationVolumeKg / 100).round(),
       endurance: totalDist.round(),
       agilite: agilite,
       vitalite: (totalMinutes / 5).round(),
@@ -193,7 +199,8 @@ class GameService {
   }
 
   // ── Profil complet ────────────────────────────────────────────────────────────
-  static PlayerProfile profileFor(List<Activity> acts, {int bonusXp = 0}) {
+  static PlayerProfile profileFor(List<Activity> acts,
+      {int bonusXp = 0, double musculationVolumeKg = 0}) {
     final totalXp = totalActivityXp(acts) + bonusXp;
     final level = levelFromXp(totalXp);
 
@@ -211,7 +218,7 @@ class GameService {
       xpForLevel: GameTuning.xpToNext(level),
       tier: tier,
       nextTier: nextTierAfter(tier),
-      stats: statsFor(acts),
+      stats: statsFor(acts, musculationVolumeKg: musculationVolumeKg),
     );
   }
 

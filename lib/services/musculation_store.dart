@@ -33,5 +33,15 @@ class MusculationStore {
   static List<MapEntry<String, MusculationLogEntry>> todayEntries() =>
       entriesFor(DateTime.now());
 
+  /// Toutes les entrées jamais loggées, tous jours confondus — sert au calcul
+  /// du volume cumulé (fusion de la stat Force avec la course à pied).
+  static List<MusculationLogEntry> all() {
+    return _box.toMap().entries
+        .where((e) => e.value is Map)
+        .map((e) => MusculationLogEntry.fromMap(e.value as Map))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
   static Future<void> clearAll() => _box.clear();
 }
