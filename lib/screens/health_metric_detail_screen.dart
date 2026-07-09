@@ -28,7 +28,7 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final meta = _metaFor(widget.metric);
-    // VO2 max : source locale (régression FC↔allure), pas Health Connect —
+    // VO2 max : source locale (régression FC/allure), pas Health Connect —
     // HealthStore n'a jamais de série pour cette métrique dans notre cas.
     final isVo2Max = widget.metric == HealthMetric.vo2Max;
     final vo2Estimates = isVo2Max ? Vo2EstimateStore.all() : const <Vo2Estimate>[];
@@ -520,7 +520,7 @@ _MetricMeta _metaFor(HealthMetric m) {
           explainTitle: 'À PROPOS',
           explain: 'Volume maximal d\'oxygène que ton corps peut utiliser à '
               'l\'effort — un des meilleurs indicateurs de ta condition '
-              'cardiovasculaire. Estimé localement par régression FC↔allure '
+              'cardiovasculaire. Estimé localement par régression FC/allure '
               'sur tes courses avec FC (pas une mesure directe de la montre) '
               '— voir Sport pour le détail du calcul.');
     case HealthMetric.weightKg:
