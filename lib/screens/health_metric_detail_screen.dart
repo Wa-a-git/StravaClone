@@ -144,7 +144,14 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
                     value: hasData ? meta.format(current) : null,
                     unit: meta.unit,
                     accent: widget.accent,
-                    days: values.length),
+                    days: values.length,
+                    customMessage: isVo2Max && hasData
+                        ? 'Ce chiffre est déjà basé sur tes courses des 90 '
+                            'derniers jours. Cette courbe suit son évolution '
+                            'jour après jour — elle s\'enrichira à chaque '
+                            'nouvelle journée où l\'app recalcule l\'estimation.'
+                        : null,
+                  ),
           ),
           const SizedBox(height: 16),
 
@@ -203,11 +210,18 @@ class _SparseState extends StatelessWidget {
   final String unit;
   final Color accent;
   final int days;
+  /// Remplace le message par défaut ("X jour(s) enregistré(s), reviens
+  /// demain") — utilisé pour le VO2 max, où le chiffre affiché est déjà
+  /// basé sur un vrai historique de courses même si la courbe (jour après
+  /// jour) n'a pas encore plusieurs points ; le message générique donnerait
+  /// l'impression trompeuse qu'il n'y a presque aucune donnée.
+  final String? customMessage;
   const _SparseState(
       {required this.value,
       required this.unit,
       required this.accent,
-      required this.days});
+      required this.days,
+      this.customMessage});
 
   @override
   Widget build(BuildContext context) {
@@ -220,22 +234,34 @@ class _SparseState extends StatelessWidget {
             Icon(Icons.show_chart_rounded,
                 color: accent.withOpacity(0.5), size: 32),
             const SizedBox(height: 10),
-            Text(
-              days <= 1
-                  ? '1 jour enregistré'
-                  : '$days jours enregistrés',
-              style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: accent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'La courbe se construit chaque jour.\nReviens demain pour voir la tendance.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
+            if (customMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  customMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+                ),
+              )
+            else ...[
+              Text(
+                days <= 1
+                    ? '1 jour enregistré'
+                    : '$days jours enregistrés',
+                style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: accent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'La courbe se construit chaque jour.\nReviens demain pour voir la tendance.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
           ] else
             const Text('Aucune donnée pour cette métrique.',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
