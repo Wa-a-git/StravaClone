@@ -50,11 +50,20 @@ class HealthProfileStore {
     return v is int ? v : null;
   }
 
+  /// 'M' ou 'F' — optionnel, uniquement utilisé pour affiner des références
+  /// par sexe (ex. catégorie de VO2 max). `null` tant que non renseigné,
+  /// jamais déduit ni supposé.
+  static String? get sex {
+    final v = _box.get('profile_sex');
+    return v is String ? v : null;
+  }
+
   static Future<void> setWeight(double kg) =>
       _box.put('profile_weight_kg', kg);
   static Future<void> setHeight(double cm) =>
       _box.put('profile_height_cm', cm);
   static Future<void> setAge(int years) => _box.put('player_age', years);
+  static Future<void> setSex(String sex) => _box.put('profile_sex', sex);
 
   /// IMC = poids / taille² (m). Null si incomplet.
   static double? get bmi {

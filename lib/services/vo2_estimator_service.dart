@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'package:flutter/material.dart' show Color;
 import '../models/activity.dart';
 import '../models/hr_efficiency_point.dart';
 import '../models/vo2_estimate.dart';
+import '../theme.dart';
 import 'health_connect_service.dart';
 import 'health_store.dart';
 import 'hr_efficiency_store.dart';
@@ -16,6 +18,48 @@ class Vo2Confidence {
   final String caption;
   const Vo2Confidence({required this.isProvisional, required this.caption});
 }
+
+/// Catégorie qualitative ("bon/moyen/mauvais") d'un VO2 max, comparé à des
+/// références générales par tranche d'âge et sexe — voir
+/// `Vo2EstimatorService.categoryFor`.
+class Vo2Category {
+  final String label;
+  final Color color;
+  const Vo2Category(this.label, this.color);
+}
+
+/// Une tranche d'âge (bornée par [maxAge], inclusif — la dernière tranche
+/// sert de repli pour tout âge au-delà) et ses seuils bas de "Moyen / Bon /
+/// Excellent / Élite" en ml/kg/min, hommes et femmes séparément (le VO2 max
+/// féminin de référence est structurellement ~10-15% plus bas — mélanger les
+/// deux donnerait une catégorie trompeuse, voir le commentaire de `ChartZone`
+/// dans health_charts.dart sur l'individualité de cette métrique).
+/// Valeurs composites à partir de tables de référence usuelles (Cooper
+/// Institute / ACSM) pour des coureurs amateurs à confirmés — indicatif, pas
+/// un diagnostic médical.
+class _Vo2AgeBracket {
+  final int maxAge;
+  final List<double> men; // [moyen, bon, excellent, elite]
+  final List<double> women;
+  const _Vo2AgeBracket(this.maxAge, this.men, this.women);
+}
+
+const List<_Vo2AgeBracket> _vo2Brackets = [
+  _Vo2AgeBracket(29, [39, 46, 52, 57], [33, 39, 44, 49]),
+  _Vo2AgeBracket(39, [35, 42, 48, 52], [30, 36, 41, 45]),
+  _Vo2AgeBracket(49, [31, 39, 45, 50], [27, 33, 37, 41]),
+  _Vo2AgeBracket(59, [27, 36, 41, 45], [24, 29, 33, 37]),
+  _Vo2AgeBracket(200, [24, 32, 37, 41], [20, 25, 29, 33]),
+];
+
+const List<String> _vo2Labels = ['Faible', 'Moyen', 'Bon', 'Excellent', 'Élite'];
+const List<Color> _vo2Colors = [
+  kNeonPink,
+  kNeonAmber,
+  kNeonCyan,
+  kNeonGreen,
+  kNeonViolet,
+];
 
 class Vo2EstimatorTuning {
   static const int windowDays = 90;
@@ -133,18 +177,21 @@ class Vo2EstimatorService {
   /// horodatés (`hrSeries`), pas de requête supplémentaire par lap.
   /// Renvoie aussi la FC moyenne brute de toute l'activité (second élément)
   /// — réutilisée pour l'efficacité cardiaque sans requête supplémentaire.
-  static Future<(List<(double, double)>, double?)> _pairsForActivity(
-      Activity activity, HealthConnectService health) async {
+  /// Chaque paire porte aussi la vitesse (m/min) qui a servi à calculer son
+  /// VO2 — pas utilisée par la régression, seulement pour afficher la plage
+  /// d'allure réellement couverte dans l'écran de détail.
+  static Future<(List<(double vo2, double hr, double speedMPerMin)>, double?)>
+      _pairsForActivity(Activity activity, HealthConnectService health) async {
     if (activity.distance <= 0 || activity.duration <= 0) {
-      return (const <(double, double)>[], null);
+      return (const <(double, double, double)>[], null);
     }
     final end = activity.date.add(Duration(seconds: activity.duration));
     final vitals = await health.getActivityVitals(activity.date, end);
-    if (!vitals.hasHr) return (const <(double, double)>[], null);
+    if (!vitals.hasHr) return (const <(double, double, double)>[], null);
 
     final laps = activity.laps;
     if (activity.workoutType == 'interval' && laps != null && laps.isNotEmpty) {
-      final pairs = <(double, double)>[];
+      final pairs = <(double, double, double)>[];
       for (final raw in laps) {
         final lap = raw as Map;
         final lapDuration = lap['duration'] as int;
@@ -161,14 +208,14 @@ class Vo2EstimatorService {
             .toList();
         if (samples.isEmpty) continue;
         final avgHr = samples.reduce((x, y) => x + y) / samples.length;
-        final vo2 = vo2AtSpeed(speedMPerMin(lapDistance, lapDuration));
-        pairs.add((vo2, avgHr));
+        final speed = speedMPerMin(lapDistance, lapDuration);
+        pairs.add((vo2AtSpeed(speed), avgHr, speed));
       }
       return (pairs, vitals.avgHr);
     }
 
-    final vo2 = vo2AtSpeed(speedMPerMin(activity.distance, activity.duration));
-    return ([(vo2, vitals.avgHr)], vitals.avgHr);
+    final speed = speedMPerMin(activity.distance, activity.duration);
+    return ([(vo2AtSpeed(speed), vitals.avgHr, speed)], vitals.avgHr);
   }
 
   /// Recalcule l'estimation sur la fenêtre glissante ([activities] = tout
@@ -189,10 +236,12 @@ class Vo2EstimatorService {
           .subtract(const Duration(days: Vo2EstimatorTuning.windowDays));
       final recent = activities.where((a) => a.date.isAfter(cutoff)).toList();
 
-      final pairs = <(double, double)>[];
+      final triples = <(double, double, double)>[];
+      var activityCount = 0;
       for (final a in recent) {
-        final (activityPairs, avgHr) = await _pairsForActivity(a, health);
-        pairs.addAll(activityPairs);
+        final (activityTriples, avgHr) = await _pairsForActivity(a, health);
+        if (activityTriples.isNotEmpty) activityCount++;
+        triples.addAll(activityTriples);
         if (avgHr != null && a.avgSpeedKmhValue > 0) {
           await HrEfficiencyStore.upsert(HrEfficiencyPoint(
             date: a.date,
@@ -200,6 +249,7 @@ class Vo2EstimatorService {
           ));
         }
       }
+      final pairs = [for (final t in triples) (t.$1, t.$2)];
 
       final age = HealthProfileStore.age;
       final value = estimateFromPairs(
@@ -208,15 +258,51 @@ class Vo2EstimatorService {
       );
       if (value == null) return null;
 
+      final hrValues = triples.map((t) => t.$2).toList();
+      final speeds = triples.map((t) => t.$3).where((s) => s > 0).toList();
+
       final estimate = Vo2Estimate(
         date: DateTime.now(),
         value: value,
         sampleCount: pairs.length,
+        activityCount: activityCount,
+        hrMinBpm: hrValues.reduce(math.min),
+        hrMaxBpm: hrValues.reduce(math.max),
+        // Vitesse la plus haute -> allure (sec/km) la plus basse, et inversement.
+        paceMinSecPerKm: speeds.isEmpty ? 0 : 60000 / speeds.reduce(math.max),
+        paceMaxSecPerKm: speeds.isEmpty ? 0 : 60000 / speeds.reduce(math.min),
       );
       await Vo2EstimateStore.upsertDay(estimate);
       return estimate;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Catégorie qualitative ("bon/moyen/mauvais") pour une valeur de VO2 max,
+  /// comparée à des références générales par âge et sexe. `null` tant que
+  /// l'âge n'est pas renseigné dans le profil — jamais de verdict inventé.
+  /// Si le sexe n'est pas renseigné, utilise la moyenne des deux tables de
+  /// référence (moins précis, mais préférable à l'absence de repère).
+  static Vo2Category? categoryFor(double value, {int? age, String? sex}) {
+    if (age == null) return null;
+    final bracket = _vo2Brackets.firstWhere(
+      (b) => age <= b.maxAge,
+      orElse: () => _vo2Brackets.last,
+    );
+    final thresholds = sex == 'F'
+        ? bracket.women
+        : sex == 'M'
+            ? bracket.men
+            : [
+                for (int i = 0; i < bracket.men.length; i++)
+                  (bracket.men[i] + bracket.women[i]) / 2,
+              ];
+
+    var tier = 0;
+    for (final t in thresholds) {
+      if (value >= t) tier++;
+    }
+    return Vo2Category(_vo2Labels[tier], _vo2Colors[tier]);
   }
 }

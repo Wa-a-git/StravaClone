@@ -9,6 +9,7 @@ import '../providers/game_provider.dart';
 import '../services/efficiency_trend.dart';
 import '../services/game_service.dart';
 import '../services/health_score_service.dart' show TrendDir;
+import '../services/health_store.dart' show HealthProfileStore;
 import '../services/hr_efficiency_store.dart';
 import '../services/vo2_estimate_store.dart';
 import '../services/vo2_estimator_service.dart';
@@ -461,6 +462,13 @@ class _Vo2TrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final estimates = Vo2EstimateStore.all();
+    final vo2Category = estimates.isNotEmpty
+        ? Vo2EstimatorService.categoryFor(
+            estimates.last.value,
+            age: HealthProfileStore.age,
+            sex: HealthProfileStore.sex,
+          )
+        : null;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -485,6 +493,10 @@ class _Vo2TrendCard extends StatelessWidget {
                       .isProvisional) ...[
                 const SizedBox(width: 8),
                 const ProvisionalBadge(),
+              ],
+              if (vo2Category != null) ...[
+                const SizedBox(width: 8),
+                Vo2CategoryBadge(category: vo2Category),
               ],
             ],
           ),

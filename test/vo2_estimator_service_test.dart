@@ -146,4 +146,38 @@ void main() {
       expect(c.caption, isNot(contains('provisoire')));
     });
   });
+
+  group('Vo2EstimatorService.categoryFor', () {
+    test('âge inconnu -> null (jamais de verdict inventé)', () {
+      expect(Vo2EstimatorService.categoryFor(45, age: null), isNull);
+    });
+
+    test('homme 25 ans, VO2 élevé -> Élite', () {
+      final c = Vo2EstimatorService.categoryFor(60, age: 25, sex: 'M');
+      expect(c!.label, 'Élite');
+    });
+
+    test('homme 25 ans, VO2 très bas -> Faible', () {
+      final c = Vo2EstimatorService.categoryFor(25, age: 25, sex: 'M');
+      expect(c!.label, 'Faible');
+    });
+
+    test('femme 25 ans, seuils différents des hommes au même VO2', () {
+      final menCat = Vo2EstimatorService.categoryFor(40, age: 25, sex: 'M');
+      final womenCat = Vo2EstimatorService.categoryFor(40, age: 25, sex: 'F');
+      expect(menCat!.label, isNot(womenCat!.label));
+    });
+
+    test('sexe non renseigné -> catégorie tout de même calculée (repli moyenne)',
+        () {
+      final c = Vo2EstimatorService.categoryFor(45, age: 25, sex: null);
+      expect(c, isNotNull);
+    });
+
+    test('âge au-delà de la dernière tranche -> repli sur la dernière tranche',
+        () {
+      expect(() => Vo2EstimatorService.categoryFor(30, age: 120, sex: 'M'),
+          returnsNormally);
+    });
+  });
 }

@@ -59,6 +59,14 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
     final vo2Confidence = isVo2Max && vo2Estimates.isNotEmpty
         ? Vo2EstimatorService.confidenceFor(vo2Estimates.last)
         : null;
+    final vo2Latest = isVo2Max && vo2Estimates.isNotEmpty ? vo2Estimates.last : null;
+    final vo2Category = vo2Latest != null
+        ? Vo2EstimatorService.categoryFor(
+            vo2Latest.value,
+            age: HealthProfileStore.age,
+            sex: HealthProfileStore.sex,
+          )
+        : null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -116,6 +124,17 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
             vo2Confidence?.caption ?? 'valeur du jour',
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
+          if (vo2Category != null) ...[
+            const SizedBox(height: 8),
+            Vo2CategoryBadge(category: vo2Category),
+          ] else if (isVo2Max && hasData) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Renseigne ton âge (et ton sexe, en option) dans ton profil '
+              'pour voir ta catégorie fitness.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+            ),
+          ],
           const SizedBox(height: 20),
 
           // Sélecteur de plage
@@ -172,6 +191,13 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
             ],
           ),
           const SizedBox(height: 16),
+
+          // Détail des données ayant servi au calcul (VO2 max uniquement —
+          // les autres métriques sont des lectures directes, rien à détailler).
+          if (isVo2Max && vo2Latest != null) ...[
+            _Vo2DataUsedPanel(accent: widget.accent, estimate: vo2Latest),
+            const SizedBox(height: 16),
+          ],
 
           // Transparence du calcul
           _Panel(
@@ -315,6 +341,72 @@ class _RangeSelector extends StatelessWidget {
         chip(30, '30 J'),
         chip(90, '90 J'),
       ],
+    );
+  }
+}
+
+/// Détail des données ayant servi au calcul du VO2 max estimé — pour ne
+/// jamais laisser un chiffre sans son contexte (nombre de courses, plage de
+/// FC et d'allure réellement couvertes par la régression).
+class _Vo2DataUsedPanel extends StatelessWidget {
+  final Color accent;
+  final Vo2Estimate estimate;
+  const _Vo2DataUsedPanel({required this.accent, required this.estimate});
+
+  String _pace(double secPerKm) {
+    if (secPerKm <= 0) return '--';
+    final total = secPerKm.round();
+    final m = total ~/ 60;
+    final s = total % 60;
+    return '$m:${s.toString().padLeft(2, '0')}/km';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <(String, String)>[
+      ('Courses utilisées', '${estimate.activityCount} (sur 90 jours)'),
+      ('Points de mesure', '${estimate.sampleCount}'),
+      if (estimate.hrMaxBpm > 0)
+        ('FC observée', '${estimate.hrMinBpm.round()}-${estimate.hrMaxBpm.round()} bpm'),
+      if (estimate.paceMaxSecPerKm > 0)
+        ('Allure observée', '${_pace(estimate.paceMinSecPerKm)} à ${_pace(estimate.paceMaxSecPerKm)}'),
+    ];
+
+    return _Panel(
+      accent: accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'DONNÉES UTILISÉES POUR LE CALCUL',
+            style: TextStyle(
+              fontFamily: kArcadeFont,
+              color: accent,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12.5)),
+                  Text(value,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -522,7 +614,10 @@ _MetricMeta _metaFor(HealthMetric m) {
               'l\'effort — un des meilleurs indicateurs de ta condition '
               'cardiovasculaire. Estimé localement par régression FC/allure '
               'sur tes courses avec FC (pas une mesure directe de la montre) '
-              '— voir Sport pour le détail du calcul.');
+              '— voir Sport pour le détail du calcul. La catégorie affichée '
+              '(Faible à Élite) compare ta valeur à des tables de référence '
+              'générales par âge (et sexe si renseigné) — indicative, pas un '
+              'diagnostic médical.');
     case HealthMetric.weightKg:
       return const _MetricMeta(
           title: 'Poids',

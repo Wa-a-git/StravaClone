@@ -255,6 +255,12 @@ class _BodyProfileCardState extends State<BodyProfileCard> {
                     color: kNeonViolet),
                 if (age != null)
                   _ProfileStat(label: 'ÂGE', value: age.toString(), unit: 'ans', color: kNeonAmber),
+                if (HealthProfileStore.sex != null)
+                  _ProfileStat(
+                      label: 'SEXE',
+                      value: HealthProfileStore.sex == 'F' ? 'F' : 'H',
+                      unit: '',
+                      color: kNeonCyan),
               ],
             ),
         ],
@@ -266,33 +272,57 @@ class _BodyProfileCardState extends State<BodyProfileCard> {
     final wCtrl = TextEditingController(text: HealthProfileStore.weightKg?.toStringAsFixed(0) ?? '');
     final hCtrl = TextEditingController(text: HealthProfileStore.heightCm?.toStringAsFixed(0) ?? '');
     final aCtrl = TextEditingController(text: HealthProfileStore.age?.toString() ?? '');
+    String? sex = HealthProfileStore.sex;
 
     final saved = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Profil corporel',
-            style: TextStyle(fontFamily: kArcadeFont, color: Colors.white, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _profileField(wCtrl, 'Poids', 'kg'),
-            const SizedBox(height: 12),
-            _profileField(hCtrl, 'Taille', 'cm'),
-            const SizedBox(height: 12),
-            _profileField(aCtrl, 'Âge', 'ans'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Profil corporel',
+              style: TextStyle(fontFamily: kArcadeFont, color: Colors.white, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _profileField(wCtrl, 'Poids', 'kg'),
+              const SizedBox(height: 12),
+              _profileField(hCtrl, 'Taille', 'cm'),
+              const SizedBox(height: 12),
+              _profileField(aCtrl, 'Âge', 'ans'),
+              const SizedBox(height: 12),
+              // Optionnel — sert uniquement à affiner des références par
+              // sexe (ex. catégorie de VO2 max), jamais supposé.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  const Text('Sexe', style: TextStyle(color: AppColors.textSecondary)),
+                  const SizedBox(width: 16),
+                  ChoiceChip(
+                    label: const Text('Homme'),
+                    selected: sex == 'M',
+                    onSelected: (v) => setDialogState(() => sex = v ? 'M' : null),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Femme'),
+                    selected: sex == 'F',
+                    onSelected: (v) => setDialogState(() => sex = v ? 'F' : null),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: kNeonViolet),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enregistrer', style: TextStyle(color: Colors.black)),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: kNeonViolet),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Enregistrer', style: TextStyle(color: Colors.black)),
-          ),
-        ],
       ),
     );
 
@@ -303,6 +333,7 @@ class _BodyProfileCardState extends State<BodyProfileCard> {
       if (wv != null && wv > 0) await HealthProfileStore.setWeight(wv);
       if (hv != null && hv > 0) await HealthProfileStore.setHeight(hv);
       if (av != null && av > 0) await HealthProfileStore.setAge(av);
+      if (sex != null) await HealthProfileStore.setSex(sex!);
       if (mounted) setState(() {});
     }
   }

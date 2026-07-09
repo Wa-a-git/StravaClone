@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/health_snapshot.dart';
 import '../services/health_score_service.dart' show TrendDir;
+import '../services/vo2_estimator_service.dart' show Vo2Category;
 import '../theme.dart';
 import 'arcade_fx.dart';
 
@@ -60,6 +61,36 @@ class ProvisionalBadge extends StatelessWidget {
         'PROVISOIRE',
         style: TextStyle(
           color: kNeonAmber,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+/// Badge coloré affichant la catégorie fitness (Faible → Élite) d'une
+/// estimation de VO2 max, comparée à des tables de référence par âge/sexe —
+/// voir `Vo2EstimatorService.categoryFor`. Partagé entre la carte du hub
+/// Sport et l'écran de détail santé.
+class Vo2CategoryBadge extends StatelessWidget {
+  final Vo2Category category;
+  const Vo2CategoryBadge({super.key, required this.category});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: category.color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: category.color.withOpacity(0.5)),
+      ),
+      child: Text(
+        category.label.toUpperCase(),
+        style: TextStyle(
+          color: category.color,
           fontSize: 9,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.6,
