@@ -412,6 +412,19 @@ class GameStore {
     await _box.put('questBonusXp', questBonusXp + xp);
   }
 
+  /// Compare [currentLevel] au dernier niveau connu (persisté), le met à
+  /// jour, et renvoie true si un palier a été franchi depuis la dernière
+  /// vérification. Le niveau n'est jamais stocké nulle part ailleurs (il se
+  /// recalcule à la volée depuis le total d'XP) — cette valeur ne sert qu'à
+  /// détecter le passage de niveau une seule fois, pour la note quotidienne
+  /// (voir `_QuestsCard._claim` dans feed_screen.dart). `last > 0` évite un
+  /// faux positif au tout premier appel (rien à comparer encore).
+  static Future<bool> checkLevelUp(int currentLevel) async {
+    final last = (_box.get('last_known_level', defaultValue: 0) as num).toInt();
+    await _box.put('last_known_level', currentLevel);
+    return last > 0 && currentLevel > last;
+  }
+
   // ── Mini-profil (âge, etc.) ───────────────────────────────────────────────────
   static int? get age {
     final v = _box.get('player_age');

@@ -321,6 +321,40 @@ class ExportService {
     }
   }
 
+  /// Injecte une ligne dans une section de la note du jour sans créer de
+  /// fiche associée — pour un événement du jour qui n'a rien à archiver à
+  /// part (XP gagnée, niveau franchi). Même stratégie primaire Windroid /
+  /// repli local que les autres écritures, best-effort silencieux : appelé
+  /// en fire-and-forget depuis une action utilisateur (réclamer une quête),
+  /// ne doit jamais faire échouer cette action si le vault est injoignable.
+  static Future<void> appendDailyNoteLine({
+    required String section,
+    required String line,
+    DateTime? day,
+  }) async {
+    final date = day ?? DateTime.now();
+    try {
+      final windroidUrl = getWindroidBaseUrl();
+      if (windroidUrl.isNotEmpty) {
+        final http = HttpVaultSource(windroidUrl,
+            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
+        if (await http.available()) {
+          await DailyNoteService(VaultRepository(http))
+              .appendToToday(section: section, content: line, day: date);
+          return;
+        }
+      }
+      final savedPath = getSavedExportDirectory();
+      if (savedPath == null) return;
+      final vaultRoot = _findVaultRoot(savedPath);
+      if (vaultRoot == null) return;
+      await DailyNoteService(VaultRepository(LocalVaultSource(vaultRoot)))
+          .appendToToday(section: section, content: line, day: date);
+    } catch (_) {
+      // best-effort : un échec ici ne doit jamais remonter à l'appelant.
+    }
+  }
+
   /// Écrit une fiche (+ éventuellement le résumé du jour) via une source vault
   /// quelconque (Windroid `HttpVaultSource` ou locale `LocalVaultSource`).
   /// Isolé et public pour être testable avec une source en mémoire. Renvoie

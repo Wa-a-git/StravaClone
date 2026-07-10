@@ -132,6 +132,14 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
     _recompute(snapshot, scores, xp);
   }
 
+  // TODO(sync-arrière-plan) : aujourd'hui, Google Health/VO2 max ne se
+  // resynchronise que quand l'app est ouverte (ici, ou via le bouton
+  // rafraîchir). Idée pour plus tard : un WorkManager Android périodique qui
+  // rappelle _fetchVo2Max même app fermée — chantier à part (plugin
+  // workmanager, contrainte réseau, budget batterie). Demandé par
+  // l'utilisateur le 2026-07-10, pas prioritaire tant que l'app est ouverte
+  // assez souvent pour que le rafraîchissement manuel suffise.
+
   /// VO2 max le plus récent via Google Health API, si connecté. Null si non
   /// connecté ou en erreur — jamais d'exception propagée (métrique premium
   /// optionnelle, ne doit jamais casser le reste du dashboard).

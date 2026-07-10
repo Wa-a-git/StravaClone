@@ -92,8 +92,27 @@ class _ExportSettingsCardState extends ConsumerState<_ExportSettingsCard> {
     }
   }
 
+  Future<void> _chooseLocalFolder() async {
+    if (await Permission.manageExternalStorage.request().isGranted ||
+        await Permission.storage.request().isGranted) {
+      final selectedDir = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choisir le dossier d\'export',
+      );
+      if (selectedDir != null) {
+        await ExportService.saveExportDirectory(selectedDir);
+        if (mounted) {
+          setState(() {}); // rafraîchit l'affichage du dossier actuel
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Dossier d\'export mis à jour : $selectedDir')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentFolder = ExportService.getSavedExportDirectory();
     return AppPanel(
       accent: kNeonCyan,
       child: Column(
@@ -102,30 +121,9 @@ class _ExportSettingsCardState extends ConsumerState<_ExportSettingsCard> {
           const PanelTitle('DONNÉES & EXPORT', color: kNeonCyan),
           const SizedBox(height: 10),
           const Text(
-            'Choisis le dossier où sont enregistrés les exports .md de tes courses.',
+            'Tes courses et données santé sont sauvegardées automatiquement '
+            'vers ton vault Windroid dès que le réseau est disponible.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          GlowButton(
-            label: 'CHOISIR LE DOSSIER D\'EXPORT',
-            icon: Icons.folder_open_rounded,
-            color: kNeonCyan,
-            onPressed: () async {
-              if (await Permission.manageExternalStorage.request().isGranted ||
-                  await Permission.storage.request().isGranted) {
-                final selectedDir = await FilePicker.getDirectoryPath(
-                  dialogTitle: 'Choisir le dossier d\'export',
-                );
-                if (selectedDir != null) {
-                  await ExportService.saveExportDirectory(selectedDir);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Dossier d\'export mis à jour : $selectedDir')),
-                    );
-                  }
-                }
-              }
-            },
           ),
           const SizedBox(height: 10),
           const Text(
@@ -133,13 +131,61 @@ class _ExportSettingsCardState extends ConsumerState<_ExportSettingsCard> {
             'elles peuvent être reconstruites depuis les fiches déjà exportées vers le vault.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           GlowButton(
             label: 'RESTAURER LES COURSES DEPUIS LE VAULT',
             icon: Icons.restore_rounded,
             color: kNeonViolet,
             busy: _restoring,
             onPressed: _restoreFromVault,
+          ),
+          const SizedBox(height: 4),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              collapsedIconColor: AppColors.textSecondary,
+              iconColor: AppColors.textSecondary,
+              title: const Text(
+                'OPTIONS AVANCÉES',
+                style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6),
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Si Windroid est injoignable (pas de réseau/Tailscale), '
+                        'les exports peuvent être enregistrés dans un dossier '
+                        'local à la place — secours seulement, rarement '
+                        'nécessaire.',
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+                      ),
+                      if (currentFolder != null) ...[
+                        const SizedBox(height: 8),
+                        Text('Dossier actuel : $currentFolder',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 11.5)),
+                      ],
+                      const SizedBox(height: 10),
+                      GlowButton(
+                        label: 'CHOISIR LE DOSSIER D\'EXPORT (SECOURS)',
+                        icon: Icons.folder_open_rounded,
+                        color: kNeonCyan,
+                        onPressed: _chooseLocalFolder,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -371,7 +417,10 @@ class _BodyProfileCardState extends State<BodyProfileCard> {
       final wv = double.tryParse(wCtrl.text.replaceAll(',', '.'));
       final hv = double.tryParse(hCtrl.text.replaceAll(',', '.'));
       final av = int.tryParse(aCtrl.text);
-      if (wv != null && wv > 0) await HealthProfileStore.setWeight(wv);
+      // setManualWeightToday (pas juste setWeight) : garde aussi la carte
+      // "Poids" du dashboard Santé synchronisée avec cette saisie, sans
+      // attendre une resynchro Health Connect.
+      if (wv != null && wv > 0) await HealthStore.setManualWeightToday(wv);
       if (hv != null && hv > 0) await HealthProfileStore.setHeight(hv);
       if (av != null && av > 0) await HealthProfileStore.setAge(av);
       if (sex != null) await HealthProfileStore.setSex(sex!);

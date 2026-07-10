@@ -4,15 +4,23 @@
 // bas de l'onglet Santé — extrait dans son propre onglet pour que Santé se
 // concentre sur "aujourd'hui" et que le Feed soit "ce qui s'est passé",
 // comme un vrai fil d'activité plutôt qu'un journal.
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
 import '../providers/activity_provider.dart';
+import '../providers/game_provider.dart';
+import '../services/export_service.dart';
+import '../services/game_service.dart';
+import '../services/health_game_service.dart';
 import '../services/health_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
+import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'detail_screen.dart';
 import 'health_dashboard_screen.dart' show RawStatsRow;
@@ -55,6 +63,16 @@ class FeedScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: _FeedCalendar(activities: activities, days: days),
+            ),
+          ),
+          // ── Quêtes santé (jour + semaine), réclamables → XP pool commun.
+          // Vivent ici plutôt que dans le dashboard Santé : c'est l'aspect
+          // jeu de l'app, qui a plus sa place dans le fil que noyé dans
+          // l'état du jour. ──────────────────────────────────────────────
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: _QuestsCard(),
             ),
           ),
           if (entries.isEmpty)
@@ -115,6 +133,7 @@ class FeedScreen extends ConsumerWidget {
         );
       case _FeedKind.dayStats:
         final d = e.day!;
+        final highlight = dayHighlight(d);
         return _FeedPost(
           icon: Icons.query_stats_rounded,
           time: _dayLabel(d.date),
@@ -122,10 +141,23 @@ class FeedScreen extends ConsumerWidget {
           accent: kNeonCyan,
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
-          child: RawStatsRow(
-            steps: d.steps,
-            distanceKm: d.distanceKm,
-            activeCalories: d.activeCalories,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (highlight != null) ...[
+                Text(highlight,
+                    style: const TextStyle(
+                        color: kNeonCyan,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+              ],
+              RawStatsRow(
+                steps: d.steps,
+                distanceKm: d.distanceKm,
+                activeCalories: d.activeCalories,
+              ),
+            ],
           ),
         );
     }
@@ -367,6 +399,38 @@ List<_HistoryEntry> _buildHistoryEntries(
   return items;
 }
 
+/// Ligne de mise en avant optionnelle pour la carte "Résumé du jour" — null
+/// si rien n'est notable ce jour-là (pas de remplissage artificiel).
+/// Compare FC repos et distance à la moyenne 7j (`HealthStore.baseline`,
+/// aujourd'hui exclu) ; FC repos prioritaire si les deux qualifient. Seuils
+/// calqués sur `HealthScoreService.insights` pour rester cohérent avec le
+/// reste de l'app. Top-level (pas une méthode privée d'écran) pour rester
+/// testable indépendamment de l'UI.
+@visibleForTesting
+String? dayHighlight(DailyHealthRecord d) {
+  final rhrBaseline = HealthStore.baseline(HealthMetric.restingHeartRate, window: 7);
+  if (d.restingHeartRate > 0 && rhrBaseline > 0) {
+    final delta = d.restingHeartRate - rhrBaseline;
+    if (delta <= -3) {
+      return 'FC repos ${d.restingHeartRate.toStringAsFixed(0)} bpm — '
+          '${delta.abs().toStringAsFixed(0)} bpm sous ta moyenne 7j';
+    }
+    if (delta >= 3) {
+      return 'FC repos ${d.restingHeartRate.toStringAsFixed(0)} bpm — '
+          '+${delta.toStringAsFixed(0)} bpm vs ta moyenne 7j';
+    }
+  }
+  final distBaseline = HealthStore.baseline(HealthMetric.distanceKm, window: 7);
+  if (d.distanceKm > 0 && distBaseline > 0) {
+    final pct = (d.distanceKm - distBaseline) / distBaseline * 100;
+    if (pct.abs() >= 30) {
+      final sign = pct > 0 ? '+' : '';
+      return 'Distance $sign${pct.toStringAsFixed(0)}% vs ta moyenne 7j';
+    }
+  }
+  return null;
+}
+
 /// Contenu compact d'un post "sommeil" dans l'historique — n'existe que pour
 /// les jours où du sommeil a été enregistré (voir _buildHistoryEntries).
 class _SleepFeedContent extends StatelessWidget {
@@ -484,6 +548,357 @@ class _FeedPost extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+// ── Quêtes santé (jour + semaine), réclamables → XP pool commun ───────────────
+class _QuestsCard extends ConsumerWidget {
+  const _QuestsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final now = DateTime.now();
+    final activities = ref.watch(activityListProvider);
+    final todayRunKm = activities
+        .where((a) =>
+            a.date.year == now.year &&
+            a.date.month == now.month &&
+            a.date.day == now.day)
+        .fold<double>(0, (s, a) => s + a.distanceKmValue);
+    final weekStart = GameService.startOfWeek(now);
+    final weekIntervalCount = activities
+        .where((a) =>
+            a.workoutType == 'interval' && !a.date.isBefore(weekStart))
+        .length;
+    final today = HealthStore.recordFor(now);
+    final weekRecords =
+        HealthStore.all().where((r) => !r.date.isBefore(weekStart)).toList();
+    final dayKey = GameService.dayKey(now);
+    final weekKey = GameService.weekKey(now);
+
+    return _FeedPost(
+      icon: Icons.emoji_events_rounded,
+      time: 'AUJOURD\'HUI',
+      title: 'Quêtes',
+      accent: kNeonGreen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const PanelTitle('QUÊTES DU JOUR', color: kNeonGreen),
+          const SizedBox(height: 10),
+          _QuestsList(
+            quests: HealthQuestService.daily(now),
+            accent: kNeonGreen,
+            today: today,
+            weekRecords: const [],
+            keyPrefix: dayKey,
+            todayRunKm: todayRunKm,
+            onClaim: (q) => _claim(context, ref, dayKey, q),
+          ),
+          const SizedBox(height: 4),
+          const Divider(color: AppColors.border, height: 20),
+          const PanelTitle('QUÊTES DE LA SEMAINE', color: kNeonPink),
+          const SizedBox(height: 10),
+          _QuestsList(
+            quests: HealthQuestService.weekly(now),
+            accent: kNeonPink,
+            today: today,
+            weekRecords: weekRecords,
+            weekIntervalCount: weekIntervalCount,
+            keyPrefix: weekKey,
+            onClaim: (q) => _claim(context, ref, weekKey, q),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _claim(BuildContext context, WidgetRef ref, String keyPrefix,
+      HealthQuestDef q) async {
+    final uid = 'hq:$keyPrefix:${q.id}';
+    final added = await GameStore.claim(uid, q.reward);
+    if (added <= 0) return;
+    ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
+    HapticFeedback.mediumImpact();
+    if (context.mounted) {
+      await showSystemWindow(
+        context,
+        heading: 'QUÊTE SANTÉ',
+        lines: [q.title, '+$added XP'],
+        accent: kNeonGreen,
+      );
+    }
+
+    // Note quotidienne (vault) : l'aspect "jeu" de l'app remonte ici — XP
+    // gagnée à chaque quête réclamée, passage de niveau si franchi depuis
+    // la dernière réclamation. Fire-and-forget, best-effort (voir
+    // ExportService.appendDailyNoteLine) : ne bloque jamais le claim déjà
+    // confirmé à l'utilisateur ci-dessus.
+    unawaited(ExportService.appendDailyNoteLine(
+      section: 'Progression',
+      line: '- 🎮 Quête réclamée : ${q.title} (+$added XP)',
+    ));
+    final profile = GameService.profileFor(ref.read(activityListProvider),
+        bonusXp: GameStore.questBonusXp);
+    if (await GameStore.checkLevelUp(profile.level)) {
+      unawaited(ExportService.appendDailyNoteLine(
+        section: 'Progression',
+        line:
+            '- 🎉 Passage au niveau ${profile.level} (${profile.tier.name}) !',
+      ));
+    }
+  }
+}
+
+// ── Liste de quêtes réutilisable, sans carte englobante — appelée deux fois
+// depuis _QuestsCard (quêtes du jour, quêtes de la semaine), qui fournit déjà
+// sa propre carte/titre pour chaque section. ──────────────────────────────────
+class _QuestsList extends StatelessWidget {
+  final List<HealthQuestDef> quests;
+  final Color accent;
+  final DailyHealthRecord? today;
+  final List<DailyHealthRecord> weekRecords;
+  final String keyPrefix;
+  final double todayRunKm;
+  final int weekIntervalCount;
+  final void Function(HealthQuestDef) onClaim;
+
+  const _QuestsList({
+    required this.quests,
+    required this.accent,
+    required this.today,
+    required this.weekRecords,
+    required this.keyPrefix,
+    this.todayRunKm = 0,
+    this.weekIntervalCount = 0,
+    required this.onClaim,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...quests.map((q) {
+          final current = HealthQuestService.current(q, today, weekRecords,
+              todayRunKm: todayRunKm, weekIntervalCount: weekIntervalCount);
+          final claimed = GameStore.isClaimed('hq:$keyPrefix:${q.id}');
+          final progress = HealthQuestProgress(
+              def: q, current: current, claimed: claimed);
+          return _HealthQuestTile(
+              progress: progress,
+              accent: accent,
+              weekRecords: weekRecords,
+              onClaim: () => onClaim(q));
+        }),
+      ],
+    );
+  }
+}
+
+class _HealthQuestTile extends StatelessWidget {
+  final HealthQuestProgress progress;
+  final Color accent;
+  final List<DailyHealthRecord> weekRecords;
+  final VoidCallback onClaim;
+  const _HealthQuestTile({
+    required this.progress,
+    required this.accent,
+    required this.weekRecords,
+    required this.onClaim,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final q = progress.def;
+    final fmt = q.unit == 'h'
+        ? progress.current.toStringAsFixed(1)
+        : progress.current.toStringAsFixed(0);
+    final tgt = q.target.toStringAsFixed(0);
+    final canClaim = progress.completed && !progress.claimed;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: progress.claimed
+              ? AppColors.border
+              : (progress.completed ? accent : AppColors.border),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                progress.claimed
+                    ? Icons.check_circle_rounded
+                    : (progress.completed
+                        ? Icons.emoji_events_rounded
+                        : Icons.radio_button_unchecked_rounded),
+                color: progress.claimed
+                    ? kNeonGreen
+                    : (progress.completed
+                        ? kNeonAmber
+                        : AppColors.textSecondary),
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  q.title,
+                  style: TextStyle(
+                    color:
+                        progress.claimed ? AppColors.textSecondary : Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    decoration:
+                        progress.claimed ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ),
+              Text('+${q.reward}',
+                  style: TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Stack(
+                    children: [
+                      Container(height: 8, color: AppColors.surfaceLight),
+                      FractionallySizedBox(
+                        widthFactor: progress.ratio,
+                        child: Container(height: 8, color: accent),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text('$fmt / $tgt ${q.unit}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11)),
+            ],
+          ),
+          if (q.isWeekly) ...[
+            const SizedBox(height: 12),
+            _WeeklyQuestBars(quest: q, weekRecords: weekRecords, color: accent),
+          ],
+          if (canClaim) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: ElevatedButton(
+                onPressed: onClaim,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'RÉCLAMER LA RÉCOMPENSE',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.black,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Barres quotidiennes d'une quête hebdo : 7 barres (L-D) + coche sur les
+// jours où le seuil journalier de référence est atteint. Chaque barre porte
+// la valeur réelle du jour (via sa hauteur) — pas d'interprétation, juste la
+// progression jour par jour vers l'objectif de la semaine. ──────────────────
+class _WeeklyQuestBars extends StatelessWidget {
+  final HealthQuestDef quest;
+  final List<DailyHealthRecord> weekRecords;
+  final Color color;
+  const _WeeklyQuestBars(
+      {required this.quest, required this.weekRecords, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final weekStart = GameService.startOfWeek(DateTime.now());
+    final byKey = {for (final r in weekRecords) r.key: r};
+    const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+    final values = <double>[];
+    final met = <bool>[];
+    for (int i = 0; i < 7; i++) {
+      final day = weekStart.add(Duration(days: i));
+      final rec = byKey[DailyHealthRecord.keyFor(day)];
+      switch (quest.metric) {
+        case HealthQuestMetric.weekSteps:
+          final steps = rec?.steps ?? 0;
+          values.add(steps.toDouble());
+          met.add(steps >= HealthGameService.stepsGoal);
+          break;
+        case HealthQuestMetric.weekSleepNights:
+          final hours = (rec?.totalSleepMin ?? 0) / 60.0;
+          values.add(hours);
+          met.add(hours >= 7);
+          break;
+        default:
+          values.add(0);
+          met.add(false);
+      }
+    }
+    final maxV = values.fold<double>(1, math.max);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(7, (i) {
+        final barH = (values[i] / maxV * 32).clamp(3.0, 32.0);
+        return Expanded(
+          child: Column(
+            children: [
+              SizedBox(
+                height: 14,
+                child: met[i]
+                    ? Icon(Icons.check_circle_rounded, size: 13, color: color)
+                    : null,
+              ),
+              const SizedBox(height: 3),
+              Container(
+                height: barH,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: met[i] ? color : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i],
+                  style:
+                      const TextStyle(color: AppColors.textSecondary, fontSize: 9)),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

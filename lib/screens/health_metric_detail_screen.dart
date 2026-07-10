@@ -83,6 +83,17 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
             shadows: [Shadow(color: widget.accent, blurRadius: 10)],
           ),
         ),
+        actions: [
+          // Seul le poids est modifiable manuellement ici — les autres
+          // métriques viennent de Health Connect/l'estimateur VO2, pas
+          // d'une saisie utilisateur.
+          if (widget.metric == HealthMetric.weightKg)
+            IconButton(
+              icon: Icon(Icons.edit_rounded, color: widget.accent),
+              tooltip: 'Modifier le poids',
+              onPressed: _editWeight,
+            ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -227,6 +238,47 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Dialogue de saisie manuelle du poids — écrit dans le profil (source de
+  /// vérité pour l'IMC) et seed le jour courant si Health Connect n'a pas
+  /// déjà synchronisé un poids aujourd'hui (voir
+  /// `HealthStore.setManualWeightToday`). Rafraîchit le graphique local
+  /// immédiatement, sans attendre une nouvelle synchro.
+  Future<void> _editWeight() async {
+    final ctrl = TextEditingController(
+        text: HealthProfileStore.weightKg?.toStringAsFixed(1) ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Poids',
+            style: TextStyle(
+                fontFamily: kArcadeFont, color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(labelText: 'Poids', suffixText: 'kg'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: widget.accent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final kg = double.tryParse(ctrl.text.replaceAll(',', '.'));
+    if (kg == null || kg <= 0) return;
+    await HealthStore.setManualWeightToday(kg);
+    if (mounted) setState(() {});
   }
 }
 
