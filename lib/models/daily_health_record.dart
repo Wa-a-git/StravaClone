@@ -20,6 +20,18 @@ class DailyHealthRecord {
   final double vo2Max;
   final double weightKg;
 
+  /// Écart-type de la VFC du jour par rapport à sa moyenne 30j (voir
+  /// HealthInsightsService.hrvZScore). 0 si non calculable.
+  final double hrvZScore;
+
+  /// Part du sommeil total passée en phase profonde (0..1). 0 si aucun
+  /// sommeil enregistré.
+  final double deepSleepRatio;
+
+  /// Dette de sommeil cumulée sur les 7 derniers jours avec données, en
+  /// heures (positif = dette, négatif = surplus). 0 si non calculable.
+  final double sleepDebtHours;
+
   // Sommeil (minutes)
   final double sleepDeepMin;
   final double sleepLightMin;
@@ -49,6 +61,9 @@ class DailyHealthRecord {
     this.distanceKm = 0,
     this.vo2Max = 0,
     this.weightKg = 0,
+    this.hrvZScore = 0,
+    this.deepSleepRatio = 0,
+    this.sleepDebtHours = 0,
     this.sleepDeepMin = 0,
     this.sleepLightMin = 0,
     this.sleepRemMin = 0,
@@ -79,9 +94,18 @@ class DailyHealthRecord {
 
   double get totalSleepMin => sleepDeepMin + sleepLightMin + sleepRemMin;
 
-  /// Copie avec un VO2 max mis à jour (seul champ modifiable après coup —
-  /// vient d'une source séparée, Google Health API, fetchée après le reste).
-  DailyHealthRecord copyWith({double? vo2Max, double? weightKg}) => DailyHealthRecord(
+  /// Copie avec des champs recalculés après coup (VO2 max/poids depuis une
+  /// source séparée, Google Health API ; hrvZScore/deepSleepRatio/
+  /// sleepDebtHours depuis HealthInsightsService, qui a besoin de l'historique
+  /// donc ne peut pas être calculé au moment de fromSnapshot()).
+  DailyHealthRecord copyWith({
+    double? vo2Max,
+    double? weightKg,
+    double? hrvZScore,
+    double? deepSleepRatio,
+    double? sleepDebtHours,
+  }) =>
+      DailyHealthRecord(
         date: date,
         steps: steps,
         activeCalories: activeCalories,
@@ -95,6 +119,9 @@ class DailyHealthRecord {
         distanceKm: distanceKm,
         vo2Max: vo2Max ?? this.vo2Max,
         weightKg: weightKg ?? this.weightKg,
+        hrvZScore: hrvZScore ?? this.hrvZScore,
+        deepSleepRatio: deepSleepRatio ?? this.deepSleepRatio,
+        sleepDebtHours: sleepDebtHours ?? this.sleepDebtHours,
         sleepDeepMin: sleepDeepMin,
         sleepLightMin: sleepLightMin,
         sleepRemMin: sleepRemMin,
@@ -173,6 +200,9 @@ class DailyHealthRecord {
         'distanceKm': distanceKm,
         'vo2Max': vo2Max,
         'weightKg': weightKg,
+        'hrvZScore': hrvZScore,
+        'deepSleepRatio': deepSleepRatio,
+        'sleepDebtHours': sleepDebtHours,
         'sleepDeepMin': sleepDeepMin,
         'sleepLightMin': sleepLightMin,
         'sleepRemMin': sleepRemMin,
@@ -205,6 +235,9 @@ class DailyHealthRecord {
       distanceKm: d('distanceKm'),
       vo2Max: d('vo2Max'),
       weightKg: d('weightKg'),
+      hrvZScore: d('hrvZScore'),
+      deepSleepRatio: d('deepSleepRatio'),
+      sleepDebtHours: d('sleepDebtHours'),
       sleepDeepMin: d('sleepDeepMin'),
       sleepLightMin: d('sleepLightMin'),
       sleepRemMin: d('sleepRemMin'),
@@ -235,6 +268,9 @@ enum HealthMetric {
   flightsClimbed,
   vo2Max,
   weightKg,
+  hrvZScore,
+  deepSleepRatio,
+  sleepDebtHours,
 }
 
 extension HealthMetricAccessor on HealthMetric {
@@ -271,12 +307,19 @@ extension HealthMetricAccessor on HealthMetric {
         return r.vo2Max;
       case HealthMetric.weightKg:
         return r.weightKg;
+      case HealthMetric.hrvZScore:
+        return r.hrvZScore;
+      case HealthMetric.deepSleepRatio:
+        return r.deepSleepRatio * 100; // affiché en %
+      case HealthMetric.sleepDebtHours:
+        return r.sleepDebtHours;
     }
   }
 
-  /// Pour la plupart des métriques « plus = mieux ». La FC repos et la
-  /// respiration sont inversées (moins = mieux).
+  /// Pour la plupart des métriques « plus = mieux ». La FC repos, la
+  /// respiration et la dette de sommeil sont inversées (moins = mieux).
   bool get lowerIsBetter =>
       this == HealthMetric.restingHeartRate ||
-      this == HealthMetric.respiratoryRate;
+      this == HealthMetric.respiratoryRate ||
+      this == HealthMetric.sleepDebtHours;
 }

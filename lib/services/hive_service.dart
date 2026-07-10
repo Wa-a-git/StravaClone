@@ -19,6 +19,7 @@ class HiveService {
     await Hive.openBox('musculation_log'); // Exercices loggés (séries/répétitions)
     await Hive.openBox('vo2_estimates'); // Historique des estimations VO2 max locales
     await Hive.openBox('hr_efficiency'); // Efficacité cardiaque (FC/allure) par course
+    await Hive.openBox('training_load'); // Dérive cardiaque + TRIMP par course
   }
 
   /// Permet aux tests d'injecter une box déjà ouverte (via `Hive.init(path)`

@@ -101,6 +101,26 @@ class GoogleHealthApiService {
     return null;
   }
 
+  /// Écart de température cutanée du jour vs baseline personnelle (°C) —
+  /// essai best-effort : le nom exact du dataType Google Health API v4 pour
+  /// la température cutanée n'est pas confirmé (pas de doc publique testée),
+  /// à ajuster après inspection des logs GH_API si l'appel ne renvoie jamais
+  /// rien. Null si indisponible/scope refusé — ne doit jamais bloquer le
+  /// reste de la synchro santé (voir `HealthInsightsService.physioAnomalyInsight`,
+  /// qui traite ce signal comme optionnel).
+  Future<double?> getLatestSkinTemperatureDeltaC() async {
+    final points = await getDataPoints('daily-skin-temperature');
+    if (points.isEmpty) return null;
+    final last = points.last;
+    if (last is Map) {
+      final block = last['dailySkinTemperature'] ??
+          last['skinTemperature'] ??
+          last['daily_skin_temperature'];
+      return _extractNumber(block);
+    }
+    return null;
+  }
+
   double? _extractNumber(dynamic node) {
     if (node is num) return node.toDouble();
     if (node is String) return double.tryParse(node);

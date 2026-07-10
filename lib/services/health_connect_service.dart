@@ -1,6 +1,7 @@
 import 'package:health/health.dart';
 import '../models/health_snapshot.dart';
 import '../models/daily_health_record.dart';
+import 'health_insights_service.dart';
 import 'health_score_service.dart';
 import 'health_store.dart';
 
@@ -370,7 +371,7 @@ class HealthConnectService {
   Future<DailyHealthRecord> syncDay(DateTime day) async {
     final snapshot = await getSnapshotForDay(day);
     final scores = HealthScoreService.computeAll(snapshot);
-    final record = DailyHealthRecord.fromSnapshot(
+    var record = DailyHealthRecord.fromSnapshot(
       day,
       snapshot,
       bioScore: scores.bioScore,
@@ -378,6 +379,36 @@ class HealthConnectService {
       recoveryScore: scores.recoveryScore,
       activityScore: scores.activityScore,
     );
+
+    // Indicateurs dérivés qui ont besoin de l'historique (VFC z-score, dette
+    // de sommeil) — fenêtré relativement à [day], jamais à "maintenant" :
+    // syncDay est aussi appelé pendant un backfill sur des jours passés, et
+    // un jour ancien ne doit jamais être comparé à un historique qui lui est
+    // postérieur.
+    final dayOnly = DateTime(day.year, day.month, day.day);
+    final priorHistory =
+        HealthStore.all().where((r) => r.date.isBefore(dayOnly)).toList();
+
+    final hrvCutoff = dayOnly.subtract(const Duration(days: 30));
+    final hrvHistory = priorHistory
+        .where((r) => !r.date.isBefore(hrvCutoff))
+        .map((r) => r.hrv)
+        .toList();
+    final zScore = HealthInsightsService.hrvZScore(record.hrv, hrvHistory);
+
+    final sleepCutoff = dayOnly.subtract(const Duration(days: 6));
+    final sleepWindow = [
+      ...priorHistory.where((r) => !r.date.isBefore(sleepCutoff)),
+      record, // le jour en cours de synchro compte pour sa propre dette
+    ];
+    final debt = HealthInsightsService.sleepDebtHours(sleepWindow);
+
+    record = record.copyWith(
+      hrvZScore: zScore ?? 0,
+      deepSleepRatio: HealthInsightsService.deepSleepRatio(record) ?? 0,
+      sleepDebtHours: debt,
+    );
+
     await HealthStore.upsertDay(record);
     return record;
   }

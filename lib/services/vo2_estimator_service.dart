@@ -1,12 +1,16 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart' show Color;
 import '../models/activity.dart';
+import '../models/daily_health_record.dart' show HealthMetric;
 import '../models/hr_efficiency_point.dart';
+import '../models/training_load_point.dart';
 import '../models/vo2_estimate.dart';
 import '../theme.dart';
 import 'health_connect_service.dart';
 import 'health_store.dart';
 import 'hr_efficiency_store.dart';
+import 'training_load_service.dart';
+import 'training_load_store.dart';
 import 'vo2_estimate_store.dart';
 
 /// Réglages de l'estimateur — regroupés pour pouvoir les ajuster/tester
@@ -176,18 +180,27 @@ class Vo2EstimatorService {
   /// découpage par répétition se fait localement sur les échantillons FC
   /// horodatés (`hrSeries`), pas de requête supplémentaire par lap.
   /// Renvoie aussi la FC moyenne brute de toute l'activité (second élément)
-  /// — réutilisée pour l'efficacité cardiaque sans requête supplémentaire.
+  /// — réutilisée pour l'efficacité cardiaque sans requête supplémentaire —
+  /// et la série FC complète (troisième élément), réutilisée pour la dérive
+  /// cardiaque/TRIMP (`TrainingLoadService`), toujours sans requête
+  /// supplémentaire : une seule requête Health Connect par activité au total.
   /// Chaque paire porte aussi la vitesse (m/min) qui a servi à calculer son
   /// VO2 — pas utilisée par la régression, seulement pour afficher la plage
   /// d'allure réellement couverte dans l'écran de détail.
-  static Future<(List<(double vo2, double hr, double speedMPerMin)>, double?)>
-      _pairsForActivity(Activity activity, HealthConnectService health) async {
+  static Future<
+      (
+        List<(double vo2, double hr, double speedMPerMin)>,
+        double?,
+        List<HrPoint>
+      )> _pairsForActivity(Activity activity, HealthConnectService health) async {
     if (activity.distance <= 0 || activity.duration <= 0) {
-      return (const <(double, double, double)>[], null);
+      return (const <(double, double, double)>[], null, const <HrPoint>[]);
     }
     final end = activity.date.add(Duration(seconds: activity.duration));
     final vitals = await health.getActivityVitals(activity.date, end);
-    if (!vitals.hasHr) return (const <(double, double, double)>[], null);
+    if (!vitals.hasHr) {
+      return (const <(double, double, double)>[], null, const <HrPoint>[]);
+    }
 
     final laps = activity.laps;
     if (activity.workoutType == 'interval' && laps != null && laps.isNotEmpty) {
@@ -211,11 +224,15 @@ class Vo2EstimatorService {
         final speed = speedMPerMin(lapDistance, lapDuration);
         pairs.add((vo2AtSpeed(speed), avgHr, speed));
       }
-      return (pairs, vitals.avgHr);
+      return (pairs, vitals.avgHr, vitals.hrSeries);
     }
 
     final speed = speedMPerMin(activity.distance, activity.duration);
-    return ([(vo2AtSpeed(speed), vitals.avgHr, speed)], vitals.avgHr);
+    return (
+      [(vo2AtSpeed(speed), vitals.avgHr, speed)],
+      vitals.avgHr,
+      vitals.hrSeries
+    );
   }
 
   /// Recalcule l'estimation sur la fenêtre glissante ([activities] = tout
@@ -236,12 +253,34 @@ class Vo2EstimatorService {
           .subtract(const Duration(days: Vo2EstimatorTuning.windowDays));
       final recent = activities.where((a) => a.date.isAfter(cutoff)).toList();
 
+      final restingHr = HealthStore.baseline(HealthMetric.restingHeartRate, window: 7);
+      final age = HealthProfileStore.age;
+      final sex = HealthProfileStore.sex;
+
       final triples = <(double, double, double)>[];
       var activityCount = 0;
       for (final a in recent) {
-        final (activityTriples, avgHr) = await _pairsForActivity(a, health);
+        final (activityTriples, avgHr, hrSeries) = await _pairsForActivity(a, health);
         if (activityTriples.isNotEmpty) activityCount++;
         triples.addAll(activityTriples);
+
+        final drift = TrainingLoadService.cardiacDrift(hrSeries);
+        final t = restingHr > 0 && age != null
+            ? TrainingLoadService.trimp(
+                hrSeries: hrSeries,
+                restingHr: restingHr,
+                maxHr: ageBasedHrMax(age),
+                sex: sex,
+              )
+            : null;
+        if (drift != null || t != null) {
+          await TrainingLoadStore.upsert(TrainingLoadPoint(
+            date: a.date,
+            cardiacDriftPct: drift ?? 0,
+            trimp: t ?? 0,
+          ));
+        }
+
         if (avgHr != null && a.avgSpeedKmhValue > 0) {
           await HrEfficiencyStore.upsert(HrEfficiencyPoint(
             date: a.date,
@@ -251,7 +290,6 @@ class Vo2EstimatorService {
       }
       final pairs = [for (final t in triples) (t.$1, t.$2)];
 
-      final age = HealthProfileStore.age;
       final value = estimateFromPairs(
         pairs,
         ageBasedHrMax: age != null ? ageBasedHrMax(age) : null,

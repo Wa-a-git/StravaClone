@@ -627,5 +627,35 @@ _MetricMeta _metaFor(HealthMetric m) {
           explain: 'Dernier relevé connu, lu depuis Health Connect (balance '
               'connectée). Se met à jour seulement les jours où tu te pèses — '
               'les autres jours reprennent la dernière valeur connue.');
+    case HealthMetric.hrvZScore:
+      return const _MetricMeta(
+          title: 'VFC — écart à ta norme',
+          unit: 'σ',
+          fractionDigits: 1,
+          explainTitle: 'COMMENT C\'EST CALCULÉ',
+          explain: 'Combien d\'écarts-types ta VFC du jour s\'éloigne de ta '
+              'moyenne des 30 derniers jours. Proche de 0 = normal. En dessous '
+              'de -1 : système nerveux sous tension, séance légère conseillée.',
+          zone: ChartZone(
+              min: -1, max: 1, color: kNeonGreen, label: 'Plage normale -1 à +1'));
+    case HealthMetric.deepSleepRatio:
+      return const _MetricMeta(
+          title: 'Part de sommeil profond',
+          unit: '%',
+          fractionDigits: 0,
+          explainTitle: 'À PROPOS',
+          explain: 'Proportion de la nuit passée en sommeil profond, la phase '
+              'la plus réparatrice physiquement. Cible indicative : ~15-25%.',
+          zone: ChartZone(
+              min: 15, max: 25, color: kNeonGreen, label: 'Plage cible 15-25%'));
+    case HealthMetric.sleepDebtHours:
+      return const _MetricMeta(
+          title: 'Dette de sommeil (7j)',
+          unit: 'h',
+          fractionDigits: 1,
+          explainTitle: 'COMMENT C\'EST CALCULÉ',
+          explain: 'Cumul, sur les 7 derniers jours, de l\'écart entre ton '
+              'sommeil réel et 8h/nuit. Positif = dette accumulée, négatif = '
+              'surplus.');
   }
 }

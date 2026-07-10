@@ -6,6 +6,7 @@ import '../models/health_snapshot.dart';
 import '../services/export_service.dart';
 import '../services/google_health_api_service.dart';
 import '../services/health_connect_service.dart';
+import '../services/health_insights_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
 import '../services/health_game_service.dart';
@@ -63,6 +64,12 @@ class HealthDataState {
 class HealthDataNotifier extends StateNotifier<HealthDataState> {
   final HealthConnectService _service;
 
+  /// Dernier écart de température cutanée connu (best-effort, voir
+  /// `_fetchSkinTempDelta`) — mis à jour à chaque `fetchDailyData`, réutilisé
+  /// tel quel par `refreshInsights` (pas de nouvel appel réseau juste pour
+  /// un feedback pouce haut/bas).
+  double? _skinTempDeltaC;
+
   HealthDataNotifier(this._service) : super(HealthDataState()) {
     // Si l'historique existe déjà (perms accordées lors d'une session
     // précédente), on charge silencieusement au démarrage.
@@ -99,6 +106,10 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
       }
     }
 
+    // Température cutanée : même source cloud, même principe best-effort —
+    // signal optionnel pour l'alerte physio (voir _recompute).
+    _skinTempDeltaC = await _fetchSkinTempDelta();
+
     final scores = record != null
         ? HealthScores(
             sleepScore: record.sleepScore,
@@ -134,6 +145,21 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
     }
   }
 
+  /// Écart de température cutanée du jour, si disponible (voir
+  /// `GoogleHealthApiService.getLatestSkinTemperatureDeltaC` — essai
+  /// best-effort, nom de dataType non confirmé côté API). Null si non
+  /// connecté, scope refusé, ou en erreur — signal optionnel pour l'alerte
+  /// physio, ne doit jamais bloquer le reste du dashboard.
+  Future<double?> _fetchSkinTempDelta() async {
+    try {
+      final api = GoogleHealthApiService();
+      if (!await api.isConnected()) return null;
+      return await api.getLatestSkinTemperatureDeltaC();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Recalcule uniquement les insights (après un feedback pouce haut/bas),
   /// sans refaire d'appel réseau.
   void refreshInsights() {
@@ -150,17 +176,32 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
     final sleepStreak = HealthStore.streak(
         (r) => r.totalSleepMin >= HealthGameService.sleepGoalHours * 60);
 
-    final insights = todayRec == null
-        ? <HealthInsight>[]
-        : HealthScoreService.insights(
+    // Alerte croisant plusieurs signaux à la fois — distincte des insights
+    // ci-dessous (qui réagissent chacun à un seul signal).
+    final anomaly = todayRec == null
+        ? null
+        : HealthInsightsService.physioAnomalyInsight(
             today: todayRec,
             rhrBaseline: HealthStore.baseline(HealthMetric.restingHeartRate),
             hrvBaseline: HealthStore.baseline(HealthMetric.hrv),
-            sleepBaselineHours:
-                HealthStore.baseline(HealthMetric.sleepHours),
-            stepsStreak: stepsStreak,
-            sleepStreak: sleepStreak,
-          ).where((i) => !HealthFeedbackStore.isDismissed(i.id)).toList();
+            respBaseline: HealthStore.baseline(HealthMetric.respiratoryRate),
+            skinTempDeltaC: _skinTempDeltaC,
+          );
+
+    final insights = todayRec == null
+        ? <HealthInsight>[]
+        : [
+            ...HealthScoreService.insights(
+              today: todayRec,
+              rhrBaseline: HealthStore.baseline(HealthMetric.restingHeartRate),
+              hrvBaseline: HealthStore.baseline(HealthMetric.hrv),
+              sleepBaselineHours:
+                  HealthStore.baseline(HealthMetric.sleepHours),
+              stepsStreak: stepsStreak,
+              sleepStreak: sleepStreak,
+            ),
+            if (anomaly != null) anomaly,
+          ].where((i) => !HealthFeedbackStore.isDismissed(i.id)).toList();
 
     state = state.copyWith(
       snapshot: snapshot,
