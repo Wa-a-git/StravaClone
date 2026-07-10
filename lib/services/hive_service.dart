@@ -1,4 +1,5 @@
 // lib/services/hive_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/activity.dart';
 
@@ -19,6 +20,12 @@ class HiveService {
     await Hive.openBox('vo2_estimates'); // Historique des estimations VO2 max locales
     await Hive.openBox('hr_efficiency'); // Efficacité cardiaque (FC/allure) par course
   }
+
+  /// Permet aux tests d'injecter une box déjà ouverte (via `Hive.init(path)`
+  /// + `Hive.openBox<Activity>(...)`) sans passer par `initFlutter()`, qui a
+  /// besoin d'un vrai path_provider indisponible en test unitaire pur.
+  @visibleForTesting
+  static void setBoxForTesting(Box<Activity> box) => _box = box;
 
   /// Returns the open box (throws if not initialized).
   static Box<Activity> get box {

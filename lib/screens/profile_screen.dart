@@ -4,10 +4,13 @@
 // Sorti du dashboard santé pour ne pas mélanger données du jour et réglages.
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../providers/activity_provider.dart';
 import '../services/export_service.dart';
 import '../services/google_health_api_service.dart';
 import '../services/health_store.dart';
+import '../services/vault_import_service.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 
@@ -62,8 +65,32 @@ class ProfileScreen extends StatelessWidget {
 }
 
 // ── Réglages d'export ─────────────────────────────────────────────────────────
-class _ExportSettingsCard extends StatelessWidget {
+class _ExportSettingsCard extends ConsumerStatefulWidget {
   const _ExportSettingsCard();
+
+  @override
+  ConsumerState<_ExportSettingsCard> createState() => _ExportSettingsCardState();
+}
+
+class _ExportSettingsCardState extends ConsumerState<_ExportSettingsCard> {
+  bool _restoring = false;
+
+  Future<void> _restoreFromVault() async {
+    setState(() => _restoring = true);
+    try {
+      final result = await VaultImportService.importActivities();
+      ref.read(activityListProvider.notifier).refresh();
+      if (!mounted) return;
+      final message = result.total == 0
+          ? 'Aucune fiche de course trouvée dans le vault.'
+          : '${result.imported} course${result.imported > 1 ? 's' : ''} restaurée${result.imported > 1 ? 's' : ''}'
+              '${result.skipped > 0 ? ' (${result.skipped} déjà présente${result.skipped > 1 ? 's' : ''})' : ''}'
+              '${result.failed > 0 ? ' — ${result.failed} fiche${result.failed > 1 ? 's' : ''} illisible${result.failed > 1 ? 's' : ''}' : ''}.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,6 +126,20 @@ class _ExportSettingsCard extends StatelessWidget {
                 }
               }
             },
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Si des courses ont disparu de l\'app (ex. après une réinstallation), '
+            'elles peuvent être reconstruites depuis les fiches déjà exportées vers le vault.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          GlowButton(
+            label: 'RESTAURER LES COURSES DEPUIS LE VAULT',
+            icon: Icons.restore_rounded,
+            color: kNeonViolet,
+            busy: _restoring,
+            onPressed: _restoreFromVault,
           ),
         ],
       ),
