@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import '../data/exercise_library.dart' show ExerciseCategoryX;
 import '../models/activity.dart';
@@ -93,7 +94,20 @@ class ExportService {
         if (activity.hasElevation)
           'elevation_loss_m': activity.elevationLossValue.round(),
         if (activity.name?.isNotEmpty == true) 'name': activity.name,
+        // "route" : version échantillonnée (~80 pts) pour l'aperçu carte
+        // Marble/Overview. "route_full_json" : trace complète, pour que la
+        // fiche soit une sauvegarde fidèle même si la base locale est perdue
+        // (voir incident du 09/07 — les fiches n'avaient jusqu'ici que
+        // l'agrégat, pas de quoi reconstruire une activité à l'identique).
         if (activity.route.isNotEmpty) 'route': _encodeRoute(activity),
+        if (activity.route.isNotEmpty)
+          'route_full_json': jsonEncode(activity.route),
+        if (activity.laps != null && activity.laps!.isNotEmpty)
+          'laps_json': jsonEncode(activity.laps),
+        if (activity.elevations != null && activity.elevations!.isNotEmpty)
+          'elevations_json': jsonEncode(activity.elevations),
+        if (activity.pointSeconds != null && activity.pointSeconds!.isNotEmpty)
+          'point_seconds_json': jsonEncode(activity.pointSeconds),
       };
 
       final body =

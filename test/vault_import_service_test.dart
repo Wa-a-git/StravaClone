@@ -80,6 +80,39 @@ void main() {
     ]);
   });
 
+  test('reconstruit laps/élévations/secondes par point à l\'identique',
+      () async {
+    final detailed = Activity(
+      date: DateTime(2026, 7, 7, 6, 41),
+      distance: 3390,
+      duration: 1815,
+      route: List.generate(150, (i) => [14.6 + i * 0.0001, -61.08 - i * 0.0001]),
+      name: 'fractionné 8×',
+      workoutType: 'interval',
+      laps: [
+        {'lapNumber': 1, 'duration': 30, 'distance': 150.0},
+        {'lapNumber': 2, 'duration': 30, 'distance': 140.0},
+      ],
+      elevations: [10.0, 10.5, 11.0, 10.8],
+      pointSeconds: [0, 12, 24, 36],
+    );
+    await ExportService.saveActivityAsMarkdown(detailed);
+
+    final result = await VaultImportService.importActivities();
+    expect(result.imported, 1);
+
+    final restored = HiveService.getAllActivities().single;
+    expect(restored.route.length, 150); // trace complète, pas les 80 échantillonnés
+    expect(restored.route.first, [14.6, -61.08]);
+    expect(restored.laps, [
+      {'lapNumber': 1, 'duration': 30, 'distance': 150.0},
+      {'lapNumber': 2, 'duration': 30, 'distance': 140.0},
+    ]);
+    expect(restored.lapCount, 2);
+    expect(restored.elevations, [10.0, 10.5, 11.0, 10.8]);
+    expect(restored.pointSeconds, [0, 12, 24, 36]);
+  });
+
   test('reconstitue le workoutType (fractionné/zone d\'allure)', () async {
     await ExportService.saveActivityAsMarkdown(sampleInterval());
 

@@ -59,9 +59,44 @@ void main() {
     expect(content, contains('duration_s: 1018'));
     // trace GPS compacte (aperçu du tracé côté Marble/Overview)
     expect(content, contains('route: "14.61900,-61.10000;14.62200,-61.09800"'));
+    // trace complète, sans échantillonnage — pour restaurer l'activité à
+    // l'identique si la base locale est perdue (pas juste un aperçu).
+    expect(content, contains('route_full_json'));
+    expect(content, contains('[[14.619,-61.1],[14.622,-61.098]]'));
     // le corps riche est préservé
     expect(content, contains('Statistiques Globales'));
     expect(content, contains('```leaflet'));
+  });
+
+  test('inclut laps/élévations/secondes par point en JSON quand présents',
+      () async {
+    final withDetail = Activity(
+      date: DateTime(2026, 6, 13, 7, 25),
+      distance: 2040,
+      duration: 1018,
+      route: [
+        [14.619, -61.100],
+        [14.622, -61.098],
+      ],
+      name: 'Tour test',
+      laps: [
+        {'lapNumber': 1, 'duration': 500, 'distance': 1000.0},
+        {'lapNumber': 2, 'duration': 518, 'distance': 1040.0},
+      ],
+      elevations: [12.0, 13.5, 11.0],
+      pointSeconds: [0, 30, 60],
+    );
+
+    final path = await ExportService.saveActivityAsMarkdown(withDetail);
+    final content = File(path!).readAsStringSync();
+
+    expect(content, contains('laps_json'));
+    expect(content, contains(r'\"lapNumber\":1'));
+    expect(content, contains(r'\"duration\":518'));
+    expect(content, contains('elevations_json'));
+    expect(content, contains('[12.0,13.5,11.0]'));
+    expect(content, contains('point_seconds_json'));
+    expect(content, contains('[0,30,60]'));
   });
 
   test('injecte un résumé dans la note du jour de la course', () async {

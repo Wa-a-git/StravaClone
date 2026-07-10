@@ -4,11 +4,14 @@
 // de sécurité si la base locale est perdue (ex. désinstallation accidentelle)
 // alors que les fiches, elles, survivent côté vault (Windroid ou dossier local).
 //
-// Reconstruction partielle par nature : le frontmatter ne contient que les
-// champs agrégés écrits par ExportService (distance, durée, allure, route
-// échantillonnée à ~80 points...) — pas le détail par lap ni le profil
-// d'altitude point par point. Les courses réapparaissent avec leurs stats
-// globales correctes ; le détail fin (boucles, dénivelé) reste perdu.
+// Fidélité de la reconstruction selon l'âge de la fiche : depuis l'ajout des
+// champs `*_json` (laps, élévations, secondes par point, trace complète) à
+// l'export, une fiche récente restaure l'activité à l'identique. Les fiches
+// plus anciennes (avant ce changement) n'ont que les champs agrégés
+// (distance, durée, allure, route échantillonnée ~80 points) — la course
+// réapparaît avec ses stats globales correctes, mais sans détail par boucle
+// ni profil d'altitude point par point.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:mycelium/mycelium.dart';
@@ -97,6 +100,11 @@ class VaultImportService {
   /// `Sport/Exercice/*.md` — mêmes clés que celles écrites par
   /// `ExportService.saveActivityAsMarkdown`. Null si les champs minimaux
   /// (id, distance, durée) sont absents ou invalides.
+  ///
+  /// `route_full_json`/`laps_json`/`elevations_json`/`point_seconds_json`
+  /// (fiches exportées après le 09/07) donnent une reconstruction fidèle ;
+  /// à défaut, repli sur la trace échantillonnée `route` (~80 pts) — fiches
+  /// plus anciennes, ou laps/élévations simplement absents de cette course.
   static Activity? _parseActivity(String raw) {
     final fm = splitFrontmatter(raw);
     final data = fm.data;
@@ -105,14 +113,21 @@ class VaultImportService {
     final durationS = _asInt(data['duration_s']);
     if (id == null || distanceKm == null || durationS == null) return null;
 
+    final fullRoute = _parseRouteJson(data['route_full_json'] as String?);
+    final laps = _parseLaps(data['laps_json'] as String?);
+
     return Activity(
       date: DateTime.fromMillisecondsSinceEpoch(id),
       distance: distanceKm * 1000,
       duration: durationS,
-      route: _parseRoute(data['route'] as String?),
+      route: fullRoute ?? _parseRoute(data['route'] as String?),
       name: (data['name'] as String?)?.trim(),
       pauseDurationSeconds: _asInt(data['pause_s']) ?? 0,
       workoutType: _workoutTypeFor(data['sport'] as String?),
+      laps: laps,
+      lapCount: laps?.length ?? 0,
+      elevations: _parseDoubleListJson(data['elevations_json'] as String?),
+      pointSeconds: _parseIntListJson(data['point_seconds_json'] as String?),
     );
   }
 
@@ -133,6 +148,46 @@ class VaultImportService {
       if (lat != null && lng != null) points.add([lat, lng]);
     }
     return points;
+  }
+
+  static List<List<double>>? _parseRouteJson(String? encoded) {
+    if (encoded == null || encoded.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(encoded) as List;
+      return [
+        for (final pt in decoded)
+          [for (final v in pt as List) (v as num).toDouble()],
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<dynamic>? _parseLaps(String? encoded) {
+    if (encoded == null || encoded.isEmpty) return null;
+    try {
+      return jsonDecode(encoded) as List;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<double>? _parseDoubleListJson(String? encoded) {
+    if (encoded == null || encoded.isEmpty) return null;
+    try {
+      return [for (final v in jsonDecode(encoded) as List) (v as num).toDouble()];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<int>? _parseIntListJson(String? encoded) {
+    if (encoded == null || encoded.isEmpty) return null;
+    try {
+      return [for (final v in jsonDecode(encoded) as List) (v as num).toInt()];
+    } catch (_) {
+      return null;
+    }
   }
 
   static int? _asInt(Object? v) {
