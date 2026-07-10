@@ -88,30 +88,47 @@ class FeedScreen extends ConsumerWidget {
   }
 
   Widget _historyEntryPost(BuildContext context, _HistoryEntry e) {
-    if (e.kind == _FeedKind.activity) {
-      final a = e.activity!;
-      return _FeedPost(
-        icon: Icons.directions_run_rounded,
-        time: _dayLabel(a.date),
-        title: 'Activité suivie',
-        accent: kNeonPink,
-        child: _ActivityFeedCard(
-          activity: a,
+    switch (e.kind) {
+      case _FeedKind.activity:
+        final a = e.activity!;
+        return _FeedPost(
+          icon: Icons.directions_run_rounded,
+          time: _dayLabel(a.date),
+          title: 'Activité suivie',
+          accent: kNeonPink,
+          child: _ActivityFeedCard(
+            activity: a,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => DetailScreen(activity: a))),
+          ),
+        );
+      case _FeedKind.sleep:
+        final d = e.day!;
+        return _FeedPost(
+          icon: Icons.bedtime_rounded,
+          time: _dayLabel(d.date),
+          title: 'Sommeil',
+          accent: kNeonViolet,
           onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => DetailScreen(activity: a))),
-        ),
-      );
+              MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
+          child: _SleepFeedContent(record: d),
+        );
+      case _FeedKind.dayStats:
+        final d = e.day!;
+        return _FeedPost(
+          icon: Icons.query_stats_rounded,
+          time: _dayLabel(d.date),
+          title: 'Résumé du jour',
+          accent: kNeonCyan,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
+          child: RawStatsRow(
+            steps: d.steps,
+            distanceKm: d.distanceKm,
+            activeCalories: d.activeCalories,
+          ),
+        );
     }
-    final d = e.day!;
-    return _FeedPost(
-      icon: Icons.bedtime_rounded,
-      time: _dayLabel(d.date),
-      title: 'Résumé du jour',
-      accent: kNeonViolet,
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
-      child: _DayFeedContent(record: d),
-    );
   }
 
   /// Libellé relatif (AUJOURD'HUI / HIER) ou date courte pour l'en-tête d'un
@@ -292,9 +309,11 @@ class _FeedCalendarState extends State<_FeedCalendar> {
       );
 }
 
-// ── Historique fusionné (courses + journées santé), trié du plus récent au
-// plus ancien. ───────────────────────────────────────────────────────────────
-enum _FeedKind { activity, day }
+// ── Historique fusionné (courses + sommeil + résumé du jour), trié du plus
+// récent au plus ancien. Sommeil et résumé du jour sont deux posts distincts
+// (pas fusionnés dans une même carte), même si les deux viennent du même
+// DailyHealthRecord. ─────────────────────────────────────────────────────────
+enum _FeedKind { activity, sleep, dayStats }
 
 class _HistoryEntry {
   final DateTime date; // jour civil, pour le regroupement/tri par journée
@@ -310,36 +329,49 @@ class _HistoryEntry {
         activity = a,
         day = null;
 
-  _HistoryEntry.day(DailyHealthRecord d)
+  _HistoryEntry.sleep(DailyHealthRecord d)
       : date = DateTime(d.date.year, d.date.month, d.date.day),
         sortTime = d.date,
-        kind = _FeedKind.day,
+        kind = _FeedKind.sleep,
+        activity = null,
+        day = d;
+
+  _HistoryEntry.dayStats(DailyHealthRecord d)
+      : date = DateTime(d.date.year, d.date.month, d.date.day),
+        sortTime = d.date,
+        kind = _FeedKind.dayStats,
         activity = null,
         day = d;
 }
 
-/// Fusionne courses et journées santé en une seule liste triée du plus
-/// récent au plus ancien — au sein d'une même journée, les courses passent
-/// avant le résumé du jour.
+/// Fusionne courses, sommeil et résumé du jour en une seule liste triée du
+/// plus récent au plus ancien — au sein d'une même journée : courses, puis
+/// sommeil, puis résumé du jour. Le post sommeil n'existe que s'il y a
+/// effectivement du sommeil enregistré ce jour-là.
 List<_HistoryEntry> _buildHistoryEntries(
     List<Activity> activities, List<DailyHealthRecord> days) {
   final items = <_HistoryEntry>[
     for (final a in activities) _HistoryEntry.activity(a),
-    for (final d in days) _HistoryEntry.day(d),
+    for (final d in days) ...[
+      if (d.sleep.totalAsleepMin > 0) _HistoryEntry.sleep(d),
+      _HistoryEntry.dayStats(d),
+    ],
   ];
+  const rank = {_FeedKind.activity: 0, _FeedKind.sleep: 1, _FeedKind.dayStats: 2};
   items.sort((a, b) {
     final dayCmp = b.date.compareTo(a.date);
     if (dayCmp != 0) return dayCmp;
-    if (a.kind != b.kind) return a.kind == _FeedKind.activity ? -1 : 1;
+    if (a.kind != b.kind) return rank[a.kind]!.compareTo(rank[b.kind]!);
     return b.sortTime.compareTo(a.sortTime);
   });
   return items;
 }
 
-/// Contenu compact d'un post "résumé du jour" dans l'historique.
-class _DayFeedContent extends StatelessWidget {
+/// Contenu compact d'un post "sommeil" dans l'historique — n'existe que pour
+/// les jours où du sommeil a été enregistré (voir _buildHistoryEntries).
+class _SleepFeedContent extends StatelessWidget {
   final DailyHealthRecord record;
-  const _DayFeedContent({required this.record});
+  const _SleepFeedContent({required this.record});
 
   String _fmt(double minutes) {
     final h = minutes ~/ 60;
@@ -354,47 +386,39 @@ class _DayFeedContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (total > 0) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(_fmt(total),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(_fmt(total),
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                  'sommeil · score ${record.sleepScore}/100 · efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
                   style: const TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900)),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                    'sommeil · score ${record.sleepScore}/100 · efficacité ${sleep.efficiency.toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 11)),
-              ),
-            ],
-          ),
-          if (sleep.segments.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Hypnogram(segments: sleep.segments, height: 72, showAxis: false),
+                      color: AppColors.textSecondary, fontSize: 11)),
+            ),
           ],
+        ),
+        if (sleep.segments.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 14,
-            runSpacing: 6,
-            children: [
-              SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
-              SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
-              SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
-              SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
-            ],
-          ),
-          const SizedBox(height: 14),
+          Hypnogram(segments: sleep.segments, height: 72, showAxis: false),
         ],
-        RawStatsRow(
-          steps: record.steps,
-          distanceKm: record.distanceKm,
-          activeCalories: record.activeCalories,
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 14,
+          runSpacing: 6,
+          children: [
+            SleepLegend('Profond', _fmt(sleep.deepMin), kNeonViolet),
+            SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
+            SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
+            SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
+          ],
         ),
       ],
     );
