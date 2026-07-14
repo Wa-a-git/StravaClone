@@ -378,7 +378,7 @@ class _PermissionWarning extends StatelessWidget {
 
 // ── Scores + suivi de la semaine + XP — délibérément discret ──────────────────
 /// Bio-Score, sous-scores, semaine (points + streaks) et XP du jour. Les
-/// chiffres bruts vivent maintenant dans la grille "COURT TERME" juste
+/// chiffres bruts vivent maintenant dans la section "7 JOURS" juste
 /// au-dessus (plus consultée en premier que les scores composites), et les
 /// quêtes réclamables ont été déplacées dans le Feed — cette carte n'est
 /// donc plus un "hero" (pas de glow, rings compacts) : un simple résumé,
@@ -835,24 +835,49 @@ class _HealthXpBanner extends StatelessWidget {
   }
 }
 
-// ── Grille de métriques avec sparklines + tendances ───────────────────────────
-List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
+// ── Grille de métriques avec sparklines + tendances, groupée par thème ────────
+// Trois groupes qui répondent chacun à une question différente (voir
+// _MetricGroupId) plutôt qu'une grille en vrac — et un groupe Corps à part
+// pour le poids/VO2 max, à la cadence plus lente. Le poids n'est plus un
+// _MetricSpec : il a son propre widget avec saisie manuelle (_WeightMetricCard),
+// toujours visible même sans donnée.
+enum _MetricGroupId { activity, vitals, recovery, corps }
+
+List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
+  // hrvZScore / deepSleepRatio / sleepDebtHours ne vivent que sur
+  // DailyHealthRecord (calculés à la synchro, ont besoin d'historique) — pas
+  // sur HealthSnapshot, qui ne connaît que le jour brut fraîchement lu.
+  final today = HealthStore.recordFor(DateTime.now());
+  return [
+      // ── Activité générale ────────────────────────────────────────────────
       _MetricSpec('Pas', HealthMetric.steps, snapshot.steps.toString(), 'pas',
-          Icons.directions_walk_rounded, kNeonGreen),
+          Icons.directions_walk_rounded, kNeonGreen, _MetricGroupId.activity),
       _MetricSpec(
           'Distance',
           HealthMetric.distanceKm,
           snapshot.distanceKm.toStringAsFixed(2),
           'km',
           Icons.map_rounded,
-          kNeonGreen),
+          kNeonGreen,
+          _MetricGroupId.activity),
       _MetricSpec(
           'Cal. actives',
           HealthMetric.activeCalories,
           snapshot.activeCalories.toStringAsFixed(0),
           'kcal',
           Icons.local_fire_department_rounded,
-          kNeonPink),
+          kNeonPink,
+          _MetricGroupId.activity),
+      _MetricSpec(
+          'Étages',
+          HealthMetric.flightsClimbed,
+          snapshot.flightsClimbed.toString(),
+          'étages',
+          Icons.stairs_rounded,
+          kNeonAmber,
+          _MetricGroupId.activity),
+
+      // ── Vitaux & sommeil ─────────────────────────────────────────────────
       _MetricSpec(
           'FC repos',
           HealthMetric.restingHeartRate,
@@ -861,24 +886,80 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
               : '--',
           'bpm',
           Icons.favorite_border_rounded,
-          kNeonCyan),
+          kNeonCyan,
+          _MetricGroupId.vitals),
+      _MetricSpec(
+          'Respiration',
+          HealthMetric.respiratoryRate,
+          snapshot.respiratoryRate > 0
+              ? snapshot.respiratoryRate.toStringAsFixed(1)
+              : '--',
+          'rpm',
+          Icons.air_rounded,
+          kNeonViolet,
+          _MetricGroupId.vitals),
+      _MetricSpec(
+          'SpO2 nocturne',
+          HealthMetric.spo2,
+          snapshot.spo2 > 0 ? snapshot.spo2.toStringAsFixed(0) : '--',
+          '%',
+          Icons.water_drop_rounded,
+          kNeonCyan,
+          _MetricGroupId.vitals),
+      _MetricSpec(
+          'Sommeil',
+          HealthMetric.sleepHours,
+          snapshot.sleep.totalAsleepMin > 0
+              ? (snapshot.sleep.totalAsleepMin / 60).toStringAsFixed(1)
+              : '--',
+          'h',
+          Icons.bedtime_rounded,
+          kNeonViolet,
+          _MetricGroupId.vitals),
+
+      // ── Récupération avancée ────────────────────────────────────────────
+      // hrvZScore / deepSleepRatio / sleepDebtHours sont calculés à chaque
+      // synchro (health_connect_service.dart) mais n'avaient encore aucune
+      // carte sur ce dashboard — seulement accessibles via leur écran de
+      // détail si on savait qu'ils existaient.
       _MetricSpec(
           'HRV',
           HealthMetric.hrv,
           snapshot.hrv > 0 ? snapshot.hrv.toStringAsFixed(0) : '--',
           'ms',
           Icons.monitor_heart_rounded,
-          kNeonCyan),
-      // Poids : source peu fréquente, affichée seulement s'il y a une
-      // valeur réelle (pas de carte "--" pour une donnée jamais connectée).
-      if (snapshot.weightKg > 0)
-        _MetricSpec(
-            'Poids',
-            HealthMetric.weightKg,
-            snapshot.weightKg.toStringAsFixed(1),
-            'kg',
-            Icons.monitor_weight_rounded,
-            kNeonAmber),
+          kNeonCyan,
+          _MetricGroupId.recovery),
+      _MetricSpec(
+          'VFC normalisée',
+          HealthMetric.hrvZScore,
+          (today != null && today.hrvZScore != 0)
+              ? today.hrvZScore.toStringAsFixed(1)
+              : '--',
+          'σ',
+          Icons.show_chart_rounded,
+          kNeonViolet,
+          _MetricGroupId.recovery),
+      _MetricSpec(
+          'Sommeil profond',
+          HealthMetric.deepSleepRatio,
+          (today != null && today.deepSleepRatio > 0)
+              ? (today.deepSleepRatio * 100).toStringAsFixed(0)
+              : '--',
+          '%',
+          Icons.bedtime_rounded,
+          kNeonViolet,
+          _MetricGroupId.recovery),
+      _MetricSpec(
+          'Dette sommeil',
+          HealthMetric.sleepDebtHours,
+          (today?.sleepDebtHours ?? 0).toStringAsFixed(1),
+          'h',
+          Icons.hourglass_bottom_rounded,
+          kNeonAmber,
+          _MetricGroupId.recovery),
+
+      // ── Corps (cadence lente) ───────────────────────────────────────────
       // VO2 max : estimation locale (régression FC↔allure, Vo2EstimatorService)
       // à la place de SpO2 — la Charge 6 ne remonte pas de SpO2 exploitable
       // vers Health Connect, cette case restait toujours "en attente".
@@ -889,24 +970,10 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) => [
             Vo2EstimateStore.all().last.value.toStringAsFixed(1),
             'ml/kg/min',
             Icons.speed_rounded,
-            kNeonGreen),
-      _MetricSpec(
-          'Respiration',
-          HealthMetric.respiratoryRate,
-          snapshot.respiratoryRate > 0
-              ? snapshot.respiratoryRate.toStringAsFixed(1)
-              : '--',
-          'rpm',
-          Icons.air_rounded,
-          kNeonViolet),
-      _MetricSpec(
-          'Étages',
-          HealthMetric.flightsClimbed,
-          snapshot.flightsClimbed.toString(),
-          'étages',
-          Icons.stairs_rounded,
-          kNeonAmber),
+            kNeonGreen,
+            _MetricGroupId.corps),
     ];
+}
 
 class _MetricsGrid extends StatefulWidget {
   final HealthSnapshot snapshot;
@@ -916,6 +983,34 @@ class _MetricsGrid extends StatefulWidget {
   State<_MetricsGrid> createState() => _MetricsGridState();
 }
 
+/// Métadonnées d'un groupe (titre, couleur, sous-score représentatif utilisé
+/// pour décider si ce groupe mérite d'être remonté en premier).
+class _GroupMeta {
+  final _MetricGroupId id;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final HealthMetric? trendMetric;
+  const _GroupMeta(this.id, this.title, this.subtitle, this.color,
+      this.trendMetric);
+}
+
+const _groupDefs = [
+  _GroupMeta(_MetricGroupId.activity, 'Activité générale',
+      'Ce que le corps a produit comme mouvement aujourd\'hui.', kNeonGreen,
+      HealthMetric.activityScore),
+  _GroupMeta(_MetricGroupId.vitals, 'Vitaux & sommeil',
+      'Signes vitaux diurnes et nocturnes — repérer une dérive avant '
+      'qu\'elle devienne un symptôme.',
+      kNeonPink, HealthMetric.sleepScore),
+  _GroupMeta(_MetricGroupId.recovery, 'Récupération avancée',
+      'Capacité à encaisser l\'effort — se lit sur plusieurs jours, pas au '
+      'jour le jour.',
+      kNeonViolet, HealthMetric.recoveryScore),
+  _GroupMeta(_MetricGroupId.corps, 'Corps', 'Poids et VO2 max : des '
+      'métriques lentes, à lire sur des semaines.', kNeonAmber, null),
+];
+
 class _MetricsGridState extends State<_MetricsGrid> {
   @override
   Widget build(BuildContext context) {
@@ -923,13 +1018,53 @@ class _MetricsGridState extends State<_MetricsGrid> {
     final visible =
         all.where((m) => !MetricsPreferenceStore.isHidden(m.metric)).toList();
 
-    // Plus de _HPanel/titre englobant ici : cette grille est désormais une
-    // section parmi d'autres à l'intérieur du conteneur "cadran" unifié.
+    // Priorise le groupe dont le sous-score dévie le plus défavorablement de
+    // sa baseline 7j — même mécanique que HealthScoreService.trend(), pas un
+    // ordre figé. Le groupe Corps (pas de sous-score) reste toujours en
+    // dernier.
+    final scores = HealthScoreService.computeAll(widget.snapshot);
+    double scoreFor(HealthMetric m) => switch (m) {
+          HealthMetric.activityScore => scores.activityScore.toDouble(),
+          HealthMetric.sleepScore => scores.sleepScore.toDouble(),
+          HealthMetric.recoveryScore => scores.recoveryScore.toDouble(),
+          _ => 0,
+        };
+    final trends = <_MetricGroupId, TrendInfo>{
+      for (final g in _groupDefs)
+        if (g.trendMetric != null)
+          g.id: HealthScoreService.trend(g.trendMetric!,
+              scoreFor(g.trendMetric!), HealthStore.baseline(g.trendMetric!)),
+    };
+    // Priorité : dévie défavorablement (0) > dévie favorablement (1) >
+    // stable (2) > pas de sous-score, Corps (3).
+    int rank(_GroupMeta g) {
+      if (g.trendMetric == null) return 3;
+      final t = trends[g.id];
+      if (t == null || t.dir == TrendDir.flat) return 2;
+      return t.good ? 1 : 0;
+    }
+
+    final ordered = [..._groupDefs]..sort((a, b) {
+        final ra = rank(a), rb = rank(b);
+        if (ra != rb) return ra.compareTo(rb);
+        final da = trends[a.id]?.delta.abs() ?? 0;
+        final db = trends[b.id]?.delta.abs() ?? 0;
+        return db.compareTo(da);
+      });
+    final topTrend = trends[ordered.first.id];
+    final flaggedId = (topTrend != null && topTrend.dir != TrendDir.flat && !topTrend.good)
+        ? ordered.first.id
+        : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (flaggedId != null) ...[
+          _ObservationCard(group: ordered.first, trend: topTrend!),
+          const SizedBox(height: 18),
+        ],
         _HPanelTitle(
-          'COURT TERME',
+          '7 JOURS',
           color: kNeonCyan,
           trailing: GestureDetector(
             onTap: () => _openCustomize(context, all),
@@ -945,32 +1080,21 @@ class _MetricsGridState extends State<_MetricsGrid> {
             ),
           ),
         ),
-        const SizedBox(height: 14),
-        if (visible.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Toutes les métriques sont masquées.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const spacing = 10.0;
-              // 2 colonnes fiables : on retire une marge de sécurité pour
-              // éviter que l'arrondi ne fasse déborder sur une 3e « ligne ».
-              final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: visible
-                    .map((m) => SizedBox(
-                          width: cardW,
-                          child: _MetricCard(spec: m),
-                        ))
-                    .toList(),
-              );
-            },
+        const SizedBox(height: 4),
+        const Text(
+          'Comment chaque indicateur évolue jour après jour — le chiffre du '
+          'jour seul vit déjà dans le Feed.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+        ),
+        const SizedBox(height: 16),
+        for (final g in ordered) ...[
+          _MetricGroupSection(
+            meta: g,
+            specs: visible.where((m) => m.group == g.id).toList(),
+            flagged: g.id == flaggedId,
           ),
+          const SizedBox(height: 18),
+        ],
       ],
     );
   }
@@ -978,6 +1102,169 @@ class _MetricsGridState extends State<_MetricsGrid> {
   Future<void> _openCustomize(BuildContext context, List<_MetricSpec> all) async {
     await showAppSheet(context: context, child: _MetricsCustomizeSheet(specs: all));
     if (mounted) setState(() {});
+  }
+}
+
+/// Une section groupée (titre, sous-titre, grille de cartes) — le groupe
+/// Corps ajoute la tuile Poids (saisie manuelle) ; le groupe Récupération
+/// ajoute le Score de Préparation composite en dessous de sa grille.
+class _MetricGroupSection extends StatelessWidget {
+  final _GroupMeta meta;
+  final List<_MetricSpec> specs;
+  final bool flagged;
+  const _MetricGroupSection(
+      {required this.meta, required this.specs, required this.flagged});
+
+  @override
+  Widget build(BuildContext context) {
+    if (specs.isEmpty && meta.id != _MetricGroupId.corps) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: meta.color.withOpacity(flagged ? 0.7 : 0.25),
+            width: flagged ? 1.4 : 1),
+        boxShadow: flagged ? softGlow(meta.color) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  meta.title.toUpperCase(),
+                  style: TextStyle(
+                    color: meta.color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+              if (flagged)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: kNeonAmber.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: kNeonAmber.withOpacity(0.5)),
+                  ),
+                  child: const Text('SIGNALÉ',
+                      style: TextStyle(
+                          color: kNeonAmber,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(meta.subtitle,
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final cardW = (constraints.maxWidth - spacing) / 2 - 0.5;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  ...specs.map((m) => SizedBox(
+                        width: cardW,
+                        child: _MetricCard(spec: m),
+                      )),
+                  if (meta.id == _MetricGroupId.corps)
+                    SizedBox(width: cardW, child: const _WeightMetricCard()),
+                ],
+              );
+            },
+          ),
+          if (meta.id == _MetricGroupId.recovery) ...[
+            const SizedBox(height: 10),
+            const _ReadinessCard(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Callout "dashboard intelligent" : nomme en langage clair le groupe dont le
+/// sous-score dévie le plus défavorablement de sa baseline 7j — seulement
+/// affiché quand un signal dévie vraiment (même philosophie que
+/// dayHighlight() dans feed_screen.dart), jamais pour occuper de l'espace.
+/// Le groupe concerné est aussi remonté en tête de "7 jours" avec le badge
+/// SIGNALÉ juste en dessous.
+class _ObservationCard extends StatelessWidget {
+  final _GroupMeta group;
+  final TrendInfo trend;
+  const _ObservationCard({required this.group, required this.trend});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [kNeonAmber.withOpacity(0.14), kNeonViolet.withOpacity(0.06)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kNeonAmber.withOpacity(0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: kNeonAmber.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: kNeonAmber.withOpacity(0.5)),
+            ),
+            child: const Icon(Icons.trending_down_rounded,
+                color: kNeonAmber, size: 17),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('CETTE SEMAINE',
+                    style: TextStyle(
+                        color: kNeonAmber,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6)),
+                const SizedBox(height: 3),
+                Text(
+                  '${group.title} en baisse (${trend.label} vs 7j).',
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Groupe remonté en premier dans "7 jours" ci-dessous, avec '
+                  'le détail des indicateurs concernés.',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11.5, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1034,8 +1321,9 @@ class _MetricSpec {
   final String unit;
   final IconData icon;
   final Color color;
+  final _MetricGroupId group;
   _MetricSpec(this.title, this.metric, this.value, this.unit, this.icon,
-      this.color);
+      this.color, this.group);
 }
 
 class _MetricCard extends StatelessWidget {
@@ -1174,6 +1462,355 @@ class _MetricCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Tuile Poids — toujours visible dans le groupe Corps, contrairement aux
+// autres métriques : c'est la seule à n'avoir jamais eu de point de saisie
+// manuelle. Vide → tap ouvre une feuille de saisie rapide écrivant via
+// HealthStore.setManualWeightToday (même fonction que Profil, une seule
+// source de vérité). ──────────────────────────────────────────────────────
+class _WeightMetricCard extends StatefulWidget {
+  const _WeightMetricCard();
+
+  @override
+  State<_WeightMetricCard> createState() => _WeightMetricCardState();
+}
+
+class _WeightMetricCardState extends State<_WeightMetricCard> {
+  @override
+  Widget build(BuildContext context) {
+    final today = HealthStore.recordFor(DateTime.now());
+    final weightKg = today?.weightKg ?? 0;
+    final series = HealthStore.series(HealthMetric.weightKg, 7)
+        .map((e) => e.value)
+        .where((v) => v > 0)
+        .toList();
+
+    if (weightKg <= 0) {
+      return GestureDetector(
+        onTap: _openSheet,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: kNeonAmber.withOpacity(0.4),
+                style: BorderStyle.solid),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.monitor_weight_rounded,
+                      color: kNeonAmber, size: 14),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text('POIDS',
+                        style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6)),
+                  ),
+                  const Icon(Icons.add_circle_rounded,
+                      color: kNeonAmber, size: 18),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('Appuie pour ajouter',
+                  style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 11.5,
+                      fontStyle: FontStyle.italic)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final baseline = HealthStore.baseline(HealthMetric.weightKg);
+    final trend = HealthScoreService.trend(HealthMetric.weightKg, weightKg,
+        baseline, unit: ' kg', fractionDigits: 1);
+
+    return GestureDetector(
+      onTap: _openSheet,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kNeonAmber.withOpacity(0.25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monitor_weight_rounded,
+                    color: kNeonAmber, size: 14),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text('POIDS',
+                      style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6)),
+                ),
+                const Icon(Icons.edit_rounded,
+                    color: AppColors.textSecondary, size: 13),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(weightKg.toStringAsFixed(1),
+                    style: const TextStyle(
+                        fontFamily: kArcadeFont,
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(width: 4),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 2),
+                  child: Text('kg',
+                      style: TextStyle(
+                          color: kNeonAmber,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            if (series.length >= 2) ...[
+              const SizedBox(height: 6),
+              Sparkline(values: series, color: kNeonAmber, height: 28),
+            ] else if (trend.dir != TrendDir.flat) ...[
+              const SizedBox(height: 4),
+              Text('${trend.label} vs 7j',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 9.5)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSheet() async {
+    await showAppSheet(context: context, child: const _WeighInSheet());
+    if (mounted) setState(() {});
+  }
+}
+
+/// Feuille de saisie rapide du poids — grand champ + pas de ±0,1/±0,5,
+/// écrit via HealthStore.setManualWeightToday (synchronise aussi Profil).
+class _WeighInSheet extends StatefulWidget {
+  const _WeighInSheet();
+
+  @override
+  State<_WeighInSheet> createState() => _WeighInSheetState();
+}
+
+class _WeighInSheetState extends State<_WeighInSheet> {
+  late double _value;
+
+  @override
+  void initState() {
+    super.initState();
+    final today = HealthStore.recordFor(DateTime.now());
+    _value = (today != null && today.weightKg > 0)
+        ? today.weightKg
+        : (HealthProfileStore.weightKg ?? 70.0);
+  }
+
+  void _nudge(double delta) {
+    setState(() => _value = ((_value + delta) * 10).round() / 10);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('AJOUTER MON POIDS',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: kArcadeFont,
+                color: kNeonAmber,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1)),
+        const SizedBox(height: 18),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(_value.toStringAsFixed(1).replaceAll('.', ','),
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            const Text('kg',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text('Pour aujourd\'hui — ${_todayLabel()}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+        const SizedBox(height: 18),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _nudgeButton('-0,5', () => _nudge(-0.5)),
+            const SizedBox(width: 8),
+            _nudgeButton('-0,1', () => _nudge(-0.1)),
+            const SizedBox(width: 8),
+            _nudgeButton('+0,1', () => _nudge(0.1)),
+            const SizedBox(width: 8),
+            _nudgeButton('+0,5', () => _nudge(0.5)),
+          ],
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kNeonAmber,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              await HealthStore.setManualWeightToday(_value);
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('ENREGISTRER',
+                style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.black,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _nudgeButton(String label, VoidCallback onTap) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textSecondary,
+          side: const BorderSide(color: AppColors.border),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  String _todayLabel() {
+    const months = [
+      'jan', 'fév', 'mar', 'avr', 'mai', 'juin',
+      'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'
+    ];
+    final d = DateTime.now();
+    return '${d.day} ${months[d.month - 1]}';
+  }
+}
+
+// ── Score de Préparation "maison" : composite HRV + FC repos (déjà fusionnés
+// dans recoveryScore) + sommeil. Explicitement PAS le score EDA propriétaire
+// Fitbit (scan manuel 3 min au réveil) — ce capteur n'est jamais exposé via
+// Health Connect, irréalisable ici quel que soit l'effort de code (vérifié
+// dans health_connect_service.dart). Le badge "Maison" évite toute confusion. ─
+class _ReadinessCard extends ConsumerWidget {
+  const _ReadinessCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(healthDataProvider);
+    final scores = st.scores;
+    if (scores == null) return const SizedBox.shrink();
+
+    final readiness =
+        (scores.recoveryScore * 0.6 + scores.sleepScore * 0.4).round();
+    final tier = HealthScoreService.tierFor(readiness);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kNeonViolet.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              HealthRing(score: readiness, color: kNeonViolet, size: 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('SCORE DE PRÉPARATION',
+                        style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6)),
+                    const SizedBox(height: 2),
+                    Text(tier.name.toUpperCase(),
+                        style: TextStyle(
+                            fontFamily: kArcadeFont,
+                            color: kNeonViolet,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: kNeonViolet.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: kNeonViolet.withOpacity(0.4)),
+                ),
+                child: const Text('MAISON',
+                    style: TextStyle(
+                        color: kNeonViolet,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 10),
+          const Text(
+            'Composite HRV + FC repos + sommeil, calculé sur cet appareil. '
+            'Ce n\'est PAS le score EDA (scan manuel au réveil) ni un statut '
+            'basé sur la température cutanée — Health Connect n\'expose '
+            'aucun des deux, quelle que soit la montre connectée.',
+            style: TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.4),
+          ),
+        ],
       ),
     );
   }

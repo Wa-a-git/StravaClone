@@ -30,9 +30,9 @@ la branche `claude/vo2-max-data-display-43e3ee`.
 - **Santé** (`health_dashboard_screen.dart`) : le feed/historique est parti
   dans son propre onglet. Structure actuelle : hero `_TodayCard` (Bio-Score +
   quêtes jour/semaine + sous-scores + XP, **sans** la grille de métriques,
-  extraite) → section **COURT TERME** (`_MetricsGrid`, ex-"Métriques &
-  tendances") → **RECOMMANDATIONS** (`_InsightsPanel`, affiché seulement si
-  des insights existent) → **SUPERPOSITION · 30 JOURS** (`_SuperpositionCard`,
+  extraite) → section **7 JOURS** (`_MetricsGrid`, ex-"Court terme") →
+  **RECOMMANDATIONS** (`_InsightsPanel`, affiché seulement si des insights
+  existent) → **SUPERPOSITION · 30 JOURS** (`_SuperpositionCard`,
   2 sélecteurs de métrique, défaut Sommeil × Récupération, rendu par
   `OverlayTrendChart` dans `lib/widgets/health_charts.dart` — chaque courbe
   normalisée 0-1 indépendamment, pas de double axe chiffré) → **MOYEN TERME ·
@@ -40,6 +40,55 @@ la branche `claude/vo2-max-data-display-43e3ee`.
   90 JOURS** (`_LongTermPanel`, poids, masqué si aucune donnée). La carte
   Sommeil (`_SubScoreCard`) route maintenant vers `SleepDetailScreen` (plus
   `ScoreBreakdownScreen`) — cet écran existait déjà mais n'était jamais appelé.
+- **Santé / "7 jours" regroupé + priorisé** (`_MetricsGrid` dans
+  `health_dashboard_screen.dart`, implémentation réelle de la maquette
+  validée en HTML plus tôt dans la session — visuel adapté au système de
+  cadran `_HPanel`/`AppPanel` déjà en place plutôt qu'aux coins coupés façon
+  hardware de la maquette, pour rester cohérent avec le reste de l'app
+  restructurée sur `main` le 10 juillet) :
+  - 4 groupes (`_MetricGroupId`) au lieu d'une grille en vrac : **Activité
+    générale** (pas, distance, cal. actives, étages), **Vitaux & sommeil**
+    (FC repos, respiration, SpO2 nocturne, durée de sommeil), **Récupération
+    avancée** (HRV, VFC normalisée, sommeil profond, dette de sommeil, +
+    `_ReadinessCard`), **Corps** (VO2 max + `_WeightMetricCard`). Chaque
+    groupe garde ses cartes `_MetricCard` existantes (sparkline 7j + flèche
+    de tendance déjà réelles, rien réinventé).
+  - **VFC normalisée** (`HealthMetric.hrvZScore`), **sommeil profond**
+    (`deepSleepRatio`) et **dette de sommeil** (`sleepDebtHours`) : calculés
+    à chaque synchro (`health_connect_service.dart`, commit du 10 juillet)
+    mais n'avaient jamais de carte sur ce dashboard — seulement atteignables
+    via leur écran de détail si on savait qu'ils existaient. Exposés ici
+    pour la première fois. Ces 3 champs vivent sur `DailyHealthRecord`, pas
+    sur `HealthSnapshot` (besoin d'historique) — `_allMetricSpecs` lit
+    `HealthStore.recordFor(DateTime.now())` séparément pour ça.
+  - **Poids : vraie saisie manuelle depuis Santé** (`_WeightMetricCard` +
+    `_WeighInSheet`) — jusqu'ici la seule façon de saisir le poids était
+    Profil (`BodyProfileCard._edit`) ; la carte Poids du dashboard Santé
+    était juste masquée s'il n'y avait aucune valeur. Le tap ouvre une
+    feuille rapide (champ + pas ±0,1/±0,5) qui écrit via
+    `HealthStore.setManualWeightToday` — même fonction que Profil, une
+    seule source de vérité, les deux écrans restent synchronisés.
+  - **Score de Préparation "maison"** (`_ReadinessCard`) : composite
+    `recoveryScore*0.6 + sleepScore*0.4`, badge "MAISON" + note explicite
+    que ce n'est ni le score EDA Fitbit (scan manuel au réveil) ni un
+    statut basé sur la température cutanée — aucun des deux n'est exposé
+    via Health Connect, vérifié dans `health_connect_service.dart`,
+    irréalisable ici quel que soit l'effort de code.
+  - **Dashboard qui priorise** (`_ObservationCard` + tri de `_groupDefs`
+    dans `_MetricsGridState.build`) : le groupe dont le sous-score
+    représentatif (`activityScore`/`sleepScore`/`recoveryScore`) dévie le
+    plus défavorablement de sa baseline 7j (`HealthScoreService.trend`)
+    remonte en tête de "7 jours" avec un badge SIGNALÉ, et un callout
+    au-dessus nomme la tendance en langage clair — seulement affiché quand
+    un signal dévie vraiment (même philosophie que `dayHighlight()` dans
+    `feed_screen.dart`), jamais un ordre figé. Le groupe Corps (pas de
+    sous-score) reste toujours en dernier.
+  - Volontairement pas fait : le style visuel "coins coupés façon hardware
+    + jauges à crans" de la maquette HTML n'a pas été repris tel quel —
+    l'app a son propre système de cadran (`AppPanel`/`_HPanel`) déjà
+    cohérent sur tous les écrans, et lui superposer une seconde esthétique
+    juste pour Santé aurait cassé cette cohérence. Le contenu/l'architecture
+    de la maquette est repris fidèlement, pas son chrome visuel exact.
 - **Sport / Course** : nouvelle carte **Records personnels**
   (`_PersonalRecordsCard` dans `home_screen.dart`) — distance/allure/D+ les
   plus performants tous temps confondus (même logique que la célébration en
