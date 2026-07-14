@@ -72,16 +72,6 @@ class FeedScreen extends ConsumerWidget {
               child: _FeedCalendar(activities: activities, days: days),
             ),
           ),
-          // ── Quêtes santé (jour + semaine), réclamables → XP pool commun.
-          // Vivent ici plutôt que dans le dashboard Santé : c'est l'aspect
-          // jeu de l'app, qui a plus sa place dans le fil que noyé dans
-          // l'état du jour. ──────────────────────────────────────────────
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: _QuestsCard(),
-            ),
-          ),
           if (entries.isEmpty)
             const SliverToBoxAdapter(
               child: Padding(
@@ -186,8 +176,11 @@ class FeedScreen extends ConsumerWidget {
 // ── HUD d'arcade : résumé du jour en tête du Feed — score/niveau, sprite
 // temporaire qui rebondit en continu (le vrai personnage prendra sa place
 // plus tard, même mécanique d'animation), jauges Bio-Score/Pas, indicateurs
-// du jour groupés par catégorie (Santé/Sport) et aperçu des quêtes du jour.
-// Toutes les données affichées sont réelles — aucune stat inventée. ─────────
+// du jour groupés par catégorie (Santé/Sport), et les quêtes du jour + de la
+// semaine (réclamables → XP), qui vivent ici plutôt que dans une carte à
+// part : c'est l'aspect jeu de l'app, à côté du personnage, pas noyé dans
+// l'état du jour du dashboard Santé. Toutes les données affichées sont
+// réelles — aucune stat inventée. ───────────────────────────────────────────
 class _ArcadeHudCard extends ConsumerStatefulWidget {
   const _ArcadeHudCard();
 
@@ -232,6 +225,26 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
         .where((q) =>
             HealthQuestService.current(q, todayRecord, const []) >= q.target)
         .length;
+
+    // Quêtes hebdo : mêmes données que l'ancienne _QuestsCard, calculées ici
+    // directement puisque les quêtes vivent dans ce HUD, pas dans une carte
+    // séparée du Feed.
+    final weekStart = GameService.startOfWeek(now);
+    final weekRecords =
+        HealthStore.all().where((r) => !r.date.isBefore(weekStart)).toList();
+    final todayRunKm = activities
+        .where((a) =>
+            a.date.year == now.year &&
+            a.date.month == now.month &&
+            a.date.day == now.day)
+        .fold<double>(0, (s, a) => s + a.distanceKmValue);
+    final weekIntervalCount = activities
+        .where((a) =>
+            a.workoutType == 'interval' && !a.date.isBefore(weekStart))
+        .length;
+    final dayKey = GameService.dayKey(now);
+    final weekKey = GameService.weekKey(now);
+    final weeklyQuests = HealthQuestService.weekly(now);
 
     final lastRun = activities.isNotEmpty ? activities.first : null;
     final runStreak = _hudRunStreak(activities);
@@ -368,6 +381,39 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
                     label: 'Série',
                   ),
                 ],
+              ),
+              _divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const PanelTitle('QUÊTES DU JOUR', color: kNeonGreen),
+                    const SizedBox(height: 10),
+                    _QuestsList(
+                      quests: dailyQuests,
+                      accent: kNeonGreen,
+                      today: todayRecord,
+                      weekRecords: const [],
+                      keyPrefix: dayKey,
+                      todayRunKm: todayRunKm,
+                      onClaim: (q) => _claimQuest(context, ref, dayKey, q),
+                    ),
+                    const SizedBox(height: 4),
+                    const Divider(color: AppColors.border, height: 20),
+                    const PanelTitle('QUÊTES DE LA SEMAINE', color: kNeonPink),
+                    const SizedBox(height: 10),
+                    _QuestsList(
+                      quests: weeklyQuests,
+                      accent: kNeonPink,
+                      today: todayRecord,
+                      weekRecords: weekRecords,
+                      weekIntervalCount: weekIntervalCount,
+                      keyPrefix: weekKey,
+                      onClaim: (q) => _claimQuest(context, ref, weekKey, q),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
             ],
@@ -688,11 +734,6 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
       ),
     );
   }
-
-  // La liste détaillée des quêtes (réclamation, quêtes hebdo) vit désormais
-  // dans _QuestsCard, juste en dessous de cette carte dans le Feed — inutile
-  // de la dupliquer ici. Ce HUD garde seulement le compteur "fait/total"
-  // dans _topBar.
 }
 
 class _HudChipData {
@@ -1134,107 +1175,47 @@ class _FeedPost extends StatelessWidget {
 }
 
 // ── Quêtes santé (jour + semaine), réclamables → XP pool commun ───────────────
-class _QuestsCard extends ConsumerWidget {
-  const _QuestsCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final now = DateTime.now();
-    final activities = ref.watch(activityListProvider);
-    final todayRunKm = activities
-        .where((a) =>
-            a.date.year == now.year &&
-            a.date.month == now.month &&
-            a.date.day == now.day)
-        .fold<double>(0, (s, a) => s + a.distanceKmValue);
-    final weekStart = GameService.startOfWeek(now);
-    final weekIntervalCount = activities
-        .where((a) =>
-            a.workoutType == 'interval' && !a.date.isBefore(weekStart))
-        .length;
-    final today = HealthStore.recordFor(now);
-    final weekRecords =
-        HealthStore.all().where((r) => !r.date.isBefore(weekStart)).toList();
-    final dayKey = GameService.dayKey(now);
-    final weekKey = GameService.weekKey(now);
-
-    return _FeedPost(
-      icon: Icons.emoji_events_rounded,
-      time: 'AUJOURD\'HUI',
-      title: 'Quêtes',
+/// Réclame une quête (jour ou semaine) : crédite l'XP, notifie via
+/// showSystemWindow, et logue dans la note quotidienne du vault. Utilisée
+/// par _ArcadeHudCard, seul endroit du Feed où les quêtes sont affichées.
+Future<void> _claimQuest(BuildContext context, WidgetRef ref,
+    String keyPrefix, HealthQuestDef q) async {
+  final uid = 'hq:$keyPrefix:${q.id}';
+  final added = await GameStore.claim(uid, q.reward);
+  if (added <= 0) return;
+  ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
+  HapticFeedback.mediumImpact();
+  if (context.mounted) {
+    await showSystemWindow(
+      context,
+      heading: 'QUÊTE SANTÉ',
+      lines: [q.title, '+$added XP'],
       accent: kNeonGreen,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const PanelTitle('QUÊTES DU JOUR', color: kNeonGreen),
-          const SizedBox(height: 10),
-          _QuestsList(
-            quests: HealthQuestService.daily(now),
-            accent: kNeonGreen,
-            today: today,
-            weekRecords: const [],
-            keyPrefix: dayKey,
-            todayRunKm: todayRunKm,
-            onClaim: (q) => _claim(context, ref, dayKey, q),
-          ),
-          const SizedBox(height: 4),
-          const Divider(color: AppColors.border, height: 20),
-          const PanelTitle('QUÊTES DE LA SEMAINE', color: kNeonPink),
-          const SizedBox(height: 10),
-          _QuestsList(
-            quests: HealthQuestService.weekly(now),
-            accent: kNeonPink,
-            today: today,
-            weekRecords: weekRecords,
-            weekIntervalCount: weekIntervalCount,
-            keyPrefix: weekKey,
-            onClaim: (q) => _claim(context, ref, weekKey, q),
-          ),
-        ],
-      ),
     );
   }
 
-  Future<void> _claim(BuildContext context, WidgetRef ref, String keyPrefix,
-      HealthQuestDef q) async {
-    final uid = 'hq:$keyPrefix:${q.id}';
-    final added = await GameStore.claim(uid, q.reward);
-    if (added <= 0) return;
-    ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
-    HapticFeedback.mediumImpact();
-    if (context.mounted) {
-      await showSystemWindow(
-        context,
-        heading: 'QUÊTE SANTÉ',
-        lines: [q.title, '+$added XP'],
-        accent: kNeonGreen,
-      );
-    }
-
-    // Note quotidienne (vault) : l'aspect "jeu" de l'app remonte ici — XP
-    // gagnée à chaque quête réclamée, passage de niveau si franchi depuis
-    // la dernière réclamation. Fire-and-forget, best-effort (voir
-    // ExportService.appendDailyNoteLine) : ne bloque jamais le claim déjà
-    // confirmé à l'utilisateur ci-dessus.
+  // Note quotidienne (vault) : l'aspect "jeu" de l'app remonte ici — XP
+  // gagnée à chaque quête réclamée, passage de niveau si franchi depuis
+  // la dernière réclamation. Fire-and-forget, best-effort (voir
+  // ExportService.appendDailyNoteLine) : ne bloque jamais le claim déjà
+  // confirmé à l'utilisateur ci-dessus.
+  unawaited(ExportService.appendDailyNoteLine(
+    section: 'Progression',
+    line: '- 🎮 Quête réclamée : ${q.title} (+$added XP)',
+  ));
+  final profile = GameService.profileFor(ref.read(activityListProvider),
+      bonusXp: GameStore.questBonusXp);
+  if (await GameStore.checkLevelUp(profile.level)) {
     unawaited(ExportService.appendDailyNoteLine(
       section: 'Progression',
-      line: '- 🎮 Quête réclamée : ${q.title} (+$added XP)',
+      line: '- 🎉 Passage au niveau ${profile.level} (${profile.tier.name}) !',
     ));
-    final profile = GameService.profileFor(ref.read(activityListProvider),
-        bonusXp: GameStore.questBonusXp);
-    if (await GameStore.checkLevelUp(profile.level)) {
-      unawaited(ExportService.appendDailyNoteLine(
-        section: 'Progression',
-        line:
-            '- 🎉 Passage au niveau ${profile.level} (${profile.tier.name}) !',
-      ));
-    }
   }
 }
 
 // ── Liste de quêtes réutilisable, sans carte englobante — appelée deux fois
-// depuis _QuestsCard (quêtes du jour, quêtes de la semaine), qui fournit déjà
-// sa propre carte/titre pour chaque section. ──────────────────────────────────
+// depuis _ArcadeHudCard (quêtes du jour, quêtes de la semaine), qui fournit
+// déjà sa propre carte/titre pour chaque section. ──────────────────────────
 class _QuestsList extends StatelessWidget {
   final List<HealthQuestDef> quests;
   final Color accent;

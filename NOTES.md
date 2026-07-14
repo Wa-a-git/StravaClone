@@ -64,16 +64,23 @@ la branche `claude/vo2-max-data-display-43e3ee`.
   d'animation prévue pour le vrai personnage plus tard, juste l'image à
   remplacer. Score (XP du jour, ticking), niveau, jauges Bio-Score/Pas,
   indicateurs du jour groupés **Santé** (sommeil, méditation, FC repos, HRV)
-  / **Sport** (kcal, dernière course, série), et un compteur "fait/total"
-  dans la barre du haut. Tout branché sur des données réelles déjà calculées
-  ailleurs (`healthDataProvider`, `playerProfileProvider`,
-  `HealthQuestService`) — la pastille **Méditation** est la seule exception :
-  pas de source de données (ni Health Connect, ni flux de log), affichée en
-  attente (`--`) jusqu'à décision. La liste détaillée des quêtes (jour +
-  semaine, réclamation → XP) a été fusionnée avec `_QuestsCard`, ajoutée en
-  parallèle sur `main` juste en dessous de ce HUD dans le Feed : la carte
-  gardait initialement sa propre liste de quêtes en lecture seule, retirée
-  pour ne pas doubler `_QuestsCard`.
+  / **Sport** (kcal, dernière course, série), compteur "fait/total" dans la
+  barre du haut, et **les quêtes du jour + de la semaine** (réclamation →
+  XP → note vault) directement dans la carte, sous les indicateurs — décision
+  produit : les quêtes vivent avec le personnage, pas dans une carte à part.
+  `main` avait ajouté indépendamment une `_QuestsCard` séparée juste en
+  dessous du HUD (même fonctionnalité de réclamation, ajoutée par ailleurs
+  le 10 juillet) : au moment du merge de cette branche, ça affichait les
+  quêtes deux fois. Résolu en fusionnant `_QuestsCard` dans `_ArcadeHudCard`
+  (fonction `_claimQuest` au niveau du fichier, réutilisée par les deux
+  listes jour/semaine ; `_QuestsList`/`_HealthQuestTile`/`_WeeklyQuestBars`
+  réutilisés tels quels) et en supprimant la carte séparée — c'est bien la
+  carte avec le sprite qui doit porter les quêtes.
+  Tout branché sur des données réelles déjà calculées ailleurs
+  (`healthDataProvider`, `playerProfileProvider`, `HealthQuestService`) — la
+  pastille **Méditation** est la seule exception : pas de source de données
+  (ni Health Connect, ni flux de log), affichée en attente (`--`) jusqu'à
+  décision.
 - **Écran Sommeil** (`sleep_detail_screen.dart`) restructuré autour de la
   distinction "cette nuit" vs "les nuits en général" : hero/hypnogramme/
   répartition des stades inchangés, **carte Physio de cette nuit** ajoutée
