@@ -58,6 +58,31 @@ la branche `claude/vo2-max-data-display-43e3ee`.
   ajout/suppression d'exercice dans `musculation_screen.dart`) force le
   recalcul puisque `MusculationStore` (Hive) n'a pas de flux réactif propre.
 - **Bouton +** : inchangé, toujours dans `shell_screen.dart`.
+- **Feed — HUD d'arcade** (`_ArcadeHudCard` dans `feed_screen.dart`, en tête
+  du Feed, au-dessus du calendrier) : sprite placeholder (carré rose) qui
+  rebondit en continu via `AnimationController` — même mécanique
+  d'animation prévue pour le vrai personnage plus tard, juste l'image à
+  remplacer. Score (XP du jour, ticking), niveau, jauges Bio-Score/Pas,
+  indicateurs du jour groupés **Santé** (sommeil, méditation, FC repos, HRV)
+  / **Sport** (kcal, dernière course, série), et aperçu en lecture seule des
+  quêtes du jour. Tout branché sur des données réelles déjà calculées
+  ailleurs (`healthDataProvider`, `playerProfileProvider`,
+  `HealthQuestService`) — la pastille **Méditation** est la seule exception :
+  pas de source de données (ni Health Connect, ni flux de log), affichée en
+  attente (`--`) jusqu'à décision.
+- **Écran Sommeil** (`sleep_detail_screen.dart`) restructuré autour de la
+  distinction "cette nuit" vs "les nuits en général" : hero/hypnogramme/
+  répartition des stades inchangés, **carte Physio de cette nuit** ajoutée
+  (FC moyenne, SpO2, respiration, ratio sommeil réparateur = (profond+REM)/
+  total, chacune avec un badge delta vs les 7 nuits précédentes — recalculé
+  dynamiquement selon la nuit consultée, pas juste "aujourd'hui"), et une
+  **carte recommandation** basée sur cette nuit précise (`_nightInsight`,
+  quelques règles simples : nuit courte, FC nocturne élevée, beaucoup de
+  réveils, ou bonne récupération). L'ancienne carte "Tendance 14 jours" est
+  **retirée** et remplacée par un lien "Tendances & croisements" qui bascule
+  vers l'onglet Santé (`shellIndexProvider` = 1) — les tendances multi-nuits
+  vivent là-bas (score de sommeil 30j déjà présent, superposition HRV ×
+  sommeil déjà possible via `_SuperpositionCard`).
 
 ## Tests
 
