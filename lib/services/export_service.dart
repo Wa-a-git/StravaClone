@@ -4,6 +4,8 @@ import '../data/exercise_library.dart' show ExerciseCategoryX;
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/musculation_log.dart';
+import 'health_store.dart';
+import 'hive_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
@@ -11,7 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 class ExportService {
   /// URL Windroid par défaut (Tailscale du PC), partagée avec les autres apps.
-  static const String defaultWindroidBaseUrl = 'http://100.66.241.12:8765';
+  static const String defaultWindroidBaseUrl = 'http://100.83.171.78:8765';
 
   static String _sanitizeFileName(String text) {
     return text
@@ -39,6 +41,28 @@ class ExportService {
 
   static Future<void> saveWindroidBaseUrl(String url) async {
     await Hive.box('settings').put('windroid_base_url', url.trim());
+    _cachedWindroid = null; // force la reconstruction sur la nouvelle URL
+  }
+
+  static CachedVaultSource? _cachedWindroid;
+  static String? _cachedWindroidUrl;
+
+  /// Source Windroid enrobée du cache offline-first de mycelium (déjà
+  /// éprouvé par Keep) : écrit en local instantanément, met en file, pousse
+  /// au PC dès qu'il redevient joignable — même après plusieurs jours hors
+  /// ligne. Remplace le sondage `available()` au coup par coup, qui perdait
+  /// silencieusement tout ce qui était écrit pendant une coupure (voir
+  /// incident du 11/07 — une course jamais parvenue au vault, PC injoignable
+  /// à l'époque, aucune trace nulle part une fois la base locale effacée).
+  /// Instance unique tant que l'URL ne change pas, pour partager la file
+  /// d'attente et éviter des flush concurrents.
+  static CachedVaultSource _windroidCached(String url) {
+    if (_cachedWindroid == null || _cachedWindroidUrl != url) {
+      _cachedWindroid = CachedVaultSource(
+          HttpVaultSource(url, timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs));
+      _cachedWindroidUrl = url;
+    }
+    return _cachedWindroid!;
   }
 
   /// Résout le dossier d'export (déjà configuré, ou demande la permission +
@@ -67,6 +91,7 @@ class ExportService {
   static Future<String?> saveActivityAsMarkdown(
     Activity activity, {
     bool useDownloads = false, // Paramètre ignoré maintenant
+    VaultSource? sourceOverride,
   }) async {
     try {
       final dt = activity.date;
@@ -113,31 +138,41 @@ class ExportService {
       final body =
           _buildBody(activity, id: id, avgPace: avgPace, avgSpeedKmh: avgSpeedKmh);
 
-      // 1) PRIMAIRE : Windroid (souverain, écrit direct sur le PC via mycelium).
-      final windroidUrl = getWindroidBaseUrl();
-      if (windroidUrl.isNotEmpty) {
-        final http = HttpVaultSource(windroidUrl,
-            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
-        if (await http.available()) {
-          try {
-            final path = await writeToVault(http,
-                subdir: 'Sport/Exercice',
-                fileBase: fileBase,
-                id: id,
-                date: activity.date,
-                myceliumClass: 'exercice',
-                fields: fields,
-                body: body,
-                dailySection: 'Sport',
-                dailyLine: _dailyLine(activity, fileBase));
-            return 'Windroid: $path';
-          } catch (_) {
-            // Windroid a lâché en cours de route → on bascule sur le local.
-          }
-        }
+      // Source déjà résolue (appelé depuis syncAllToVault) : un seul essai,
+      // pas de re-sondage Windroid par activité.
+      if (sourceOverride != null) {
+        final path = await writeToVault(sourceOverride,
+            subdir: 'Sport/Exercice',
+            fileBase: fileBase,
+            id: id,
+            date: activity.date,
+            myceliumClass: 'exercice',
+            fields: fields,
+            body: body,
+            dailySection: 'Sport',
+            dailyLine: _dailyLine(activity, fileBase));
+        return path;
       }
 
-      // 2) FALLBACK : dossier local synchronisé Drive (PC injoignable).
+      // 1) PRIMAIRE : Windroid via le cache offline-first (écrit local tout
+      // de suite, pousse au PC dès que possible — pas besoin de sonder
+      // `available()` avant, ni de replier sur le local en cas de coupure).
+      final windroidUrl = getWindroidBaseUrl();
+      if (windroidUrl.isNotEmpty) {
+        final path = await writeToVault(_windroidCached(windroidUrl),
+            subdir: 'Sport/Exercice',
+            fileBase: fileBase,
+            id: id,
+            date: activity.date,
+            myceliumClass: 'exercice',
+            fields: fields,
+            body: body,
+            dailySection: 'Sport',
+            dailyLine: _dailyLine(activity, fileBase));
+        return 'Windroid: $path';
+      }
+
+      // 2) FALLBACK : dossier local synchronisé Drive (Windroid désactivé).
       final savedPath = getSavedExportDirectory();
       if (savedPath == null) return null;
 
@@ -176,7 +211,8 @@ class ExportService {
   /// ré-écrite à chaque synchro) + injecte un résumé sous `## Santé` dans la
   /// note du jour. Best-effort : jamais d'exception propagée (appelé en
   /// fire-and-forget depuis le provider santé).
-  static Future<String?> saveHealthDayAsMarkdown(DailyHealthRecord record) async {
+  static Future<String?> saveHealthDayAsMarkdown(DailyHealthRecord record,
+      {VaultSource? sourceOverride}) async {
     try {
       final fileBase = record.key; // yyyy-MM-dd, une fiche par jour
       final fields = <String, Object?>{
@@ -205,27 +241,33 @@ class ExportService {
       // idempotente au même id, comme les fiches d'activité.
       final id = record.date.millisecondsSinceEpoch;
 
+      if (sourceOverride != null) {
+        final path = await writeToVault(sourceOverride,
+            subdir: 'Sport/Santé',
+            fileBase: fileBase,
+            id: id,
+            date: record.date,
+            myceliumClass: 'sante',
+            fields: fields,
+            body: body,
+            dailySection: 'Santé',
+            dailyLine: dailyLine);
+        return path;
+      }
+
       final windroidUrl = getWindroidBaseUrl();
       if (windroidUrl.isNotEmpty) {
-        final http = HttpVaultSource(windroidUrl,
-            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
-        if (await http.available()) {
-          try {
-            final path = await writeToVault(http,
-                subdir: 'Sport/Santé',
-                fileBase: fileBase,
-                id: id,
-                date: record.date,
-                myceliumClass: 'sante',
-                fields: fields,
-                body: body,
-                dailySection: 'Santé',
-                dailyLine: dailyLine);
-            return 'Windroid: $path';
-          } catch (_) {
-            // fallback local ci-dessous
-          }
-        }
+        final path = await writeToVault(_windroidCached(windroidUrl),
+            subdir: 'Sport/Santé',
+            fileBase: fileBase,
+            id: id,
+            date: record.date,
+            myceliumClass: 'sante',
+            fields: fields,
+            body: body,
+            dailySection: 'Santé',
+            dailyLine: dailyLine);
+        return 'Windroid: $path';
       }
 
       final savedPath = getSavedExportDirectory();
@@ -247,6 +289,47 @@ class ExportService {
       return null; // pas de racine de vault connue : pas de fiche isolée hors contexte
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Résout la source vault une seule fois (Windroid en cache offline-first,
+  /// sinon dossier local), pour les appels en masse.
+  static Future<VaultSource?> _resolveSource() async {
+    final windroidUrl = getWindroidBaseUrl();
+    if (windroidUrl.isNotEmpty) return _windroidCached(windroidUrl);
+    final savedPath = getSavedExportDirectory();
+    if (savedPath == null) return null;
+    return LocalVaultSource(_findVaultRoot(savedPath) ?? savedPath);
+  }
+
+  /// Filet de sécurité : ré-exporte TOUTES les courses et journées santé
+  /// locales vers le vault, best-effort. Écriture idempotente (overwrite,
+  /// même chemin à chaque fois) donc sans risque à rappeler souvent — appelé
+  /// au démarrage de l'app pour rattraper tout ce qui n'a pas pu partir la
+  /// dernière fois (hors ligne, Windroid injoignable...), plutôt que de
+  /// compter sur le seul export au moment de la sauvegarde (voir incident du
+  /// 11/07 — une course jamais exportée, perdue lors d'une réinstallation).
+  static Future<void> syncAllToVault() async {
+    try {
+      final source = await _resolveSource();
+      if (source == null) return; // ni Windroid ni dossier local : rien à faire
+
+      for (final activity in HiveService.getAllActivities()) {
+        try {
+          await saveActivityAsMarkdown(activity, sourceOverride: source);
+        } catch (_) {
+          // une fiche en échec ne doit pas bloquer les suivantes
+        }
+      }
+      for (final record in HealthStore.all()) {
+        try {
+          await saveHealthDayAsMarkdown(record, sourceOverride: source);
+        } catch (_) {
+          // idem
+        }
+      }
+    } catch (_) {
+      // best-effort total : jamais d'exception remontée à l'appelant.
     }
   }
 
@@ -278,25 +361,17 @@ class ExportService {
 
       final windroidUrl = getWindroidBaseUrl();
       if (windroidUrl.isNotEmpty) {
-        final http = HttpVaultSource(windroidUrl,
-            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
-        if (await http.available()) {
-          try {
-            final path = await writeToVault(http,
-                subdir: 'Sport/Musculation',
-                fileBase: fileBase,
-                id: id,
-                date: day,
-                myceliumClass: 'musculation',
-                fields: fields,
-                body: body,
-                dailySection: 'Sport',
-                dailyLine: dailyLine);
-            return 'Windroid: $path';
-          } catch (_) {
-            // fallback local ci-dessous
-          }
-        }
+        final path = await writeToVault(_windroidCached(windroidUrl),
+            subdir: 'Sport/Musculation',
+            fileBase: fileBase,
+            id: id,
+            date: day,
+            myceliumClass: 'musculation',
+            fields: fields,
+            body: body,
+            dailySection: 'Sport',
+            dailyLine: dailyLine);
+        return 'Windroid: $path';
       }
 
       final savedPath = getSavedExportDirectory();
@@ -336,13 +411,9 @@ class ExportService {
     try {
       final windroidUrl = getWindroidBaseUrl();
       if (windroidUrl.isNotEmpty) {
-        final http = HttpVaultSource(windroidUrl,
-            timeout: const Duration(seconds: 4), ignoredDirs: kIgnoredDirs);
-        if (await http.available()) {
-          await DailyNoteService(VaultRepository(http))
-              .appendToToday(section: section, content: line, day: date);
-          return;
-        }
+        await DailyNoteService(VaultRepository(_windroidCached(windroidUrl)))
+            .appendToToday(section: section, content: line, day: date);
+        return;
       }
       final savedPath = getSavedExportDirectory();
       if (savedPath == null) return;
@@ -399,6 +470,9 @@ class ExportService {
   static String _sportLabel(String? workoutType) => switch (workoutType) {
         'interval' => 'Fractionné',
         'pace_zone' => 'Zone d\'allure',
+        'treadmill' => 'Tapis',
+        'run_manual' => 'Course (manuel)',
+        'other_cardio' => 'Cardio',
         _ => 'Run',
       };
 

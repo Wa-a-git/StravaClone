@@ -66,7 +66,7 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
     // Revenu sur l'onglet Santé depuis un autre onglet (IndexedStack garde
     // l'état, donc aucun événement de route ne se déclenche pour ce cas).
     ref.listen(shellIndexProvider, (prev, next) {
-      if (next == 1 && prev != 1) _scrollToTop();
+      if (next == 2 && prev != 2) _scrollToTop();
     });
 
     final st = ref.watch(healthDataProvider);
@@ -163,7 +163,7 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                       onXpTap: () {
                         ref.read(sportTabProvider.notifier).state =
                             SportTab.progression;
-                        ref.read(shellIndexProvider.notifier).state = 2;
+                        ref.read(shellIndexProvider.notifier).state = 3;
                       },
                     ),
 
@@ -898,14 +898,9 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
           Icons.air_rounded,
           kNeonViolet,
           _MetricGroupId.vitals),
-      _MetricSpec(
-          'SpO2 nocturne',
-          HealthMetric.spo2,
-          snapshot.spo2 > 0 ? snapshot.spo2.toStringAsFixed(0) : '--',
-          '%',
-          Icons.water_drop_rounded,
-          kNeonCyan,
-          _MetricGroupId.vitals),
+      // Pas de carte SpO2 ici : la Charge 6 ne remonte jamais de SpO2
+      // exploitable vers Health Connect (voir VO2 max plus bas) — la case
+      // restait en permanence "en attente", sans intérêt à afficher.
       _MetricSpec(
           'Sommeil',
           HealthMetric.sleepHours,

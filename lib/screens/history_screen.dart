@@ -536,15 +536,15 @@ class _ActivityCard extends StatelessWidget {
                     kNeonPink.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.directions_run_rounded,
+                      const Icon(Icons.directions_run_rounded,
                           size: 13, color: kNeonPink),
-                      SizedBox(width: 4),
+                      const SizedBox(width: 4),
                       Text(
-                        'Running',
-                        style: TextStyle(
+                        activity.sportLabel,
+                        style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: kNeonPink,

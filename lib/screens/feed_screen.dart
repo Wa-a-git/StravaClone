@@ -18,9 +18,11 @@ import '../providers/health_provider.dart';
 import '../services/export_service.dart';
 import '../services/game_service.dart';
 import '../services/health_game_service.dart';
+import '../services/health_score_service.dart';
 import '../services/health_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
+import '../widgets/mascot_sprites.dart';
 import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'detail_screen.dart';
@@ -181,6 +183,12 @@ class FeedScreen extends ConsumerWidget {
 // part : c'est l'aspect jeu de l'app, à côté du personnage, pas noyé dans
 // l'état du jour du dashboard Santé. Toutes les données affichées sont
 // réelles — aucune stat inventée. ───────────────────────────────────────────
+/// Humeur du mascot HUD — reflète l'état de santé réel du jour plutôt que
+/// de tourner en boucle sur une seule pose. Priorité, du plus ponctuel/rare
+/// au plus permanent : célébration (quêtes du jour bouclées) > fierté (série
+/// de jours consécutifs) > contente-fatiguée (course déjà faite aujourd'hui)
+/// > fatigue (alerte sommeil, à ne pas masquer) > méditation (état calme)
+/// > course par défaut.
 class _ArcadeHudCard extends ConsumerStatefulWidget {
   const _ArcadeHudCard();
 
@@ -295,7 +303,13 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
                 questsDone: questsDone,
                 questsTotal: dailyQuests.length,
               ),
-              _scene(),
+              _scene(pickMascotMood(
+                scores: scores,
+                questsDone: questsDone,
+                questsTotal: dailyQuests.length,
+                runStreak: runStreak,
+                todayRunKm: todayRunKm,
+              )),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                 child: Column(
@@ -504,68 +518,38 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
     );
   }
 
-  Widget _scene() {
+  Widget _scene(MascotMood mood) {
+    final (dir, prefix, frameCount) = kMascotSprites[mood]!;
     return SizedBox(
-      height: 150,
+      height: 340,
       child: AnimatedBuilder(
         animation: _hop,
         builder: (context, child) {
           final t = _hop.value;
-          final rise = 34.0 * math.sin(math.pi * t);
-          // 1 = au sol (écrasement), -1 = pic du saut (étirement).
-          final phase = math.cos(2 * math.pi * t);
-          final scaleY = 1.0 - 0.18 * phase;
-          final scaleX = 1.0 + 0.16 * phase;
-          final shadowScale = (1.0 + 0.22 * phase).clamp(0.35, 1.3);
-          final shadowOpacity = (0.5 - 0.16 * phase).clamp(0.15, 0.6);
+          final frame = (t * frameCount).floor() % frameCount + 1;
           return Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Positioned(
                 bottom: 26,
-                child: Transform.scale(
-                  scaleX: shadowScale,
-                  child: Container(
-                    width: 76,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      gradient: RadialGradient(colors: [
-                        Colors.black.withOpacity(shadowOpacity),
-                        Colors.black.withOpacity(0),
-                      ]),
-                    ),
+                child: Container(
+                  width: 76,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: RadialGradient(colors: [
+                      Colors.black.withOpacity(0.4),
+                      Colors.black.withOpacity(0),
+                    ]),
                   ),
                 ),
               ),
               Positioned(
-                bottom: 30 + rise,
-                child: Transform(
-                  alignment: Alignment.bottomCenter,
-                  transform: Matrix4.identity()..scale(scaleX, scaleY),
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [kNeonPink, Color(0xFFC6187E)],
-                      ),
-                      boxShadow: [
-                        BoxShadow(color: kNeonPink.withOpacity(0.55), blurRadius: 22),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const Positioned(
-                bottom: 4,
-                child: Text(
-                  'sprite temporaire',
-                  style: TextStyle(
-                      fontSize: 8, letterSpacing: 0.6, color: AppColors.muted),
+                bottom: 30,
+                child: Image.asset(
+                  'assets/$dir/${prefix}_$frame.png',
+                  height: 300,
+                  filterQuality: FilterQuality.none,
                 ),
               ),
             ],

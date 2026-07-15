@@ -131,7 +131,7 @@ class CourseSection extends ConsumerWidget {
               onTap: () {
                 ref.read(sportTabProvider.notifier).state =
                     SportTab.progression;
-                ref.read(shellIndexProvider.notifier).state = 2;
+                ref.read(shellIndexProvider.notifier).state = 3;
               },
             ),
           ),
@@ -1119,13 +1119,13 @@ class _LatestActivityCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
-                  children: const [
-                    Icon(Icons.directions_run_rounded,
+                  children: [
+                    const Icon(Icons.directions_run_rounded,
                         size: 14, color: AppColors.arcadePink),
-                    SizedBox(width: 6),
+                    const SizedBox(width: 6),
                     Text(
-                      'Running',
-                      style: TextStyle(
+                      activity.sportLabel,
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: AppColors.arcadePink,

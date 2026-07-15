@@ -48,12 +48,20 @@ class ProfileScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: const [
-                  BodyProfileCard(),
-                  SizedBox(height: 16),
-                  GoogleHealthCard(),
-                  SizedBox(height: 16),
-                  _ExportSettingsCard(),
+                children: [
+                  Center(
+                    child: Image.asset(
+                      'assets/character/neutral/neutral_1.png',
+                      height: 140,
+                      filterQuality: FilterQuality.none,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const BodyProfileCard(),
+                  const SizedBox(height: 16),
+                  const GoogleHealthCard(),
+                  const SizedBox(height: 16),
+                  const _ExportSettingsCard(),
                 ],
               ),
             ),

@@ -12,6 +12,7 @@ import '../services/export_service.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
+import 'manual_cardio_entry_screen.dart';
 
 /// Ouvre le flux rapide d'ajout d'exercice — appelable depuis le bouton
 /// "NOUVELLE SÉANCE" de cet écran ou depuis le bouton + de lancement rapide
@@ -47,6 +48,19 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
     if (mounted) setState(() {}); // rafraîchit "Séance du jour"
   }
 
+  Future<void> _openWarmup() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ManualCardioEntryScreen(
+          title: 'Échauffement',
+          defaultName: 'Échauffement',
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercises = kExerciseLibrary
@@ -71,6 +85,14 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
             color: kNeonViolet,
             foreground: Colors.white,
             onPressed: _openQuickLog,
+          ),
+          const SizedBox(height: 10),
+          GlowButton(
+            label: 'AJOUTER UN ÉCHAUFFEMENT',
+            icon: Icons.directions_run_rounded,
+            color: kNeonAmber,
+            foreground: Colors.white,
+            onPressed: _openWarmup,
           ),
           if (todayEntries.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xl),

@@ -1,6 +1,8 @@
 // lib/providers/activity_provider.dart
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
+import '../services/export_service.dart';
 import '../services/hive_service.dart';
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -8,6 +10,10 @@ import '../services/hive_service.dart';
 class ActivityListNotifier extends StateNotifier<List<Activity>> {
   ActivityListNotifier() : super([]) {
     _load();
+    // Filet de sécurité best-effort : rattrape les courses/journées santé
+    // jamais exportées (app fermée hors ligne, Windroid injoignable au
+    // moment de la sauvegarde...) plutôt que de dépendre d'un seul essai.
+    unawaited(ExportService.syncAllToVault());
   }
 
   void _load() {

@@ -79,6 +79,18 @@ class Activity extends HiveObject {
 
   String get title => name?.isNotEmpty == true ? name! : 'Running';
 
+  /// Libellé du type de séance affiché dans les listes/cartes — même
+  /// mapping que `ExportService._sportLabel` pour rester cohérent avec les
+  /// fiches vault.
+  String get sportLabel => switch (workoutType) {
+        'interval' => 'Fractionné',
+        'pace_zone' => 'Zone d\'allure',
+        'treadmill' => 'Tapis',
+        'run_manual' => 'Course (manuel)',
+        'other_cardio' => 'Cardio',
+        _ => 'Running',
+      };
+
   /// True si la course possède des données d'altitude exploitables.
   bool get hasElevation => elevations != null && elevations!.length >= 2;
 

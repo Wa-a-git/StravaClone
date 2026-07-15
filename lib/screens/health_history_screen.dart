@@ -8,6 +8,7 @@ import '../services/health_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
 import '../widgets/ui_kit.dart';
+import 'sleep_detail_screen.dart';
 
 class HealthHistoryScreen extends StatelessWidget {
   const HealthHistoryScreen({super.key});
@@ -183,7 +184,16 @@ class HealthDayDetailScreen extends StatelessWidget {
             children: [
               Expanded(
                   child: _ScoreCard(
-                      label: 'SOMMEIL', score: record.sleepScore, color: kNeonViolet)),
+                      label: 'SOMMEIL',
+                      score: record.sleepScore,
+                      color: kNeonViolet,
+                      onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  SleepDetailScreen(initialDay: record.date),
+                            ),
+                          ))),
               const SizedBox(width: 10),
               Expanded(
                   child: _ScoreCard(
@@ -197,6 +207,12 @@ class HealthDayDetailScreen extends StatelessWidget {
           const SizedBox(height: 16),
           AppPanel(
             accent: kNeonViolet,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SleepDetailScreen(initialDay: record.date),
+              ),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -258,12 +274,15 @@ class _ScoreCard extends StatelessWidget {
   final String label;
   final int score;
   final Color color;
-  const _ScoreCard({required this.label, required this.score, required this.color});
+  final VoidCallback? onTap;
+  const _ScoreCard(
+      {required this.label, required this.score, required this.color, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return AppPanel(
       accent: color,
+      onTap: onTap,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       child: Column(
         children: [

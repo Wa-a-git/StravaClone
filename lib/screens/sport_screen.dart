@@ -137,6 +137,13 @@ class CourseQuickLaunchSheet extends StatelessWidget {
           subtitle: 'Maintiens une allure cible',
           onTap: () => Navigator.pop(context, 'pace'),
         ),
+        _QuickLaunchTile(
+          icon: Icons.directions_walk_rounded,
+          color: kNeonAmber,
+          title: 'Tapis',
+          subtitle: 'Course en salle, saisie manuelle',
+          onTap: () => Navigator.pop(context, 'treadmill'),
+        ),
       ],
     );
   }

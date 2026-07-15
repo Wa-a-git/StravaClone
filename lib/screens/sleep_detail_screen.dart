@@ -101,7 +101,15 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 _nightNav(rec),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
+                Center(
+                  child: Image.asset(
+                    'assets/character/tired/tired_8.png',
+                    height: 130,
+                    filterQuality: FilterQuality.none,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 _heroCard(rec),
                 const SizedBox(height: AppSpacing.lg),
                 _physioCard(rec, baseline),
@@ -322,7 +330,6 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
   // précédentes (repère ponctuel, pas un graphique). ────────────────────────
   Widget _physioCard(DailyHealthRecord rec, List<DailyHealthRecord> baseline) {
     final hrBaseline = _avgOf(baseline, (r) => r.avgHeartRate);
-    final spo2Baseline = _avgOf(baseline, (r) => r.spo2);
     final respBaseline = _avgOf(baseline, (r) => r.respiratoryRate);
     final ratioBaseline = _avgOf(baseline, _restorativeRatio);
     final ratio = _restorativeRatio(rec);
@@ -334,6 +341,9 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
         children: [
           const PanelTitle('PHYSIO DE CETTE NUIT', color: kNeonViolet),
           const SizedBox(height: 14),
+          // Pas de tuile SpO2 : la Charge 6 ne remonte jamais de SpO2
+          // exploitable vers Health Connect, la case restait en permanence
+          // "en attente" sans intérêt à afficher.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -352,24 +362,6 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: _physioTile(
-                  icon: Icons.water_drop_rounded,
-                  color: kNeonCyan,
-                  label: 'SpO2',
-                  value: rec.spo2 > 0 ? rec.spo2.round().toString() : '--',
-                  unit: '%',
-                  delta: rec.spo2 > 0
-                      ? _deltaBadge(rec.spo2, spo2Baseline, lowerIsBetter: false, flatThreshold: 1)
-                      : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _physioTile(
                   icon: Icons.air_rounded,
                   color: kNeonViolet,
                   label: 'Respiration',
@@ -383,7 +375,12 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
                       : null,
                 ),
               ),
-              const SizedBox(width: 10),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Expanded(
                 child: _physioTile(
                   icon: Icons.check_circle_rounded,
@@ -583,7 +580,7 @@ class _SleepDetailScreenState extends ConsumerState<SleepDetailScreen> {
     return GestureDetector(
       onTap: () {
         Navigator.of(context).popUntil((route) => route.isFirst);
-        ref.read(shellIndexProvider.notifier).state = 1;
+        ref.read(shellIndexProvider.notifier).state = 2;
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),

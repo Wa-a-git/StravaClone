@@ -108,32 +108,62 @@ class VaultImportService {
   static Activity? _parseActivity(String raw) {
     final fm = splitFrontmatter(raw);
     final data = fm.data;
+
+    // Format natif (export de l'app courante) : distance_km / duration_s /
+    // id = epoch ms de la date.
     final id = _asInt(data['id']);
     final distanceKm = _asDouble(data['distance_km']);
     final durationS = _asInt(data['duration_s']);
-    if (id == null || distanceKm == null || durationS == null) return null;
+    if (id != null && distanceKm != null && durationS != null) {
+      final fullRoute = _parseRouteJson(data['route_full_json'] as String?);
+      final laps = _parseLaps(data['laps_json'] as String?);
 
-    final fullRoute = _parseRouteJson(data['route_full_json'] as String?);
-    final laps = _parseLaps(data['laps_json'] as String?);
+      return Activity(
+        date: DateTime.fromMillisecondsSinceEpoch(id),
+        distance: distanceKm * 1000,
+        duration: durationS,
+        route: fullRoute ?? _parseRoute(data['route'] as String?),
+        name: (data['name'] as String?)?.trim(),
+        pauseDurationSeconds: _asInt(data['pause_s']) ?? 0,
+        workoutType: _workoutTypeFor(data['sport'] as String?),
+        laps: laps,
+        lapCount: laps?.length ?? 0,
+        elevations: _parseDoubleListJson(data['elevations_json'] as String?),
+        pointSeconds: _parseIntListJson(data['point_seconds_json'] as String?),
+      );
+    }
 
-    return Activity(
-      date: DateTime.fromMillisecondsSinceEpoch(id),
-      distance: distanceKm * 1000,
-      duration: durationS,
-      route: fullRoute ?? _parseRoute(data['route'] as String?),
-      name: (data['name'] as String?)?.trim(),
-      pauseDurationSeconds: _asInt(data['pause_s']) ?? 0,
-      workoutType: _workoutTypeFor(data['sport'] as String?),
-      laps: laps,
-      lapCount: laps?.length ?? 0,
-      elevations: _parseDoubleListJson(data['elevations_json'] as String?),
-      pointSeconds: _parseIntListJson(data['point_seconds_json'] as String?),
-    );
+    // Format legacy (import Strava d'origine, fiches antérieures à l'export
+    // de cette app) : start_date (ISO) / moving_time (s) / distance (m).
+    // `id` y est le vrai identifiant Strava — inutilisable comme epoch ms,
+    // on prend `start_date` à la place. Pas de trace GPS/laps dans ce format.
+    final startDate = _asDateTime(data['start_date']);
+    final movingTime = _asInt(data['moving_time']);
+    final distanceM = _asDouble(data['distance']);
+    if (startDate != null && movingTime != null && distanceM != null) {
+      return Activity(
+        date: startDate,
+        distance: distanceM,
+        duration: movingTime,
+        route: const [],
+        workoutType: _workoutTypeFor(data['sport_type'] as String?),
+      );
+    }
+
+    return null;
+  }
+
+  static DateTime? _asDateTime(Object? v) {
+    if (v is! String || v.isEmpty) return null;
+    return DateTime.tryParse(v)?.toLocal();
   }
 
   static String? _workoutTypeFor(String? sportLabel) => switch (sportLabel) {
         'Fractionné' => 'interval',
         'Zone d\'allure' => 'pace_zone',
+        'Tapis' => 'treadmill',
+        'Course (manuel)' => 'run_manual',
+        'Cardio' => 'other_cardio',
         _ => null,
       };
 
