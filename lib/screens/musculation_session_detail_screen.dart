@@ -10,9 +10,12 @@ import '../models/musculation_log.dart';
 import '../models/musculation_session.dart';
 import '../providers/game_provider.dart' show musculationRevisionProvider;
 import '../services/export_service.dart';
+import '../services/musculation_session_store.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
+import '../widgets/musculation_set_fields.dart' show formatCharge;
+import 'edit_musculation_set_sheet.dart';
 
 class MusculationSessionDetailScreen extends ConsumerStatefulWidget {
   final MusculationSession session;
@@ -42,6 +45,77 @@ class _MusculationSessionDetailScreenState
     // bloque jamais l'UI.
     unawaited(ExportService.saveMusculationSessionAsMarkdown(
         widget.session, _sets.map((e) => e.value).toList()));
+  }
+
+  Future<void> _editSet(String key, MusculationLogEntry entry) async {
+    final updated = await showEditMusculationSetSheet(context, entry);
+    if (updated == null) return;
+    await MusculationStore.updateEntry(key, updated);
+    ref.read(musculationRevisionProvider.notifier).state++;
+    _refresh();
+    // Best-effort, comme la suppression — reflète la correction dans la
+    // fiche vault sans jamais bloquer l'UI si le vault est injoignable.
+    unawaited(ExportService.saveMusculationSessionAsMarkdown(
+        widget.session, _sets.map((e) => e.value).toList()));
+  }
+
+  /// Supprime la séance entière (enveloppe + tous ses blocs) — même
+  /// confirmation que musculation_history_screen.dart, pour un geste
+  /// familier qu'on la déclenche depuis la liste ou depuis le détail.
+  Future<void> _confirmDeleteSession() async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF141419),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Supprimer cette séance ?',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    shadows: [Shadow(color: kNeonPink, blurRadius: 8)])),
+            const SizedBox(height: 6),
+            const Text('Tous ses blocs seront supprimés. Non réversible.',
+                style: TextStyle(fontSize: 15, color: Color(0xFFAAAAAA))),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: kNeonRed,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                child: const Text('Supprimer',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: kNeonCyan)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    await MusculationStore.deleteSession(widget.session.sessionId);
+    await MusculationSessionStore.deleteEntry(widget.session.sessionId);
+    ref.read(musculationRevisionProvider.notifier).state++;
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _exportMarkdown() async {
@@ -109,6 +183,11 @@ class _MusculationSessionDetailScreenState
                 icon: const Icon(Icons.download_rounded, color: kNeonCyan),
                 tooltip: 'Exporter en Markdown',
               ),
+              IconButton(
+                onPressed: _confirmDeleteSession,
+                icon: const Icon(Icons.delete_outline_rounded, color: kNeonRed),
+                tooltip: 'Supprimer la séance',
+              ),
             ],
             title: Column(
               children: [
@@ -161,6 +240,7 @@ class _MusculationSessionDetailScreenState
                           exerciseName: entry.value.first.value.exerciseName,
                           sets: entry.value,
                           onDelete: _deleteSet,
+                          onEdit: _editSet,
                         ),
                       )),
                   if (_sets.isEmpty)
@@ -317,11 +397,33 @@ class _MusculationSessionDetailScreenState
               height: 140,
               xLabelFormatter: (d) =>
                   '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}',
+              markers: _exerciseMarkers(),
             ),
           ],
         ],
       ),
     );
+  }
+
+  /// Un repère par changement d'exercice — à chaque fois que l'exercice
+  /// diffère du bloc précédent (dans l'ordre chronologique de `_sets`),
+  /// ancré sur la date de la première série de ce bloc. Pour savoir "à quel
+  /// exercice on est" sur la courbe FC de toute la séance, sans avoir à
+  /// recouper mentalement avec la liste des blocs plus bas.
+  List<ChartMarker> _exerciseMarkers() {
+    final markers = <ChartMarker>[];
+    String? lastExerciseId;
+    for (final s in _sets) {
+      if (s.value.exerciseId != lastExerciseId) {
+        markers.add(ChartMarker(
+          time: s.value.date,
+          label: s.value.exerciseName,
+          color: s.value.category.color,
+        ));
+        lastExerciseId = s.value.exerciseId;
+      }
+    }
+    return markers;
   }
 
   String _formatDateShort(DateTime date) {
@@ -344,14 +446,20 @@ String _fmtClock(int totalSeconds) {
   return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
 }
 
-// ── Carte d'un exercice : toutes ses séries/blocs, avec suppression ─────────
+// ── Carte d'un exercice : toutes ses séries/blocs, modifiables (tap sur la
+// ligne) et supprimables individuellement (icône ×) ─────────────────────────
 class _ExerciseGroupCard extends StatelessWidget {
   final String exerciseName;
   final List<MapEntry<String, MusculationLogEntry>> sets;
   final ValueChanged<String> onDelete;
+  final void Function(String key, MusculationLogEntry entry) onEdit;
 
-  const _ExerciseGroupCard(
-      {required this.exerciseName, required this.sets, required this.onDelete});
+  const _ExerciseGroupCard({
+    required this.exerciseName,
+    required this.sets,
+    required this.onDelete,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -379,36 +487,40 @@ class _ExerciseGroupCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           for (var i = 0; i < sets.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: Text('${i + 1}',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Text(_blockSummary(sets[i].value),
-                        style: const TextStyle(
-                            fontFamily: kArcadeFont,
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                  if (sets[i].value.restSeconds > 0) ...[
-                    const Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 13),
-                    const SizedBox(width: 3),
-                    Text(_fmtClock(sets[i].value.restSeconds),
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                    const SizedBox(width: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onEdit(sets[i].key, sets[i].value),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      child: Text('${i + 1}',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    ),
+                    Expanded(
+                      child: Text(_blockSummary(sets[i].value),
+                          style: const TextStyle(
+                              fontFamily: kArcadeFont,
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    if (sets[i].value.restSeconds > 0) ...[
+                      const Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 13),
+                      const SizedBox(width: 3),
+                      Text(_fmtClock(sets[i].value.restSeconds),
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                      const SizedBox(width: 8),
+                    ],
+                    GestureDetector(
+                      onTap: () => onDelete(sets[i].key),
+                      child: const Icon(Icons.close_rounded,
+                          color: AppColors.textSecondary, size: 16),
+                    ),
                   ],
-                  GestureDetector(
-                    onTap: () => onDelete(sets[i].key),
-                    child: const Icon(Icons.close_rounded,
-                        color: AppColors.textSecondary, size: 16),
-                  ),
-                ],
+                ),
               ),
             ),
         ],
@@ -425,13 +537,10 @@ class _ExerciseGroupCard extends StatelessWidget {
     }
     final sideSuffix = e.side == 'L' ? ' (G)' : (e.side == 'R' ? ' (D)' : '');
     final base = e.chargeKg > 0
-        ? '${e.reps} × ${_formatCharge(e.chargeKg)} kg'
+        ? '${e.reps} × ${formatCharge(e.chargeKg)} kg'
         : '${e.reps} reps';
     return base + sideSuffix;
   }
-
-  String _formatCharge(double kg) =>
-      kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
 }
 
 class _DetailStatCard extends StatelessWidget {

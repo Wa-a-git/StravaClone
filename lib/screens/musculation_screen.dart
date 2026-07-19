@@ -1,12 +1,15 @@
 // lib/screens/musculation_screen.dart
-// Musculation : bibliothèque d'exercices par catégorie (référence, pas de
-// log direct depuis ici) + lancement d'une séance en direct chronométrée
-// (live_musculation_screen.dart) où se fait tout le log réel.
+// Musculation : indicateurs (volume soulevé, rythme de séances), lancement
+// d'une séance en direct chronométrée (live_musculation_screen.dart) où se
+// fait tout le log réel, puis bibliothèque d'exercices par catégorie
+// (référence, pas de log direct depuis ici) plus bas.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/exercise_library.dart';
+import '../models/musculation_log.dart';
 import '../models/musculation_session.dart';
 import '../services/musculation_session_store.dart';
+import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'live_musculation_screen.dart';
@@ -74,6 +77,8 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
             foreground: Colors.white,
             onPressed: _openQuickLog,
           ),
+          const SizedBox(height: AppSpacing.xl),
+          const _IndicatorsCard(),
           if (todaySessions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xl),
             const Text('Séance du jour', style: AppText.screenTitle),
@@ -133,6 +138,113 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ── Indicateurs : volume soulevé (jour/7j/3 mois) + rythme de séances,
+// calculés depuis le log brut plutôt qu'un système de stats à part — sert de
+// vrai tableau de bord en tête d'écran, avant la bibliothèque de référence
+// plus bas. Masquée tant qu'aucune série n'a jamais été loggée (rien à
+// montrer à un nouvel utilisateur). ─────────────────────────────────────────
+class _IndicatorsCard extends StatelessWidget {
+  const _IndicatorsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final all = MusculationStore.all();
+    if (all.isEmpty) return const SizedBox.shrink();
+
+    final now = DateTime.now();
+    final todayKey = MusculationLogEntry.keyFor(now);
+    final since7d = now.subtract(const Duration(days: 7));
+    final since90d = now.subtract(const Duration(days: 90));
+
+    final strengthEntries = all.where((e) => !e.category.isCardio);
+    final volToday = strengthEntries
+        .where((e) => e.dayKey == todayKey)
+        .fold<double>(0, (s, e) => s + e.volumeKg);
+    final vol7d = strengthEntries
+        .where((e) => e.date.isAfter(since7d))
+        .fold<double>(0, (s, e) => s + e.volumeKg);
+    final vol90d = strengthEntries
+        .where((e) => e.date.isAfter(since90d))
+        .fold<double>(0, (s, e) => s + e.volumeKg);
+
+    final sessions7d = all
+        .where((e) => e.sessionId != 0 && e.date.isAfter(since7d))
+        .map((e) => e.sessionId)
+        .toSet()
+        .length;
+    final sessions90d = all
+        .where((e) => e.sessionId != 0 && e.date.isAfter(since90d))
+        .map((e) => e.sessionId)
+        .toSet()
+        .length;
+
+    return AppPanel(
+      accent: kNeonViolet,
+      hero: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const PanelTitle('INDICATEURS', color: kNeonViolet),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                  child: _IndicatorTile(
+                      label: 'Volume aujourd\'hui', value: '${volToday.toStringAsFixed(0)} kg')),
+              Container(width: 1, height: 40, color: AppColors.border),
+              Expanded(
+                  child: _IndicatorTile(
+                      label: 'Volume 7 jours', value: '${vol7d.toStringAsFixed(0)} kg')),
+              Container(width: 1, height: 40, color: AppColors.border),
+              Expanded(
+                  child: _IndicatorTile(
+                      label: 'Volume 3 mois', value: '${vol90d.toStringAsFixed(0)} kg')),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                  child: _IndicatorTile(label: 'Séances (7j)', value: '$sessions7d')),
+              Container(width: 1, height: 40, color: AppColors.border),
+              Expanded(
+                  child: _IndicatorTile(label: 'Séances (3 mois)', value: '$sessions90d')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IndicatorTile extends StatelessWidget {
+  final String label;
+  final String value;
+  const _IndicatorTile({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(value,
+              style: const TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(height: 4),
+        Text(label,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
+      ],
     );
   }
 }

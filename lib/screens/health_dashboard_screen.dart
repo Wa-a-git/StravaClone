@@ -10,6 +10,7 @@ import '../providers/health_provider.dart';
 import '../services/game_service.dart';
 import '../services/health_score_service.dart';
 import '../services/health_store.dart';
+import '../services/meditation_store.dart';
 import '../services/vo2_estimate_store.dart';
 import '../services/vo2_estimator_service.dart';
 import '../theme.dart';
@@ -19,6 +20,7 @@ import '../widgets/ui_kit.dart';
 import 'shell_screen.dart';
 import 'sport_screen.dart' show sportTabProvider, SportTab;
 import 'health_metric_detail_screen.dart';
+import 'meditation_screen.dart';
 import 'score_breakdown_screen.dart';
 import 'sleep_detail_screen.dart';
 import '../main.dart' show routeObserver;
@@ -472,6 +474,10 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
+          const _MeditationCard(),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
           _HealthXpBanner(xpToday: xpToday, onTap: onXpTap),
         ],
       ),
@@ -487,14 +493,21 @@ class _HeroPillData {
   final Color bg;
   final Color fg;
   final HealthMetric metric;
+  /// Écrase la navigation par défaut (écran de détail générique) — utilisé
+  /// pour Poids, qui est une métrique de saisie manuelle sans historique
+  /// Health Connect à afficher.
+  final VoidCallback? onTap;
   const _HeroPillData(this.label, this.value, this.unit, this.icon, this.bg,
-      this.fg, this.metric);
+      this.fg, this.metric, {this.onTap});
 }
 
-/// Carrousel de pilules à droite du Bio-Score — mêmes indicateurs que les
-/// chips du Feed (Pas, FC repos, Sommeil, HRV, Cal. actives, Respiration),
-/// présentés comme chez Fitbit plutôt qu'en petites cartes. Chaque pilule
-/// ouvre l'écran de détail complet (7 jours → 1 an) de son indicateur.
+/// Carrousel de pilules à droite du Bio-Score — tous les indicateurs du jour
+/// (Pas, FC repos, Sommeil, HRV, Cal. actives, Respiration, Distance, Poids,
+/// VO2 max), présentés comme chez Fitbit plutôt qu'en petites cartes.
+/// Vraiment swipeable (PageView) plutôt qu'un simple tap sur les points —
+/// les points restent cliquables pour sauter directement à une page. Chaque
+/// pilule ouvre l'écran de détail complet (7 jours → 1 an) de son indicateur,
+/// sauf Poids qui ouvre la saisie rapide (pas d'historique montre à montrer).
 class _HeroPillCarousel extends StatefulWidget {
   final HealthSnapshot snapshot;
   const _HeroPillCarousel({required this.snapshot});
@@ -504,7 +517,14 @@ class _HeroPillCarousel extends StatefulWidget {
 }
 
 class _HeroPillCarouselState extends State<_HeroPillCarousel> {
+  final _pageController = PageController();
   int _page = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   String _fmtHm(double minutes) {
     if (minutes <= 0) return '--';
@@ -513,9 +533,21 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
     return '${h}h${m.toString().padLeft(2, '0')}';
   }
 
+  void _goToPage(int i) {
+    _pageController.animateToPage(i,
+        duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+  }
+
+  Future<void> _editWeight() async {
+    await showAppSheet(context: context, child: const _WeighInSheet());
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.snapshot;
+    final weightKg = HealthStore.recordFor(DateTime.now())?.weightKg ?? 0;
+    final vo2Estimates = Vo2EstimateStore.all();
     final pages = <List<_HeroPillData>>[
       [
         _HeroPillData(
@@ -553,14 +585,6 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
             const Color(0xFF8AC4EE),
             HealthMetric.hrv),
         _HeroPillData(
-            'CAL. ACTIVES',
-            s.activeCalories > 0 ? s.activeCalories.toStringAsFixed(0) : '--',
-            'kcal',
-            Icons.local_fire_department_rounded,
-            const Color(0xFF5C1E3A),
-            const Color(0xFFF4A6C6),
-            HealthMetric.activeCalories),
-        _HeroPillData(
             'RESPIRATION',
             s.respiratoryRate > 0 ? s.respiratoryRate.toStringAsFixed(1) : '--',
             'rpm',
@@ -569,66 +593,111 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
             const Color(0xFFC9A8E8),
             HealthMetric.respiratoryRate),
       ],
+      [
+        _HeroPillData(
+            'DISTANCE',
+            s.distanceKm > 0 ? s.distanceKm.toStringAsFixed(2) : '--',
+            'km',
+            Icons.map_rounded,
+            const Color(0xFF0E5C48),
+            const Color(0xFF8FE3C9),
+            HealthMetric.distanceKm),
+        _HeroPillData(
+            'POIDS',
+            weightKg > 0 ? weightKg.toStringAsFixed(1) : '--',
+            'kg',
+            Icons.monitor_weight_rounded,
+            const Color(0xFF5C4A0E),
+            const Color(0xFFE3C98F),
+            HealthMetric.weightKg,
+            onTap: _editWeight),
+        _HeroPillData(
+            'VO2 MAX',
+            vo2Estimates.isNotEmpty
+                ? vo2Estimates.last.value.toStringAsFixed(1)
+                : '--',
+            'ml/kg/min',
+            Icons.speed_rounded,
+            const Color(0xFF0D4A73),
+            const Color(0xFF8AC4EE),
+            HealthMetric.vo2Max),
+      ],
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final pill in pages[_page]) ...[
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => HealthMetricDetailScreen(
-                    metric: pill.metric, accent: pill.fg),
-              ),
-            ),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration:
-                  BoxDecoration(color: pill.bg, borderRadius: BorderRadius.circular(14)),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(pill.label,
-                            style: TextStyle(
-                                color: pill.fg, fontSize: 10, fontWeight: FontWeight.w600)),
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                  text: pill.value,
-                                  style: const TextStyle(
-                                      fontFamily: kArcadeFont,
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800)),
-                              if (pill.unit.isNotEmpty)
-                                TextSpan(
-                                    text: ' ${pill.unit}',
-                                    style: const TextStyle(
-                                        color: Colors.white, fontSize: 9)),
-                            ],
+        SizedBox(
+          height: 176,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: pages.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (context, pageIndex) => Column(
+              children: [
+                for (final pill in pages[pageIndex])
+                  GestureDetector(
+                    onTap: pill.onTap ??
+                        () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => HealthMetricDetailScreen(
+                                    metric: pill.metric, accent: pill.fg),
+                              ),
+                            ),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                          color: pill.bg, borderRadius: BorderRadius.circular(14)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(pill.label,
+                                    style: TextStyle(
+                                        color: pill.fg,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600)),
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(
+                                          text: pill.value,
+                                          style: const TextStyle(
+                                              fontFamily: kArcadeFont,
+                                              color: Colors.white,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800)),
+                                      if (pill.unit.isNotEmpty)
+                                        TextSpan(
+                                            text: ' ${pill.unit}',
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 9)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          Icon(pill.icon, color: pill.fg, size: 18),
+                        ],
+                      ),
                     ),
                   ),
-                  Icon(pill.icon, color: pill.fg, size: 18),
-                ],
-              ),
+              ],
             ),
           ),
-        ],
+        ),
+        const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(pages.length, (i) {
             return GestureDetector(
-              onTap: () => setState(() => _page = i),
+              onTap: () => _goToPage(i),
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 2),
                 width: i == _page ? 14 : 4,
@@ -650,29 +719,109 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
 /// en retrait alors que sommeil/récup vont bien) saute aux yeux d'un coup
 /// d'œil, alors que les 3 anneaux séparés ci-dessous ne le montrent pas aussi
 /// directement.
-class _BalanceRadar extends StatelessWidget {
+enum _BalanceChartType { radar, bar, donut }
+
+/// L'équilibre du jour (Sommeil/Récup/Activité), affichable sous 3 formes au
+/// choix — demandé explicitement plutôt qu'une seule courbe/forme imposée.
+/// Radar : la silhouette du déséquilibre. Barres : comparaison directe des
+/// hauteurs. Circulaire : part relative de chaque score dans le total du
+/// jour (pas une proportion "physique", juste un autre angle visuel).
+class _BalanceRadar extends StatefulWidget {
   final HealthScores scores;
   const _BalanceRadar({required this.scores});
 
   @override
+  State<_BalanceRadar> createState() => _BalanceRadarState();
+}
+
+class _BalanceRadarState extends State<_BalanceRadar> {
+  _BalanceChartType _type = _BalanceChartType.radar;
+
+  @override
   Widget build(BuildContext context) {
-    return Center(
-      child: RadarChart(
-        size: 200,
-        axes: [
-          RadarAxis(
-              label: 'Sommeil',
-              value: scores.sleepScore.toDouble(),
-              color: kNeonViolet),
-          RadarAxis(
-              label: 'Récup',
-              value: scores.recoveryScore.toDouble(),
-              color: kNeonCyan),
-          RadarAxis(
-              label: 'Activité',
-              value: scores.activityScore.toDouble(),
-              color: kNeonGreen),
-        ],
+    final axes = [
+      RadarAxis(
+          label: 'Sommeil',
+          value: widget.scores.sleepScore.toDouble(),
+          color: kNeonViolet),
+      RadarAxis(
+          label: 'Récup',
+          value: widget.scores.recoveryScore.toDouble(),
+          color: kNeonCyan),
+      RadarAxis(
+          label: 'Activité',
+          value: widget.scores.activityScore.toDouble(),
+          color: kNeonGreen),
+    ];
+
+    return Column(
+      children: [
+        Center(child: _buildChart(axes)),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _ChartTypeButton(
+                icon: Icons.radar_rounded,
+                selected: _type == _BalanceChartType.radar,
+                onTap: () => setState(() => _type = _BalanceChartType.radar)),
+            const SizedBox(width: 10),
+            _ChartTypeButton(
+                icon: Icons.bar_chart_rounded,
+                selected: _type == _BalanceChartType.bar,
+                onTap: () => setState(() => _type = _BalanceChartType.bar)),
+            const SizedBox(width: 10),
+            _ChartTypeButton(
+                icon: Icons.donut_large_rounded,
+                selected: _type == _BalanceChartType.donut,
+                onTap: () => setState(() => _type = _BalanceChartType.donut)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChart(List<RadarAxis> axes) {
+    switch (_type) {
+      case _BalanceChartType.radar:
+        return RadarChart(size: 200, axes: axes);
+      case _BalanceChartType.bar:
+        return BarChart(axes: axes, height: 190);
+      case _BalanceChartType.donut:
+        final total = axes.fold<double>(0, (s, a) => s + a.value);
+        return SegmentedRing(
+          size: 180,
+          segments: [
+            for (final a in axes)
+              RingSegmentData(value: a.value, color: a.color, label: a.label),
+          ],
+          centerValue:
+              total > 0 ? (total / axes.length).round().toString() : '--',
+          centerLabel: 'MOY.',
+        );
+    }
+  }
+}
+
+class _ChartTypeButton extends StatelessWidget {
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ChartTypeButton(
+      {required this.icon, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: selected ? kNeonCyan.withOpacity(0.16) : AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? kNeonCyan : AppColors.border),
+        ),
+        child: Icon(icon, size: 16, color: selected ? kNeonCyan : AppColors.textSecondary),
       ),
     );
   }
@@ -949,6 +1098,85 @@ class _SubScoreCard extends StatelessWidget {
   }
 }
 
+// ── Cadran Méditation : minutes du jour vs objectif, historique semaine/mois
+// et série — jusqu'ici la méditation n'était visible que via le chip du Feed
+// et son propre écran (meditation_screen.dart), rien sur le dashboard Santé.
+// Tap → écran complet (chrono, historique détaillé, FC pendant la séance).
+class _MeditationCard extends StatefulWidget {
+  const _MeditationCard();
+
+  @override
+  State<_MeditationCard> createState() => _MeditationCardState();
+}
+
+class _MeditationCardState extends State<_MeditationCard> {
+  static const _dailyGoalMinutes = 10;
+  int _windowDays = 7;
+
+  @override
+  Widget build(BuildContext context) {
+    final todayMinutes =
+        MeditationStore.todayEntries().fold<int>(0, (s, e) => s + e.value.durationSeconds) ~/
+            60;
+    final goalScore = ((todayMinutes / _dailyGoalMinutes) * 100).clamp(0, 100).round();
+    final streak = MeditationStore.streak();
+
+    final cutoff = DateTime.now().subtract(Duration(days: _windowDays));
+    final windowMinutes = MeditationStore.all()
+            .where((e) => e.value.date.isAfter(cutoff))
+            .fold<int>(0, (s, e) => s + e.value.durationSeconds) ~/
+        60;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const MeditationScreen())),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          HealthRing(score: goalScore, color: kNeonCyan, size: 64, centerLabel: 'MÉDIT.'),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('MÉDITATION',
+                        style: TextStyle(
+                            fontFamily: kArcadeFont,
+                            color: kNeonCyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6)),
+                    if (streak > 0) ...[
+                      const SizedBox(width: 8),
+                      Text('$streak j 🔥',
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 11)),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SegmentedTabs<int>(
+                  values: const [7, 30],
+                  selected: _windowDays,
+                  labelOf: (d) => d == 7 ? 'Semaine' : 'Mois',
+                  onChanged: (d) => setState(() => _windowDays = d),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$windowMinutes min · ${_windowDays == 7 ? 'cette semaine' : 'ce mois-ci'}',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Bandeau XP santé (lien vers l'onglet Niveau) ──────────────────────────────
 class _HealthXpBanner extends StatelessWidget {
   final int xpToday;
@@ -1034,13 +1262,13 @@ class _HealthXpBanner extends StatelessWidget {
   }
 }
 
-// ── Grille de métriques avec sparklines + tendances, groupée par thème ────────
-// Trois groupes qui répondent chacun à une question différente (voir
-// _MetricGroupId) plutôt qu'une grille en vrac — et un groupe Corps à part
-// pour le poids/VO2 max, à la cadence plus lente. Le poids n'est plus un
-// _MetricSpec : il a son propre widget avec saisie manuelle (_WeightMetricCard),
-// toujours visible même sans donnée.
-enum _MetricGroupId { activity, vitals, recovery, corps }
+// ── Grille de métriques avec sparklines + tendances ────────────────────────
+// Un seul groupe reste ici (Récupération avancée) : Activité générale,
+// Vitaux & sommeil et Corps ont été retirés — Pas, FC repos, Sommeil, HRV,
+// Cal. actives, Respiration, Distance, Poids et VO2 max vivent tous
+// maintenant dans le carrousel héros (_HeroPillCarousel), qui les couvre
+// déjà en swipant ; les répéter en grand ici ferait doublon.
+enum _MetricGroupId { recovery }
 
 List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
   // hrvZScore / deepSleepRatio / sleepDebtHours ne vivent que sur
@@ -1048,41 +1276,6 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
   // sur HealthSnapshot, qui ne connaît que le jour brut fraîchement lu.
   final today = HealthStore.recordFor(DateTime.now());
   return [
-      // ── Activité générale ────────────────────────────────────────────────
-      // Pas et Cal. actives ne sont plus des cartes ici : leur chiffre du
-      // jour vit dans le carrousel héros (_HeroPillCarousel), même valeur que
-      // dans le Feed — les répéter en grand ici ferait doublon. Cal. actives
-      // en particulier était systématiquement vide sur cet appareil (Fitbit
-      // Charge 6), tout comme SpO2 en son temps.
-      _MetricSpec(
-          'Distance',
-          HealthMetric.distanceKm,
-          snapshot.distanceKm.toStringAsFixed(2),
-          'km',
-          Icons.map_rounded,
-          kNeonGreen,
-          _MetricGroupId.activity),
-      // Pas de carte Étages ici : même symptôme que Cal. actives ci-dessus,
-      // vide en permanence sur cet appareil (Fitbit Charge 6 ne remonte pas
-      // les étages vers Health Connect de façon fiable).
-
-      // ── Vitaux & sommeil ─────────────────────────────────────────────────
-      // FC repos et Sommeil : même raison que Pas/Cal. actives ci-dessus,
-      // déjà dans le carrousel héros.
-      _MetricSpec(
-          'Respiration',
-          HealthMetric.respiratoryRate,
-          snapshot.respiratoryRate > 0
-              ? snapshot.respiratoryRate.toStringAsFixed(1)
-              : '--',
-          'rpm',
-          Icons.air_rounded,
-          kNeonViolet,
-          _MetricGroupId.vitals),
-      // Pas de carte SpO2 ici : la Charge 6 ne remonte jamais de SpO2
-      // exploitable vers Health Connect (voir VO2 max plus bas) — la case
-      // restait en permanence "en attente", sans intérêt à afficher.
-
       // ── Récupération avancée ────────────────────────────────────────────
       // hrvZScore / deepSleepRatio / sleepDebtHours sont calculés à chaque
       // synchro (health_connect_service.dart) mais n'avaient encore aucune
@@ -1117,20 +1310,6 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
           Icons.hourglass_bottom_rounded,
           kNeonAmber,
           _MetricGroupId.recovery),
-
-      // ── Corps (cadence lente) ───────────────────────────────────────────
-      // VO2 max : estimation locale (régression FC↔allure, Vo2EstimatorService)
-      // à la place de SpO2 — la Charge 6 ne remonte pas de SpO2 exploitable
-      // vers Health Connect, cette case restait toujours "en attente".
-      if (Vo2EstimateStore.all().isNotEmpty)
-        _MetricSpec(
-            'VO2 max',
-            HealthMetric.vo2Max,
-            Vo2EstimateStore.all().last.value.toStringAsFixed(1),
-            'ml/kg/min',
-            Icons.speed_rounded,
-            kNeonGreen,
-            _MetricGroupId.corps),
     ];
 }
 
@@ -1155,27 +1334,16 @@ class _GroupMeta {
 }
 
 const _groupDefs = [
-  _GroupMeta(_MetricGroupId.activity, 'Activité générale',
-      'Ce que le corps a produit comme mouvement aujourd\'hui.', kNeonGreen,
-      HealthMetric.activityScore),
-  _GroupMeta(_MetricGroupId.vitals, 'Vitaux & sommeil',
-      'Signes vitaux diurnes et nocturnes — repérer une dérive avant '
-      'qu\'elle devienne un symptôme.',
-      kNeonPink, HealthMetric.sleepScore),
   _GroupMeta(_MetricGroupId.recovery, 'Récupération avancée',
       'Capacité à encaisser l\'effort — se lit sur plusieurs jours, pas au '
       'jour le jour.',
       kNeonViolet, HealthMetric.recoveryScore),
-  _GroupMeta(_MetricGroupId.corps, 'Corps', 'Poids et VO2 max : des '
-      'métriques lentes, à lire sur des semaines.', kNeonAmber, null),
 ];
 
 class _MetricsGridState extends State<_MetricsGrid> {
   @override
   Widget build(BuildContext context) {
     final all = _allMetricSpecs(widget.snapshot);
-    final visible =
-        all.where((m) => !MetricsPreferenceStore.isHidden(m.metric)).toList();
 
     // Priorise le groupe dont le sous-score dévie le plus défavorablement de
     // sa baseline 7j — même mécanique que HealthScoreService.trend(), pas un
@@ -1222,34 +1390,10 @@ class _MetricsGridState extends State<_MetricsGrid> {
           _ObservationCard(group: ordered.first, trend: topTrend!),
           const SizedBox(height: 18),
         ],
-        _HPanelTitle(
-          '7 JOURS',
-          color: kNeonCyan,
-          trailing: GestureDetector(
-            onTap: () => _openCustomize(context, all),
-            behavior: HitTestBehavior.opaque,
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.tune_rounded, size: 14, color: AppColors.textSecondary),
-                SizedBox(width: 4),
-                Text('Personnaliser',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Comment chaque indicateur évolue jour après jour — le chiffre du '
-          'jour seul vit déjà dans le Feed.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
-        ),
-        const SizedBox(height: 16),
         for (final g in ordered) ...[
           _MetricGroupSection(
             meta: g,
-            specs: visible.where((m) => m.group == g.id).toList(),
+            specs: all.where((m) => m.group == g.id).toList(),
             flagged: g.id == flaggedId,
           ),
           const SizedBox(height: 18),
@@ -1258,10 +1402,6 @@ class _MetricsGridState extends State<_MetricsGrid> {
     );
   }
 
-  Future<void> _openCustomize(BuildContext context, List<_MetricSpec> all) async {
-    await showAppSheet(context: context, child: _MetricsCustomizeSheet(specs: all));
-    if (mounted) setState(() {});
-  }
 }
 
 /// Une section groupée (titre, sous-titre, grille de cartes) — le groupe
@@ -1276,7 +1416,7 @@ class _MetricGroupSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (specs.isEmpty && meta.id != _MetricGroupId.corps) {
+    if (specs.isEmpty) {
       return const SizedBox.shrink();
     }
     return Container(
@@ -1340,8 +1480,6 @@ class _MetricGroupSection extends StatelessWidget {
                         width: cardW,
                         child: _MetricCard(spec: m),
                       )),
-                  if (meta.id == _MetricGroupId.corps)
-                    SizedBox(width: cardW, child: const _WeightMetricCard()),
                 ],
               );
             },
@@ -1423,52 +1561,6 @@ class _ObservationCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ── Feuille "Personnaliser" : masque/affiche des cartes de la grille ─────────
-class _MetricsCustomizeSheet extends StatefulWidget {
-  final List<_MetricSpec> specs;
-  const _MetricsCustomizeSheet({required this.specs});
-
-  @override
-  State<_MetricsCustomizeSheet> createState() => _MetricsCustomizeSheetState();
-}
-
-class _MetricsCustomizeSheetState extends State<_MetricsCustomizeSheet> {
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'PERSONNALISER',
-          style: TextStyle(
-              fontFamily: kArcadeFont,
-              color: kNeonCyan,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1),
-        ),
-        const SizedBox(height: 4),
-        const Text('Choisis les cartes affichées dans le dashboard.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-        const SizedBox(height: 10),
-        for (final spec in widget.specs)
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(spec.title,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-            activeThumbColor: spec.color,
-            value: !MetricsPreferenceStore.isHidden(spec.metric),
-            onChanged: (v) {
-              MetricsPreferenceStore.setHidden(spec.metric, !v);
-              setState(() {});
-            },
-          ),
-      ],
     );
   }
 }
@@ -1623,147 +1715,6 @@ class _MetricCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-// ── Tuile Poids — toujours visible dans le groupe Corps, contrairement aux
-// autres métriques : c'est la seule à n'avoir jamais eu de point de saisie
-// manuelle. Vide → tap ouvre une feuille de saisie rapide écrivant via
-// HealthStore.setManualWeightToday (même fonction que Profil, une seule
-// source de vérité). ──────────────────────────────────────────────────────
-class _WeightMetricCard extends StatefulWidget {
-  const _WeightMetricCard();
-
-  @override
-  State<_WeightMetricCard> createState() => _WeightMetricCardState();
-}
-
-class _WeightMetricCardState extends State<_WeightMetricCard> {
-  @override
-  Widget build(BuildContext context) {
-    final today = HealthStore.recordFor(DateTime.now());
-    final weightKg = today?.weightKg ?? 0;
-    final series = HealthStore.series(HealthMetric.weightKg, 7)
-        .map((e) => e.value)
-        .where((v) => v > 0)
-        .toList();
-
-    if (weightKg <= 0) {
-      return GestureDetector(
-        onTap: _openSheet,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: kNeonAmber.withOpacity(0.4),
-                style: BorderStyle.solid),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.monitor_weight_rounded,
-                      color: kNeonAmber, size: 14),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text('POIDS',
-                        style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6)),
-                  ),
-                  const Icon(Icons.add_circle_rounded,
-                      color: kNeonAmber, size: 18),
-                ],
-              ),
-              const SizedBox(height: 8),
-              const Text('Appuie pour ajouter',
-                  style: TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 11.5,
-                      fontStyle: FontStyle.italic)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final baseline = HealthStore.baseline(HealthMetric.weightKg);
-    final trend = HealthScoreService.trend(HealthMetric.weightKg, weightKg,
-        baseline, unit: ' kg', fractionDigits: 1);
-
-    return GestureDetector(
-      onTap: _openSheet,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kNeonAmber.withOpacity(0.25)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.monitor_weight_rounded,
-                    color: kNeonAmber, size: 14),
-                const SizedBox(width: 6),
-                const Expanded(
-                  child: Text('POIDS',
-                      style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6)),
-                ),
-                const Icon(Icons.edit_rounded,
-                    color: AppColors.textSecondary, size: 13),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(weightKg.toStringAsFixed(1),
-                    style: const TextStyle(
-                        fontFamily: kArcadeFont,
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(width: 4),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 2),
-                  child: Text('kg',
-                      style: TextStyle(
-                          color: kNeonAmber,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-            if (series.length >= 2) ...[
-              const SizedBox(height: 6),
-              Sparkline(values: series, color: kNeonAmber, height: 28),
-            ] else if (trend.dir != TrendDir.flat) ...[
-              const SizedBox(height: 4),
-              Text('${trend.label} vs 7j',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 9.5)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openSheet() async {
-    await showAppSheet(context: context, child: const _WeighInSheet());
-    if (mounted) setState(() {});
   }
 }
 

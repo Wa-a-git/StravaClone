@@ -121,6 +121,8 @@ class ExportService {
           'elevation_gain_m': activity.elevationGainValue.round(),
         if (activity.hasElevation)
           'elevation_loss_m': activity.elevationLossValue.round(),
+        if (activity.inclinePercent != null)
+          'incline_pct': activity.inclinePercent!.toStringAsFixed(1),
         if (activity.name?.isNotEmpty == true) 'name': activity.name,
         // "route" : version échantillonnée (~80 pts) pour l'aperçu carte
         // Marble/Overview. "route_full_json" : trace complète, pour que la
@@ -723,6 +725,10 @@ marker: default, $endPt
     if (activity.hasElevation) {
       buffer.writeln(
           '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">⛰️</span><br/><strong style="color: #39FF14; font-size: 18px;">${activity.elevationGainValue.round()} m</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Dénivelé +</span></div>');
+    }
+    if (activity.inclinePercent != null) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">📐</span><br/><strong style="color: #FFD23F; font-size: 18px;">${activity.inclinePercent!.toStringAsFixed(1)}%</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Inclinaison</span></div>');
     }
     buffer.writeln('</div>');
     buffer.writeln();

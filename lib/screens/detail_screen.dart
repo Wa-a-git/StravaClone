@@ -388,6 +388,22 @@ class _DetailScreenState extends State<DetailScreen> {
             ],
           ),
         ],
+        if (_activity.inclinePercent != null) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailStatCard(
+                  label: 'Inclinaison',
+                  value: _activity.inclinePercent!.toStringAsFixed(1),
+                  unit: '%',
+                  iconColor: kNeonAmber,
+                  icon: Icons.stairs_rounded,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

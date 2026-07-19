@@ -8,7 +8,6 @@
 // de polling en direct, une seule lecture Health Connect sur toute la
 // fenêtre à la fin).
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +22,9 @@ import '../services/health_connect_service.dart';
 import '../services/musculation_session_store.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
+import '../widgets/musculation_set_fields.dart';
 import '../widgets/ui_kit.dart';
+import 'edit_musculation_set_sheet.dart';
 
 enum _Phase { working, resting }
 
@@ -97,8 +98,19 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
     });
   }
 
+  List<MapEntry<String, MusculationLogEntry>> get _sessionSetEntries =>
+      MusculationStore.entriesForSession(_sessionId);
+
   List<MusculationLogEntry> get _sessionSets =>
-      MusculationStore.entriesForSession(_sessionId).map((e) => e.value).toList();
+      _sessionSetEntries.map((e) => e.value).toList();
+
+  Future<void> _editSet(String key, MusculationLogEntry entry) async {
+    final updated = await showEditMusculationSetSheet(context, entry);
+    if (updated == null) return;
+    await MusculationStore.updateEntry(key, updated);
+    ref.read(musculationRevisionProvider.notifier).state++;
+    if (mounted) setState(() {});
+  }
 
   void _applyPrefill(Exercise ex) {
     final ownSets = _sessionSets.where((s) => s.exerciseId == ex.id).toList();
@@ -265,7 +277,7 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
           onPressed: _confirmClose,
         ),
         title: Text(
-          'SÉANCE · ${_fmtClock(_sessionElapsed)}',
+          'SÉANCE · ${fmtClock(_sessionElapsed)}',
           style: const TextStyle(
             fontFamily: kArcadeFont,
             color: kNeonPink,
@@ -367,7 +379,11 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
                   style: AppText.caption),
             )
           else
-            for (final s in _sessionSets.reversed) _SessionSetTile(entry: s),
+            for (final e in _sessionSetEntries.reversed)
+              _SessionSetTile(
+                entry: e.value,
+                onTap: () => _editSet(e.key, e.value),
+              ),
         ],
       ),
     );
@@ -402,12 +418,12 @@ class _WorkingPanel extends StatelessWidget {
                 letterSpacing: 1)),
         if (side != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          _SideToggle(side: side, onChanged: onSideChanged),
+          SideToggle(side: side, onChanged: onSideChanged),
         ],
         const SizedBox(height: AppSpacing.md),
         if (isCardio) ...[
           Text(
-            _fmtClock(workElapsed),
+            fmtClock(workElapsed),
             style: TextStyle(
                 fontFamily: kArcadeFont,
                 color: Colors.white.withOpacity(active ? 1 : 0.3),
@@ -418,7 +434,7 @@ class _WorkingPanel extends StatelessWidget {
           Icon(Icons.fitness_center_rounded,
               color: kNeonGreen.withOpacity(active ? 1 : 0.3), size: 40),
           const SizedBox(height: 4),
-          Text(_fmtClock(workElapsed),
+          Text(fmtClock(workElapsed),
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
         ],
         const SizedBox(height: AppSpacing.lg),
@@ -494,7 +510,7 @@ class _RestingPanel extends StatelessWidget {
                 letterSpacing: 1)),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          _fmtClock(restElapsed),
+          fmtClock(restElapsed),
           style: TextStyle(
             fontFamily: kArcadeFont,
             color: reached ? kNeonGreen : Colors.white,
@@ -507,10 +523,10 @@ class _RestingPanel extends StatelessWidget {
           alignment: WrapAlignment.center,
           spacing: 8,
           children: [
-            _TargetChip(
+            SelectableChip(
                 label: 'Libre', selected: restTarget == null, onTap: () => onTargetChanged(null)),
             for (final t in [60, 90, 120])
-              _TargetChip(
+              SelectableChip(
                   label: '${t}s',
                   selected: restTarget == t,
                   onTap: () => onTargetChanged(restTarget == t ? null : t)),
@@ -529,13 +545,13 @@ class _RestingPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         if (isCardio) ...[
-          _DurationStepperRow(value: duration, onChanged: onDurationChanged),
+          DurationStepperRow(value: duration, onChanged: onDurationChanged),
           const SizedBox(height: 10),
-          _DistanceStepperRow(value: distance, onChanged: onDistanceChanged),
+          DistanceStepperRow(value: distance, onChanged: onDistanceChanged),
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
-            child: _TargetChip(
+            child: SelectableChip(
                 label: 'Fractionné',
                 selected: isInterval,
                 onTap: () => onIntervalChanged(!isInterval)),
@@ -544,13 +560,13 @@ class _RestingPanel extends StatelessWidget {
           if (side != null) ...[
             Align(
               alignment: Alignment.centerLeft,
-              child: _SideToggle(side: side, onChanged: onSideChanged),
+              child: SideToggle(side: side, onChanged: onSideChanged),
             ),
             const SizedBox(height: 10),
           ],
-          _StepperRow(label: 'Répétitions', value: reps, onChanged: onRepsChanged),
+          StepperRow(label: 'Répétitions', value: reps, onChanged: onRepsChanged),
           const SizedBox(height: 10),
-          _ChargeStepperRow(value: charge, onChanged: onChargeChanged),
+          ChargeStepperRow(value: charge, onChanged: onChargeChanged),
         ],
         const SizedBox(height: AppSpacing.lg),
         GlowButton(
@@ -571,95 +587,52 @@ class _RestingPanel extends StatelessWidget {
   }
 }
 
-class _TargetChip extends StatelessWidget {
-  final String label;
-  final bool selected;
+class _SessionSetTile extends StatelessWidget {
+  final MusculationLogEntry entry;
   final VoidCallback onTap;
-  const _TargetChip({required this.label, required this.selected, required this.onTap});
+  const _SessionSetTile({required this.entry, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? kNeonAmber.withOpacity(0.18) : AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? kNeonAmber : AppColors.border),
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: entry.category.color.withOpacity(0.35)),
         ),
-        child: Text(label,
-            style: TextStyle(
-                color: selected ? kNeonAmber : AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w500)),
-      ),
-    );
-  }
-}
-
-/// Sélecteur Gauche/Droite pour un exercice unilatéral — alterné
-/// automatiquement (voir _applyPrefill/_confirmSetAndRest) mais ajustable au
-/// cas où l'alternance devine mal (ex. série ratée refaite du même côté).
-class _SideToggle extends StatelessWidget {
-  final String? side;
-  final ValueChanged<String?> onChanged;
-  const _SideToggle({required this.side, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _TargetChip(
-            label: 'Gauche', selected: side == 'L', onTap: () => onChanged('L')),
-        const SizedBox(width: 8),
-        _TargetChip(
-            label: 'Droite', selected: side == 'R', onTap: () => onChanged('R')),
-      ],
-    );
-  }
-}
-
-class _SessionSetTile extends StatelessWidget {
-  final MusculationLogEntry entry;
-  const _SessionSetTile({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: entry.category.color.withOpacity(0.35)),
-      ),
-      child: Row(
-        children: [
-          Icon(entry.category.icon, color: entry.category.color, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(entry.exerciseName, style: AppText.body),
-          ),
-          Text(_setSummary(entry),
-              style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: entry.category.color,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800)),
-          if (entry.isInterval) ...[
-            const SizedBox(width: 6),
-            const Icon(Icons.bolt_rounded, color: kNeonAmber, size: 14),
+        child: Row(
+          children: [
+            Icon(entry.category.icon, color: entry.category.color, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(entry.exerciseName, style: AppText.body),
+            ),
+            Text(_setSummary(entry),
+                style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: entry.category.color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800)),
+            if (entry.isInterval) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.bolt_rounded, color: kNeonAmber, size: 14),
+            ],
+            if (entry.restSeconds > 0) ...[
+              const SizedBox(width: 10),
+              Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 13),
+              const SizedBox(width: 3),
+              Text(fmtClock(entry.restSeconds),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            ],
+            const SizedBox(width: 8),
+            const Icon(Icons.edit_rounded, color: AppColors.textSecondary, size: 14),
           ],
-          if (entry.restSeconds > 0) ...[
-            const SizedBox(width: 10),
-            Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 13),
-            const SizedBox(width: 3),
-            Text(_fmtClock(entry.restSeconds),
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -695,14 +668,14 @@ class _SessionRecapDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _RecapRow('Durée', _fmtClock(durationSeconds)),
+          _RecapRow('Durée', fmtClock(durationSeconds)),
           _RecapRow('Blocs', '${sets.length}'),
           if (strengthSets.isNotEmpty)
             _RecapRow('Volume total', '${totalVolume.toStringAsFixed(0)} kg'),
           if (cardioSets.isNotEmpty)
             _RecapRow('Cardio',
-                '${_fmtClock(totalCardioDuration)}${totalCardioDistance > 0 ? ' · ${totalCardioDistance.toStringAsFixed(1)} km' : ''}'),
-          if (avgRest > 0) _RecapRow('Repos moyen', _fmtClock(avgRest)),
+                '${fmtClock(totalCardioDuration)}${totalCardioDistance > 0 ? ' · ${totalCardioDistance.toStringAsFixed(1)} km' : ''}'),
+          if (avgRest > 0) _RecapRow('Repos moyen', fmtClock(avgRest)),
           if (vitals.hasHr)
             _RecapRow('FC moy. (min-max)',
                 '${vitals.avgHr.round()} (${vitals.minHr.round()}-${vitals.maxHr.round()}) bpm'),
@@ -928,172 +901,6 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _StepperRow extends StatelessWidget {
-  final String label;
-  final int value;
-  final ValueChanged<int> onChanged;
-  const _StepperRow({required this.label, required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: value > 1 ? () => onChanged(value - 1) : null,
-            ),
-            SizedBox(
-              width: 34,
-              child: Text('$value',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 1),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _DurationStepperRow extends StatelessWidget {
-  final int value;
-  final ValueChanged<int> onChanged;
-  const _DurationStepperRow({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text('Durée', style: TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: value > 0 ? () => onChanged(max(0, value - 15)) : null,
-            ),
-            SizedBox(
-              width: 56,
-              child: Text(_fmtClock(value),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 15),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _DistanceStepperRow extends StatelessWidget {
-  final double value;
-  final ValueChanged<double> onChanged;
-  const _DistanceStepperRow({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text('Distance (km, optionnel)',
-            style: TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: value > 0 ? () => onChanged(max(0, value - 0.1)) : null,
-            ),
-            SizedBox(
-              width: 48,
-              child: Text(
-                value > 0 ? value.toStringAsFixed(1) : '--',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 0.1),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _ChargeStepperRow extends StatelessWidget {
-  final double value;
-  final ValueChanged<double> onChanged;
-  const _ChargeStepperRow({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text('Charge (kg)', style: TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: value > 0 ? () => onChanged(max(0, value - 2.5)) : null,
-            ),
-            SizedBox(
-              width: 48,
-              child: Text(
-                value > 0 ? _formatCharge(value) : '--',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 2.5),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 extension _LastWhereOrNull<T> on List<T> {
   T? lastWhereOrNull(bool Function(T) test) {
     for (var i = length - 1; i >= 0; i--) {
@@ -1103,26 +910,17 @@ extension _LastWhereOrNull<T> on List<T> {
   }
 }
 
-String _formatCharge(double kg) =>
-    kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
-
 /// Résumé compact d'un bloc loggé — durée/distance pour le cardio,
 /// reps × charge sinon.
 String _setSummary(MusculationLogEntry e) {
   if (e.category.isCardio) {
-    final parts = <String>[_fmtClock(e.durationSeconds)];
+    final parts = <String>[fmtClock(e.durationSeconds)];
     if (e.distanceKm > 0) parts.add('${e.distanceKm.toStringAsFixed(1)} km');
     return parts.join(' · ');
   }
   final sideSuffix = e.side == 'L' ? ' (G)' : (e.side == 'R' ? ' (D)' : '');
   return (e.chargeKg > 0
-          ? '${e.reps} × ${_formatCharge(e.chargeKg)} kg'
+          ? '${e.reps} × ${formatCharge(e.chargeKg)} kg'
           : '${e.reps} reps') +
       sideSuffix;
-}
-
-String _fmtClock(int totalSeconds) {
-  final m = totalSeconds ~/ 60;
-  final s = totalSeconds % 60;
-  return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
 }

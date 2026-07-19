@@ -212,6 +212,17 @@ class ChartZone {
       {required this.min, required this.max, required this.color, required this.label});
 }
 
+/// Repère vertical sur l'axe temporel d'un [TrendChart] (ex. un changement
+/// d'exercice pendant une séance) — nécessite que [TrendChart.dates] soit
+/// fourni, sa position est interpolée entre les deux échantillons encadrant
+/// [time].
+class ChartMarker {
+  final DateTime time;
+  final String label;
+  final Color? color;
+  const ChartMarker({required this.time, required this.label, this.color});
+}
+
 /// Courbe complète avec axes légers, ligne de baseline et étiquettes min/max.
 /// Utilisée dans l'écran de détail.
 class TrendChart extends StatelessWidget {
@@ -226,6 +237,9 @@ class TrendChart extends StatelessWidget {
   /// Formateur de l'axe X (dates de début/fin) — par défaut "jj/mm", mais une
   /// période intra-journée (ex. le déroulé d'une course) veut plutôt "hh:mm".
   final String Function(DateTime)? xLabelFormatter;
+  /// Repères verticaux (ex. changements d'exercice pendant une séance muscu)
+  /// — ignorés si [dates] est absent, puisque leur position dépend du temps.
+  final List<ChartMarker>? markers;
   const TrendChart({
     super.key,
     required this.values,
@@ -237,6 +251,7 @@ class TrendChart extends StatelessWidget {
     this.fractionDigits = 0,
     this.zone,
     this.xLabelFormatter,
+    this.markers,
   });
 
   @override
@@ -268,6 +283,7 @@ class TrendChart extends StatelessWidget {
             fractionDigits: fractionDigits,
             zone: zone,
             xLabelFormatter: xLabelFormatter,
+            markers: markers,
           ),
         ),
       ),
@@ -285,6 +301,7 @@ class _TrendPainter extends CustomPainter {
   final int fractionDigits;
   final ChartZone? zone;
   final String Function(DateTime)? xLabelFormatter;
+  final List<ChartMarker>? markers;
   _TrendPainter({
     required this.values,
     required this.color,
@@ -295,6 +312,7 @@ class _TrendPainter extends CustomPainter {
     this.fractionDigits = 0,
     this.zone,
     this.xLabelFormatter,
+    this.markers,
   });
 
   static String _shortDate(DateTime d) =>
@@ -446,6 +464,26 @@ class _TrendPainter extends CustomPainter {
       }
     }
 
+    // Repères verticaux (ex. changements d'exercice) — position interpolée
+    // entre les deux échantillons de `dates` encadrant l'heure du repère,
+    // sur la même échelle (par index) que la courbe elle-même.
+    final mk = markers;
+    if (mk != null && mk.isNotEmpty && ds != null && ds.length >= 2) {
+      for (final marker in mk) {
+        final frac = _fractionalIndexFor(marker.time, ds);
+        if (frac == null) continue;
+        final mx = xForFrac(frac, chartW, leftPad);
+        final markerColor = marker.color ?? AppColors.textSecondary;
+        final dashPaint = Paint()
+          ..color = markerColor.withOpacity(0.55)
+          ..strokeWidth = 1;
+        const dashH = 5.0;
+        for (double y = topPad; y < topPad + chartH; y += dashH * 2) {
+          canvas.drawLine(Offset(mx, y), Offset(mx, y + dashH), dashPaint);
+        }
+      }
+    }
+
     // Courbe (animée : on ne trace que jusqu'à progress)
     final count = values.length;
     final drawnCount = (count * progress).clamp(2, count).toInt();
@@ -490,14 +528,63 @@ class _TrendPainter extends CustomPainter {
       canvas.drawCircle(last, 5, Paint()..color = color.withOpacity(0.25));
       canvas.drawCircle(last, 3, Paint()..color = color);
     }
+
+    // Étiquettes des repères — texte pivoté (lu de bas en haut) pour rester
+    // compact même quand plusieurs exercices se suivent de près dans le
+    // temps, dessinées en dernier pour ne jamais être recouvertes par la
+    // courbe/son dégradé.
+    if (mk != null && mk.isNotEmpty && ds != null && ds.length >= 2) {
+      for (final marker in mk) {
+        final frac = _fractionalIndexFor(marker.time, ds);
+        if (frac == null) continue;
+        final mx = xForFrac(frac, chartW, leftPad);
+        final markerColor = marker.color ?? AppColors.textSecondary;
+        final painter = TextPainter(
+          text: TextSpan(
+            text: marker.label,
+            style: TextStyle(
+                color: markerColor, fontSize: 9.5, fontWeight: FontWeight.w700),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        canvas.save();
+        canvas.translate(mx + 4, topPad + chartH);
+        canvas.rotate(-math.pi / 2);
+        painter.paint(canvas, Offset.zero);
+        canvas.restore();
+      }
+    }
   }
+
+  /// Position fractionnelle (en index d'échantillon, comme `xFor`) de [t] sur
+  /// l'axe temporel décrit par [ds] — interpolée linéairement entre les deux
+  /// échantillons qui l'encadrent. Null si hors-plage (ne devrait pas arriver
+  /// pour un repère issu de la même séance que les échantillons FC).
+  double? _fractionalIndexFor(DateTime t, List<DateTime> ds) {
+    if (!t.isAfter(ds.first)) return 0;
+    if (!t.isBefore(ds.last)) return (ds.length - 1).toDouble();
+    for (int i = 0; i < ds.length - 1; i++) {
+      final a = ds[i], b = ds[i + 1];
+      if (!t.isBefore(a) && !t.isAfter(b)) {
+        final spanMs = b.difference(a).inMilliseconds;
+        if (spanMs <= 0) return i.toDouble();
+        final fracInSpan = t.difference(a).inMilliseconds / spanMs;
+        return i + fracInSpan;
+      }
+    }
+    return null;
+  }
+
+  double xForFrac(double i, double chartW, double leftPad) =>
+      leftPad + chartW * (i / (values.length - 1));
 
   @override
   bool shouldRepaint(covariant _TrendPainter old) =>
       old.progress != progress ||
       old.values != values ||
       old.baseline != baseline ||
-      old.color != color;
+      old.color != color ||
+      old.markers != markers;
 }
 
 /// Superpose deux séries sur le même axe temporel, chacune normalisée
@@ -953,6 +1040,79 @@ class RadarAxis {
   final Color color;
   const RadarAxis(
       {required this.label, required this.value, required this.color});
+}
+
+/// Diagramme en barres verticales — une barre par axe, même modèle
+/// [RadarAxis] que RadarChart (valeur 0-100) pour représenter les mêmes
+/// données sous une forme différente (comparaison directe des hauteurs
+/// plutôt que la silhouette d'un polygone).
+class BarChart extends StatelessWidget {
+  final List<RadarAxis> axes;
+  final double height;
+  const BarChart({super.key, required this.axes, this.height = 160});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (final axis in axes)
+              _BarColumn(axis: axis, progress: t, maxHeight: height - 46),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BarColumn extends StatelessWidget {
+  final RadarAxis axis;
+  final double progress;
+  final double maxHeight;
+  const _BarColumn(
+      {required this.axis, required this.progress, required this.maxHeight});
+
+  @override
+  Widget build(BuildContext context) {
+    final barHeight = (axis.value.clamp(0, 100) / 100) * maxHeight * progress;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Text(axis.value.round().toString(),
+            style: TextStyle(
+                fontFamily: kArcadeFont,
+                color: axis.color,
+                fontSize: 13,
+                fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        Container(
+          width: 34,
+          height: barHeight,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [axis.color, axis.color.withOpacity(0.4)],
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(axis.label,
+            style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
 }
 
 /// Diagramme radar (toile d'araignée) : place chaque axe autour d'un cercle,

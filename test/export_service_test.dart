@@ -100,6 +100,32 @@ void main() {
     expect(content, contains('[0,30,60]'));
   });
 
+  test('inclut l\'inclinaison du tapis dans le frontmatter quand renseignée',
+      () async {
+    final treadmill = Activity(
+      date: DateTime(2026, 6, 13, 7, 25),
+      distance: 5000,
+      duration: 1800,
+      route: const [],
+      name: 'tapis',
+      workoutType: 'treadmill',
+      inclinePercent: 1.5,
+    );
+    final path = await ExportService.saveActivityAsMarkdown(treadmill);
+    final content = File(path!).readAsStringSync();
+
+    expect(content, contains('sport: Tapis'));
+    expect(content, contains('incline_pct: 1.5'));
+    expect(content, contains('Inclinaison'));
+  });
+
+  test('pas de champ inclinaison quand non renseignée (course libre)',
+      () async {
+    final path = await ExportService.saveActivityAsMarkdown(sampleRun());
+    final content = File(path!).readAsStringSync();
+    expect(content, isNot(contains('incline_pct')));
+  });
+
   test('injecte un résumé dans la note du jour de la course', () async {
     await ExportService.saveActivityAsMarkdown(sampleRun());
 

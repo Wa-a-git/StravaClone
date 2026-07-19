@@ -4,6 +4,7 @@ import '../models/daily_health_record.dart';
 import 'health_insights_service.dart';
 import 'health_score_service.dart';
 import 'health_store.dart';
+import 'musculation_session_store.dart';
 
 /// Un relevé de FC horodaté — sert à tracer le graphe FC/temps d'une course,
 /// avec de vraies heures sur l'axe X plutôt qu'un simple index de point.
@@ -370,7 +371,14 @@ class HealthConnectService {
   /// Construit et persiste l'enregistrement santé d'un jour donné.
   Future<DailyHealthRecord> syncDay(DateTime day) async {
     final snapshot = await getSnapshotForDay(day);
-    final scores = HealthScoreService.computeAll(snapshot);
+    // Durée totale des séances muscu/cardio de ce jour — voir le commentaire
+    // sur HealthScoreService.activityScore pour pourquoi ça compte dans le
+    // score d'activité, pas seulement les données montre.
+    final musculationMinutes = MusculationSessionStore.forDay(day)
+            .fold<int>(0, (s, session) => s + session.durationSeconds) /
+        60;
+    final scores = HealthScoreService.computeAll(snapshot,
+        musculationMinutes: musculationMinutes);
     var record = DailyHealthRecord.fromSnapshot(
       day,
       snapshot,

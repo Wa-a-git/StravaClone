@@ -121,6 +121,30 @@ void main() {
     expect(HiveService.getAllActivities().first.workoutType, 'interval');
   });
 
+  test('reconstitue l\'inclinaison du tapis (round-trip)', () async {
+    final treadmill = Activity(
+      date: DateTime(2026, 7, 10, 18, 0),
+      distance: 5000,
+      duration: 1800,
+      route: const [],
+      name: 'tapis',
+      workoutType: 'treadmill',
+      inclinePercent: 1.5,
+    );
+    await ExportService.saveActivityAsMarkdown(treadmill);
+
+    final result = await VaultImportService.importActivities();
+    expect(result.imported, 1);
+    expect(HiveService.getAllActivities().first.inclinePercent, 1.5);
+  });
+
+  test('course sans inclinaison -> champ absent après import, pas d\'erreur',
+      () async {
+    await ExportService.saveActivityAsMarkdown(sampleRun());
+    await VaultImportService.importActivities();
+    expect(HiveService.getAllActivities().first.inclinePercent, isNull);
+  });
+
   test('idempotent : ne réimporte pas une activité déjà présente', () async {
     await ExportService.saveActivityAsMarkdown(sampleRun());
     await VaultImportService.importActivities();

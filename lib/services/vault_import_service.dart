@@ -130,6 +130,7 @@ class VaultImportService {
         lapCount: laps?.length ?? 0,
         elevations: _parseDoubleListJson(data['elevations_json'] as String?),
         pointSeconds: _parseIntListJson(data['point_seconds_json'] as String?),
+        inclinePercent: _asDouble(data['incline_pct']),
       );
     }
 

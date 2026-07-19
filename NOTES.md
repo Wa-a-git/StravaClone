@@ -170,3 +170,162 @@ la branche `claude/vo2-max-data-display-43e3ee`.
 - Le package `mycelium` (export vault) reste une dépendance locale
   (`../../mycelium`) absente de ce repo — `flutter pub get` échouerait ici,
   jamais testable dans cet environnement.
+
+## Session du 19/07 — édition/suppression muscu, inclinaison tapis, indicateurs
+
+**Contexte d'environnement, important pour la suite** : contrairement à ce que
+disent les sections ci-dessus, cette session dispose d'un vrai toolchain
+Flutter (`flutter analyze`, `dart run build_runner build`, `flutter test`
+tournent tous) **et** le package `mycelium` est bien présent sur le disque
+(`D:\mycelium`, en dehors de ce repo). Tout ce qui suit a été vérifié par
+`flutter analyze` (aucune erreur/warning nouveau) et `flutter test` (tous
+les tests passent, y compris 6 nouveaux — seul `test/widget_test.dart`
+échoue, boilerplate `flutter create` jamais adapté à cette app, déjà cassé
+avant cette session, hors périmètre).
+
+- **Édition d'une série/bloc déjà enregistré** — jusqu'ici seule la
+  suppression existait (`musculation_session_detail_screen.dart`). Nouveau
+  `lib/screens/edit_musculation_set_sheet.dart`
+  (`showEditMusculationSetSheet`) : feuille modale avec les mêmes contrôles
+  que la saisie en direct (reps/charge/côté, ou durée/distance/fractionné
+  pour le cardio, + repos), renvoie l'entrée corrigée via
+  `MusculationLogEntry.copyWith` (nouveau, gère le côté L/R nullable avec
+  une sentinelle pour distinguer "non passé" de "explicitement effacé").
+  Persistée via `MusculationStore.updateEntry` (nouveau, écrase la même clé
+  Hive contrairement à `addEntry`). Branchée à deux endroits : le détail
+  d'une séance passée (tap sur une ligne, la croix reste pour supprimer) et
+  la séance en direct (tap sur un bloc déjà loggé dans "BLOCS DE CETTE
+  SÉANCE") — mêmes contrôles réutilisés aux deux endroits.
+  - Extraction : les widgets de saisie (steppers reps/charge/durée/distance,
+    chip sélectionnable, toggle gauche/droite) vivaient en privé dans
+    `live_musculation_screen.dart` ; déplacés tels quels (juste rendus
+    publics) dans `lib/widgets/musculation_set_fields.dart` pour être
+    partagés avec la feuille d'édition, sans dupliquer ~180 lignes.
+- **Suppression d'une séance entière depuis son écran détail** — existait
+  déjà depuis la liste Historique (`musculation_history_screen.dart`,
+  `_confirmDelete`) mais pas depuis `musculation_session_detail_screen.dart`
+  lui-même. Icône corbeille ajoutée dans l'AppBar (même feuille de
+  confirmation que l'historique, dupliquée à l'identique plutôt que
+  factorisée — deux call sites, pas de troisième prévu), `Navigator.pop`
+  après suppression puisque la séance affichée n'existe plus.
+- **Inclinaison du tapis** — nouveau champ `Activity.inclinePercent`
+  (`double?`, `HiveField(11)`, adaptateur régénéré via build_runner plutôt
+  qu'à la main). Saisie dans `manual_cardio_entry_screen.dart` (panneau
+  "INCLINAISON (OPTIONNELLE)", visible seulement pour le type Tapis —
+  n'a pas de sens pour Course/Autre). Affichée dans `detail_screen.dart`
+  (carte stat, si renseignée). Aller-retour export/import vault complet
+  (`incline_pct` en frontmatter + carte dans le corps de la fiche côté
+  `export_service.dart`, parsing côté `vault_import_service.dart`) — testé
+  dans `test/export_service_test.dart` et `test/vault_import_service_test.dart`.
+- **Indicateurs Musculation** — l'onglet menait direct à la bibliothèque
+  d'exercices, aucun chiffre. Nouvelle carte `_IndicatorsCard` dans
+  `musculation_screen.dart`, juste sous "DÉMARRER UNE SÉANCE" (donc avant
+  la bibliothèque, qui reste plus bas, inchangée) : volume soulevé
+  (aujourd'hui / 7 jours / 3 mois, lecture directe de `MusculationStore.all()`,
+  pas de nouveau système de stats) + nombre de séances (7 jours / 3 mois,
+  déduit des `sessionId` distincts). Fenêtres glissantes (7j/90j), pas
+  calendaires — cohérent avec le reste de l'app (santé utilise déjà des
+  fenêtres glissantes 7/30/90 jours). Masquée tant qu'aucune série n'a
+  jamais été loggée.
+
+### Tests ajoutés cette session
+
+- `test/musculation_log_test.dart` (nouveau) : `copyWith`, en particulier
+  la sentinelle pour le côté L/R nullable.
+- `test/export_service_test.dart` / `test/vault_import_service_test.dart` :
+  2 tests chacun pour l'inclinaison (présente → round-trip fidèle ; absente
+  → pas de champ, pas d'erreur).
+
+### Points ouverts (nouveaux)
+
+- Pas de suppression individuelle d'un bloc *pendant* la séance en direct
+  (seulement modification) — seul le flux "Annuler cette série" existe,
+  et seulement avant confirmation. Pas demandé cette session, mais logique
+  si quelqu'un veut retirer un bloc entier sans attendre la fin de séance.
+- L'inclinaison n'est saisissable qu'à la création d'une activité tapis —
+  pas de correction a posteriori depuis l'historique/détail course (contrairement
+  aux séries muscu). Pas demandé, mais même angle mort que ci-dessus.
+- Widget test manuel sur device non fait au moment d'écrire ce qui précède —
+  correction : le téléphone a fini par être branché plus tard dans la même
+  session, build installé via `adb install -r` (pas de perte de données,
+  `firstInstallTime` inchangé). Voir session suivante ci-dessous pour la
+  suite (refonte Santé), qui réutilise ce même flux d'install à chaque fois.
+
+## Session du 19/07 (suite, même jour) — refonte Santé, cadran Méditation, score d'activité
+
+Portée confirmée explicitement par l'utilisateur : "Tout le programme" (pas
+un sous-ensemble). Contexte retrouvé via `search_session_transcripts` /
+`list_events` : une session parallèle ("Écran Santé et widgets graphiques",
+id `local_d2f5cef7`) avait déjà posé le hero (`_TodayCard`) avec anneau
+Bio-Score + carrousel de pilules + radar "Équilibre du jour" + grille "7
+JOURS" allégée, et la section Méditation (chrono/historique/FC, chip Feed) —
+tout ça était déjà sur `main`, pas à refaire. Cette session a construit
+au-dessus de cette base réelle (vérifiée en lisant le fichier, pas déduite
+de ce NOTES.md qui était lui-même en retard de plusieurs commits).
+
+- **Marqueurs d'exercice sur la courbe FC de séance** — `TrendChart` (
+  `lib/widgets/health_charts.dart`) accepte maintenant `markers:
+  List<ChartMarker>` (repère vertical + étiquette pivotée, position
+  interpolée entre les deux échantillons de `dates` qui encadrent l'heure du
+  repère — même échelle par index que la courbe). Branché dans
+  `musculation_session_detail_screen.dart` (`_exerciseMarkers()`) : un
+  repère à chaque changement d'exercice, sur la courbe FC de toute la
+  séance, pour savoir "à quel exercice on est" sans recouper mentalement
+  avec la liste des blocs plus bas.
+- **Hero Santé réellement swipeable** — `_HeroPillCarousel` passe d'un
+  `Column` + tap-sur-les-points à un vrai `PageView` (swipe au doigt, les
+  points restent cliquables pour sauter à une page). 3ᵉ page ajoutée :
+  Distance / Poids / VO2 max — Poids ouvre la feuille de saisie rapide
+  (`_WeighInSheet`, comme avant) plutôt que l'écran de détail générique (pas
+  d'historique montre à montrer, poids = saisie manuelle).
+- **Groupes retirés de "7 JOURS"** — Activité générale, Vitaux & sommeil,
+  Corps supprimés (`_MetricGroupId` réduit à `recovery` seul) : leurs
+  métriques (Pas, FC repos, Sommeil, Distance, Respiration, Poids, VO2 max)
+  vivent maintenant toutes dans le carrousel héros ci-dessus, les garder
+  ici aurait fait doublon. Seule "Récupération avancée" reste (VFC
+  normalisée, sommeil profond, dette sommeil, Score de Préparation).
+  `_WeightMetricCard` (classe entière) supprimée : plus aucun appelant
+  après le déplacement de Poids vers le hero.
+- **Score d'activité corrigé pour compter les séances muscu** —
+  `HealthScoreService.activityScore` ne pesait que pas/calories
+  actives/étages (données montre Health Connect), 0% pour une séance muscu
+  loggée dans l'app — explique pourquoi une vraie journée de sport pouvait
+  quand même afficher un score bas (calories/étages en particulier
+  peu fiables sur la Fitbit Charge 6 de l'utilisateur). Nouveau paramètre
+  optionnel `musculationMinutes` (poids 30% de la formule, plein crédit à
+  `HealthScoreTuning.musculationGoalMinutes` = 45 min), branché dans
+  `health_connect_service.dart` `syncDay(day)` via
+  `MusculationSessionStore.forDay(day)`. Testé dans
+  `test/health_score_service_test.dart`.
+- **Cadran Méditation dans le hero** — `_MeditationCard` (nouveau) : anneau
+  minutes du jour vs objectif (10 min, constante locale), toggle
+  Semaine/Mois (`SegmentedTabs`) pour le total de la période, série de jours
+  consécutifs, tap → `MeditationScreen` (écran déjà existant, juste jamais
+  raccroché au dashboard Santé jusqu'ici).
+- **"Équilibre du jour" en 3 formes au choix** — nouveau `BarChart`
+  (`health_charts.dart`, réutilise le modèle `RadarAxis` du radar existant)
+  + réutilisation de `SegmentedRing` (déjà là, pour les stades de sommeil)
+  comme vue "circulaire". `_BalanceRadar` devient stateful avec 3 boutons
+  (radar/barres/donut) pour basculer. **3D explicitement pas fait** — hors
+  de portée raisonnable pour une CustomPaint 2D sans dépendance externe ;
+  arbitrage pas encore validé avec l'utilisateur, à voir si les 3 formes
+  actuelles suffisent.
+
+### Tests ajoutés cette session (suite)
+
+- `test/health_score_service_test.dart` (nouveau) : la part musculation de
+  `activityScore` (0 sans séance, plafonnée à 30% même au-delà de
+  l'objectif, s'additionne avec la part pas plutôt que de l'exclure).
+
+### Points ouverts (nouveaux, suite)
+
+- 3D pour "Équilibre du jour" pas implémenté (voir ci-dessus) — décision à
+  valider avec l'utilisateur plutôt que supposée.
+- `musculationGoalMinutes` (45 min) et l'objectif méditation (10 min/jour)
+  sont des constantes choisies arbitrairement, jamais confirmées par
+  l'utilisateur — probable point de calibrage à revoir une fois utilisées
+  en vrai quelques jours.
+- Vu et testé sur le téléphone cette fois (`adb install -r`, lancement sans
+  crash confirmé via logcat filtré sur le PID de l'app) mais pas navigué
+  écran par écran manuellement par Claude — l'utilisateur a dit vouloir
+  vérifier lui-même à ce stade de la session.

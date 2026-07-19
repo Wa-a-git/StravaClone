@@ -1,6 +1,11 @@
 // lib/models/musculation_log.dart
 import '../data/exercise_library.dart';
 
+/// Sentinelle pour distinguer "paramètre non passé" de "passé à null"
+/// explicitement dans [MusculationLogEntry.copyWith] (le côté L/R doit
+/// pouvoir être effacé, pas seulement remplacé).
+const Object _unset = Object();
+
 /// Un exercice loggé pour un jour donné (séries × répétitions). Persisté en
 /// Map simple (toMap/fromMap), même style que DailyHealthRecord — pas de
 /// génération de code Hive, plus rapide à itérer pour un flux volontairement
@@ -50,6 +55,35 @@ class MusculationLogEntry {
     this.isInterval = false,
     this.side,
   });
+
+  /// Copie l'entrée en écrasant seulement les champs saisissables (voir
+  /// edit_musculation_set_sheet.dart) — correction d'une série déjà
+  /// enregistrée, sans toucher date/exercice/séance d'origine.
+  MusculationLogEntry copyWith({
+    int? reps,
+    double? chargeKg,
+    int? restSeconds,
+    int? durationSeconds,
+    double? distanceKm,
+    bool? isInterval,
+    Object? side = _unset,
+  }) {
+    return MusculationLogEntry(
+      date: date,
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+      category: category,
+      sets: sets,
+      reps: reps ?? this.reps,
+      chargeKg: chargeKg ?? this.chargeKg,
+      sessionId: sessionId,
+      restSeconds: restSeconds ?? this.restSeconds,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      distanceKm: distanceKm ?? this.distanceKm,
+      isInterval: isInterval ?? this.isInterval,
+      side: identical(side, _unset) ? this.side : side as String?,
+    );
+  }
 
   /// Volume total de la série : séries × répétitions × charge — mesure
   /// standard en musculation pour comparer l'effort d'une séance à l'autre.

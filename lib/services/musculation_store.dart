@@ -18,6 +18,11 @@ class MusculationStore {
 
   static Future<void> deleteEntry(String key) => _box.delete(key);
 
+  /// Écrase une entrée existante à la même clé (corrige une série déjà
+  /// enregistrée) — contrairement à [addEntry], qui en créerait une nouvelle.
+  static Future<void> updateEntry(String key, MusculationLogEntry entry) =>
+      _box.put(key, entry.toMap());
+
   /// Supprime toutes les séries d'une séance (voir MusculationSessionStore
   /// pour l'enveloppe elle-même) — utilisé quand on supprime une séance
   /// entière depuis l'historique plutôt qu'un seul bloc.

@@ -63,6 +63,7 @@ class _ManualCardioEntryScreenState
   final _distanceCtrl = TextEditingController();
   final _minutesCtrl = TextEditingController();
   final _secondsCtrl = TextEditingController();
+  final _inclineCtrl = TextEditingController();
   late final _nameCtrl = TextEditingController(text: widget.defaultName ?? '');
   bool _saving = false;
 
@@ -71,6 +72,7 @@ class _ManualCardioEntryScreenState
     _distanceCtrl.dispose();
     _minutesCtrl.dispose();
     _secondsCtrl.dispose();
+    _inclineCtrl.dispose();
     _nameCtrl.dispose();
     super.dispose();
   }
@@ -80,6 +82,13 @@ class _ManualCardioEntryScreenState
       (int.tryParse(_secondsCtrl.text) ?? 0);
 
   double get _distanceKm => double.tryParse(_distanceCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  /// Uniquement affichée/prise en compte pour le tapis — pas de sens pour une
+  /// course extérieure ou une autre activité cardio saisie à la main.
+  double? get _inclinePercent =>
+      _type == ManualCardioType.treadmill
+          ? double.tryParse(_inclineCtrl.text.replaceAll(',', '.'))
+          : null;
 
   bool get _canSave => _durationSeconds > 0;
 
@@ -94,6 +103,7 @@ class _ManualCardioEntryScreenState
       route: const [],
       name: name.isEmpty ? null : name,
       workoutType: _type.workoutType,
+      inclinePercent: _inclinePercent,
     );
     await HiveService.saveActivity(activity);
     // Best-effort, comme le reste des exports (course, santé) — n'empêche
@@ -202,6 +212,29 @@ class _ManualCardioEntryScreenState
               ],
             ),
           ),
+          if (_type == ManualCardioType.treadmill) ...[
+            const SizedBox(height: AppSpacing.lg),
+            AppPanel(
+              accent: kNeonAmber,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const PanelTitle('INCLINAISON (OPTIONNELLE)', color: kNeonAmber),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    controller: _inclineCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      hintText: 'ex. 1.5',
+                      suffixText: '%',
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           AppPanel(
             child: Column(

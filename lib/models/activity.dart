@@ -47,6 +47,12 @@ class Activity extends HiveObject {
   @HiveField(10)
   List<int>? pointSeconds;
 
+  /// Inclinaison du tapis, en % — n'a de sens que pour `workoutType ==
+  /// 'treadmill'` (saisie manuelle, voir manual_cardio_entry_screen.dart).
+  /// null = non renseignée (course GPS, ou entrée créée avant ce champ).
+  @HiveField(11)
+  double? inclinePercent;
+
   Activity({
     required this.date,
     required this.distance,
@@ -59,6 +65,7 @@ class Activity extends HiveObject {
     this.elevations,
     this.workoutType,
     this.pointSeconds,
+    this.inclinePercent,
   });
 
   /// Distance in kilometers (formatted string)

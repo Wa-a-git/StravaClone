@@ -79,6 +79,9 @@ class HealthScoreTuning {
   static const double stepsGoal = 10000;
   static const double activeCaloriesGoal = 500;
   static const double flightsGoal = 10;
+  /// Une séance muscu/cardio de cette durée (ou plus) donne le plein crédit
+  /// de la part "séance" du score d'activité — voir activityScore().
+  static const double musculationGoalMinutes = 45;
 }
 
 class HealthScoreService {
@@ -133,22 +136,36 @@ class HealthScoreService {
   }
 
   // ── Score d'activité ───────────────────────────────────────────────────────
-  static int activityScore(HealthSnapshot s) {
+  // Pas/calories actives/étages viennent tous de Health Connect (donnée
+  // montre) — sur certains appareils (ex. Fitbit Charge 6), calories et
+  // étages remontent rarement ou jamais, ce qui peut faire chuter ce score
+  // même une vraie journée de sport, si l'effort du jour était une séance
+  // muscu plutôt qu'une marche. [musculationMinutes] (durée totale des
+  // séances du jour, voir MusculationSessionStore.forDay) comble cet angle
+  // mort : une séance ≥ musculationGoalMinutes donne le plein crédit de sa
+  // part, indépendamment de ce que la montre a mesuré ce jour-là.
+  static int activityScore(HealthSnapshot s, {double musculationMinutes = 0}) {
     final stepsScore = _clamp(s.steps / HealthScoreTuning.stepsGoal * 100);
     final caloriesScore =
         _clamp(s.activeCalories / HealthScoreTuning.activeCaloriesGoal * 100);
     final flightsScore =
         _clamp(s.flightsClimbed / HealthScoreTuning.flightsGoal * 100);
+    final musculationScore = _clamp(
+        musculationMinutes / HealthScoreTuning.musculationGoalMinutes * 100);
 
-    return (stepsScore * 0.5 + caloriesScore * 0.35 + flightsScore * 0.15)
+    return (stepsScore * 0.35 +
+            caloriesScore * 0.25 +
+            flightsScore * 0.10 +
+            musculationScore * 0.30)
         .round();
   }
 
   // ── Bio-score global ───────────────────────────────────────────────────────
-  static HealthScores computeAll(HealthSnapshot s) {
+  static HealthScores computeAll(HealthSnapshot s,
+      {double musculationMinutes = 0}) {
     final sleep = sleepScore(s.sleep);
     final recovery = recoveryScore(s);
-    final activity = activityScore(s);
+    final activity = activityScore(s, musculationMinutes: musculationMinutes);
     final bio = (sleep * 0.35 + recovery * 0.35 + activity * 0.30).round();
 
     return HealthScores(
