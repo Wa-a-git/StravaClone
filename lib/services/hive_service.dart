@@ -21,6 +21,7 @@ class HiveService {
     await Hive.openBox('hr_efficiency'); // Efficacité cardiaque (FC/allure) par course
     await Hive.openBox('training_load'); // Dérive cardiaque + TRIMP par course
     await Hive.openBox('meditation_sessions'); // Séances de méditation chronométrées
+    await Hive.openBox('musculation_sessions'); // Enveloppe FC/calories des séances muscu en direct
   }
 
   /// Permet aux tests d'injecter une box déjà ouverte (via `Hive.init(path)`

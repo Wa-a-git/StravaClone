@@ -16,6 +16,13 @@ class MusculationLogEntry {
   /// entrées créées avant l'ajout de ce champ retombent sur 0, sans casser
   /// leur affichage — juste pas de volume calculable pour elles).
   final double chargeKg;
+  /// Identifiant de séance en direct (= horodatage de son début, en ms).
+  /// 0 = entrée du log rapide "classique", hors séance (comportement
+  /// antérieur à l'ajout du chrono de séance).
+  final int sessionId;
+  /// Repos pris juste après cette série, avant la suivante. 0 = non
+  /// chronométré (log rapide classique, ou dernière série d'une séance).
+  final int restSeconds;
 
   const MusculationLogEntry({
     required this.date,
@@ -25,6 +32,8 @@ class MusculationLogEntry {
     required this.sets,
     required this.reps,
     this.chargeKg = 0,
+    this.sessionId = 0,
+    this.restSeconds = 0,
   });
 
   /// Volume total de la série : séries × répétitions × charge — mesure
@@ -47,6 +56,8 @@ class MusculationLogEntry {
         'sets': sets,
         'reps': reps,
         'chargeKg': chargeKg,
+        'sessionId': sessionId,
+        'restSeconds': restSeconds,
       };
 
   factory MusculationLogEntry.fromMap(Map<dynamic, dynamic> m) {
@@ -61,6 +72,8 @@ class MusculationLogEntry {
       sets: (m['sets'] as num?)?.toInt() ?? 0,
       reps: (m['reps'] as num?)?.toInt() ?? 0,
       chargeKg: (m['chargeKg'] as num?)?.toDouble() ?? 0,
+      sessionId: (m['sessionId'] as num?)?.toInt() ?? 0,
+      restSeconds: (m['restSeconds'] as num?)?.toInt() ?? 0,
     );
   }
 }

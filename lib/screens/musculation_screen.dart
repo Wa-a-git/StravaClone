@@ -1,8 +1,8 @@
 // lib/screens/musculation_screen.dart
-// Musculation : bibliothèque d'exercices par catégorie + flux rapide de log
-// (recherche → exercice → séries/répétitions → persisté immédiatement).
+// Musculation : bibliothèque d'exercices par catégorie (référence, pas de
+// log direct depuis ici) + lancement d'une séance en direct chronométrée
+// (live_musculation_screen.dart) où se fait tout le log réel.
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/exercise_library.dart';
@@ -12,13 +12,17 @@ import '../services/export_service.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
+import 'live_musculation_screen.dart';
 import 'manual_cardio_entry_screen.dart';
 
-/// Ouvre le flux rapide d'ajout d'exercice — appelable depuis le bouton
-/// "NOUVELLE SÉANCE" de cet écran ou depuis le bouton + de lancement rapide
-/// du hub Sport.
+/// Lance une séance en direct — appelable depuis le bouton "DÉMARRER UNE
+/// SÉANCE" de cet écran ou depuis le bouton + de lancement rapide du hub
+/// Sport.
 Future<void> openMusculationQuickLog(BuildContext context) {
-  return showAppSheet(context: context, child: const _QuickLogSheet());
+  return Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const LiveMusculationScreen()),
+  );
 }
 
 /// Réexporte toute la séance du jour vers le vault (mycelium) — appelé après
@@ -80,8 +84,8 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GlowButton(
-            label: 'AJOUTER UN EXERCICE',
-            icon: Icons.add_rounded,
+            label: 'DÉMARRER UNE SÉANCE',
+            icon: Icons.play_circle_fill_rounded,
             color: kNeonViolet,
             foreground: Colors.white,
             onPressed: _openQuickLog,
@@ -274,319 +278,7 @@ class _ExerciseTile extends StatelessWidget {
   }
 }
 
-// ── Feuille de log rapide : recherche + catégories + tap = ajouter ───────────
-class _QuickLogSheet extends StatefulWidget {
-  const _QuickLogSheet();
-
-  @override
-  State<_QuickLogSheet> createState() => _QuickLogSheetState();
-}
-
-class _QuickLogSheetState extends State<_QuickLogSheet> {
-  ExerciseCategory? _filter;
-  String _search = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _search.trim().toLowerCase();
-    final exercises = kExerciseLibrary.where((e) {
-      if (_filter != null && e.category != _filter) return false;
-      if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
-        return false;
-      }
-      return true;
-    }).toList();
-
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.75,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Ajouter un exercice',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Cherche, tape sur un exercice, indique séries et répétitions.',
-            style: AppText.caption,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          TextField(
-            onChanged: (v) => setState(() => _search = v),
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              hintText: 'Rechercher un exercice…',
-              prefixIcon: Icon(Icons.search_rounded, color: AppColors.textSecondary),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _CategoryChip(
-                  label: 'Tout',
-                  color: AppColors.textSecondary,
-                  selected: _filter == null,
-                  onTap: () => setState(() => _filter = null),
-                ),
-                for (final c in ExerciseCategory.values) ...[
-                  const SizedBox(width: 8),
-                  _CategoryChip(
-                    label: c.label,
-                    color: c.color,
-                    selected: _filter == c,
-                    onTap: () => setState(() => _filter = c),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Expanded(
-            child: exercises.isEmpty
-                ? const Center(
-                    child: Text('Aucun exercice trouvé.', style: AppText.caption),
-                  )
-                : ListView.builder(
-                    itemCount: exercises.length,
-                    itemBuilder: (context, i) =>
-                        _LoggableExerciseTile(exercise: exercises[i]),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LoggableExerciseTile extends ConsumerWidget {
-  final Exercise exercise;
-  const _LoggableExerciseTile({required this.exercise});
-
-  Future<void> _logIt(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<(int, int, double)>(
-      context: context,
-      builder: (_) => _SetsRepsDialog(exercise: exercise),
-    );
-    if (result == null) return;
-    await MusculationStore.addEntry(MusculationLogEntry(
-      date: DateTime.now(),
-      exerciseId: exercise.id,
-      exerciseName: exercise.name,
-      category: exercise.category,
-      sets: result.$1,
-      reps: result.$2,
-      chargeKg: result.$3,
-    ));
-    _syncMusculationDayToVault();
-    ref.read(musculationRevisionProvider.notifier).state++;
-    if (context.mounted) {
-      final chargeLabel =
-          result.$3 > 0 ? ' à ${_formatCharge(result.$3)} kg' : '';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              '${exercise.name} ajouté : ${result.$1} × ${result.$2}$chargeLabel'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () => _logIt(context, ref),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: exercise.category.color.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Icon(exercise.category.icon,
-                  color: exercise.category.color, size: 17),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(exercise.name, style: AppText.body),
-                  Text(exercise.muscleGroup, style: AppText.caption),
-                ],
-              ),
-            ),
-            Icon(Icons.add_circle_outline_rounded,
-                color: exercise.category.color, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SetsRepsDialog extends StatefulWidget {
-  final Exercise exercise;
-  const _SetsRepsDialog({required this.exercise});
-
-  @override
-  State<_SetsRepsDialog> createState() => _SetsRepsDialogState();
-}
-
-class _SetsRepsDialogState extends State<_SetsRepsDialog> {
-  int _sets = 3;
-  int _reps = 10;
-  double _charge = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Text(widget.exercise.name,
-          style: const TextStyle(
-              fontFamily: kArcadeFont, color: AppColors.textPrimary, fontSize: 16)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StepperRow(
-              label: 'Séries',
-              value: _sets,
-              onChanged: (v) => setState(() => _sets = v)),
-          const SizedBox(height: 14),
-          _StepperRow(
-              label: 'Répétitions',
-              value: _reps,
-              onChanged: (v) => setState(() => _reps = v)),
-          const SizedBox(height: 14),
-          _ChargeStepperRow(
-              value: _charge, onChanged: (v) => setState(() => _charge = v)),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-              backgroundColor: widget.exercise.category.color),
-          onPressed: () => Navigator.pop(context, (_sets, _reps, _charge)),
-          child: const Text('Ajouter', style: TextStyle(color: Colors.black)),
-        ),
-      ],
-    );
-  }
-}
-
-/// Charge par répétition — poids du corps par défaut (0, affiché "--"),
-/// incréments de 2,5 kg (le pas usuel d'une paire de disques).
-class _ChargeStepperRow extends StatelessWidget {
-  final double value;
-  final ValueChanged<double> onChanged;
-  const _ChargeStepperRow({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text('Charge (kg)',
-            style: TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed:
-                  value > 0 ? () => onChanged(max(0, value - 2.5)) : null,
-            ),
-            SizedBox(
-              width: 44,
-              child: Text(
-                value > 0 ? _formatCharge(value) : '--',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 2.5),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 /// Formate une charge sans décimale inutile ("40" plutôt que "40.0", mais
 /// "42.5" reste tel quel).
 String _formatCharge(double kg) =>
     kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
-
-class _StepperRow extends StatelessWidget {
-  final String label;
-  final int value;
-  final ValueChanged<int> onChanged;
-  const _StepperRow(
-      {required this.label, required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: value > 1 ? () => onChanged(value - 1) : null,
-            ),
-            SizedBox(
-              width: 30,
-              child: Text('$value',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded,
-                  color: AppColors.textSecondary),
-              onPressed: () => onChanged(value + 1),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}

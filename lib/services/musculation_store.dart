@@ -33,6 +33,19 @@ class MusculationStore {
   static List<MapEntry<String, MusculationLogEntry>> todayEntries() =>
       entriesFor(DateTime.now());
 
+  /// Séries d'une séance en direct donnée (sessionId = horodatage de son
+  /// début), dans l'ordre où elles ont été effectuées.
+  static List<MapEntry<String, MusculationLogEntry>> entriesForSession(
+      int sessionId) {
+    return _box.toMap().entries
+        .where((e) => e.value is Map)
+        .map((e) => MapEntry(
+            e.key.toString(), MusculationLogEntry.fromMap(e.value as Map)))
+        .where((e) => e.value.sessionId == sessionId)
+        .toList()
+      ..sort((a, b) => a.value.date.compareTo(b.value.date));
+  }
+
   /// Toutes les entrées jamais loggées, tous jours confondus — sert au calcul
   /// du volume cumulé (fusion de la stat Force avec la course à pied).
   static List<MusculationLogEntry> all() {
