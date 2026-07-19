@@ -6,15 +6,18 @@
 // comme un vrai fil d'activité plutôt qu'un journal.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/exercise_library.dart' show ExerciseCategoryX;
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/health_snapshot.dart';
+import '../models/musculation_session.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../providers/health_provider.dart';
 import '../services/health_game_service.dart';
 import '../services/health_store.dart';
 import '../services/meditation_store.dart';
+import '../services/musculation_session_store.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
@@ -24,6 +27,7 @@ import 'detail_screen.dart';
 import 'health_dashboard_screen.dart' show RawStatsRow;
 import 'health_history_screen.dart' show HealthDayDetailScreen;
 import 'meditation_screen.dart';
+import 'musculation_session_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
@@ -67,7 +71,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Widget build(BuildContext context) {
     final activities = ref.watch(activityListProvider);
     final days = HealthStore.all();
-    final entries = _buildHistoryEntries(activities, days);
+    ref.watch(musculationRevisionProvider);
+    final musculationSessions = MusculationSessionStore.all();
+    final entries = _buildHistoryEntries(activities, days, musculationSessions);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -122,7 +128,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 child: EmptyState(
                   icon: Icons.dynamic_feed_rounded,
                   title: 'Rien pour l\'instant',
-                  subtitle: 'Tes courses et tes journées santé apparaîtront ici.',
+                  subtitle:
+                      'Tes courses, séances et journées santé apparaîtront ici.',
                   accent: kNeonCyan,
                 ),
               ),
@@ -169,6 +176,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => DetailScreen(activity: a))),
           ),
+        );
+      case _FeedKind.musculation:
+        final s = e.musculationSession!;
+        return _FeedPost(
+          icon: Icons.fitness_center_rounded,
+          time: _dayLabel(s.date),
+          title: 'Séance musculation',
+          accent: kNeonViolet,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(
+                  builder: (_) => MusculationSessionDetailScreen(session: s))),
+          child: _MusculationFeedContent(session: s),
         );
       case _FeedKind.sleep:
         final d = e.day!;
@@ -1104,11 +1123,11 @@ class _FeedCalendarState extends State<_FeedCalendar> {
       );
 }
 
-// ── Historique fusionné (courses + sommeil + résumé du jour), trié du plus
-// récent au plus ancien. Sommeil et résumé du jour sont deux posts distincts
-// (pas fusionnés dans une même carte), même si les deux viennent du même
-// DailyHealthRecord. ─────────────────────────────────────────────────────────
-enum _FeedKind { activity, sleep, dayStats }
+// ── Historique fusionné (courses + musculation + sommeil + résumé du jour),
+// trié du plus récent au plus ancien. Sommeil et résumé du jour sont deux
+// posts distincts (pas fusionnés dans une même carte), même si les deux
+// viennent du même DailyHealthRecord. ─────────────────────────────────────
+enum _FeedKind { activity, musculation, sleep, dayStats }
 
 class _HistoryEntry {
   final DateTime date; // jour civil, pour le regroupement/tri par journée
@@ -1116,43 +1135,64 @@ class _HistoryEntry {
   final _FeedKind kind;
   final Activity? activity;
   final DailyHealthRecord? day;
+  final MusculationSession? musculationSession;
 
   _HistoryEntry.activity(Activity a)
       : date = DateTime(a.date.year, a.date.month, a.date.day),
         sortTime = a.date,
         kind = _FeedKind.activity,
         activity = a,
-        day = null;
+        day = null,
+        musculationSession = null;
+
+  _HistoryEntry.musculation(MusculationSession s)
+      : date = DateTime(s.date.year, s.date.month, s.date.day),
+        sortTime = s.date,
+        kind = _FeedKind.musculation,
+        activity = null,
+        day = null,
+        musculationSession = s;
 
   _HistoryEntry.sleep(DailyHealthRecord d)
       : date = DateTime(d.date.year, d.date.month, d.date.day),
         sortTime = d.date,
         kind = _FeedKind.sleep,
         activity = null,
-        day = d;
+        day = d,
+        musculationSession = null;
 
   _HistoryEntry.dayStats(DailyHealthRecord d)
       : date = DateTime(d.date.year, d.date.month, d.date.day),
         sortTime = d.date,
         kind = _FeedKind.dayStats,
         activity = null,
-        day = d;
+        day = d,
+        musculationSession = null;
 }
 
-/// Fusionne courses, sommeil et résumé du jour en une seule liste triée du
-/// plus récent au plus ancien — au sein d'une même journée : courses, puis
-/// sommeil, puis résumé du jour. Le post sommeil n'existe que s'il y a
-/// effectivement du sommeil enregistré ce jour-là.
+/// Fusionne courses, musculation, sommeil et résumé du jour en une seule
+/// liste triée du plus récent au plus ancien — au sein d'une même journée :
+/// courses, puis musculation, puis sommeil, puis résumé du jour. Le post
+/// sommeil n'existe que s'il y a effectivement du sommeil enregistré ce
+/// jour-là.
 List<_HistoryEntry> _buildHistoryEntries(
-    List<Activity> activities, List<DailyHealthRecord> days) {
+    List<Activity> activities,
+    List<DailyHealthRecord> days,
+    List<MusculationSession> musculationSessions) {
   final items = <_HistoryEntry>[
     for (final a in activities) _HistoryEntry.activity(a),
+    for (final s in musculationSessions) _HistoryEntry.musculation(s),
     for (final d in days) ...[
       if (d.sleep.totalAsleepMin > 0) _HistoryEntry.sleep(d),
       _HistoryEntry.dayStats(d),
     ],
   ];
-  const rank = {_FeedKind.activity: 0, _FeedKind.sleep: 1, _FeedKind.dayStats: 2};
+  const rank = {
+    _FeedKind.activity: 0,
+    _FeedKind.musculation: 1,
+    _FeedKind.sleep: 2,
+    _FeedKind.dayStats: 3,
+  };
   items.sort((a, b) {
     final dayCmp = b.date.compareTo(a.date);
     if (dayCmp != 0) return dayCmp;
@@ -1245,6 +1285,66 @@ class _SleepFeedContent extends StatelessWidget {
             SleepLegend('Paradoxal', _fmt(sleep.remMin), kNeonCyan),
             SleepLegend('Léger', _fmt(sleep.lightMin), SleepStage.light.color),
             SleepLegend('Éveil', _fmt(sleep.awakeMin), AppColors.muted),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Contenu compact d'un post "musculation" dans l'historique — relit les
+/// blocs de la séance via MusculationStore (l'enveloppe MusculationSession
+/// ne duplique pas les séries, voir models/musculation_session.dart).
+class _MusculationFeedContent extends StatelessWidget {
+  final MusculationSession session;
+  const _MusculationFeedContent({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    final sets = MusculationStore.entriesForSession(session.sessionId)
+        .map((e) => e.value)
+        .toList();
+    final strengthSets = sets.where((e) => !e.category.isCardio).toList();
+    final cardioSets = sets.where((e) => e.category.isCardio).toList();
+    final totalVolume = strengthSets.fold<double>(0, (s, e) => s + e.volumeKg);
+    final totalCardioDistance = cardioSets.fold<double>(0, (s, e) => s + e.distanceKm);
+    final h = session.durationSeconds ~/ 3600;
+    final m = (session.durationSeconds % 3600) ~/ 60;
+    final duration = h > 0 ? '${h}h${m.toString().padLeft(2, '0')}' : '${m}m';
+    final exerciseCount = sets.map((e) => e.exerciseName).toSet().length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(duration,
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                  '$exerciseCount exercice${exerciseCount > 1 ? 's' : ''} · ${sets.length} bloc${sets.length > 1 ? 's' : ''}',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 14,
+          runSpacing: 6,
+          children: [
+            if (totalVolume > 0)
+              SleepLegend('Volume', '${totalVolume.toStringAsFixed(0)} kg', kNeonAmber),
+            if (totalCardioDistance > 0)
+              SleepLegend('Cardio', '${totalCardioDistance.toStringAsFixed(1)} km', kNeonGreen),
+            if (session.hasHr)
+              SleepLegend('FC moy.', '${session.avgHr.round()} bpm', kNeonPink),
           ],
         ),
       ],

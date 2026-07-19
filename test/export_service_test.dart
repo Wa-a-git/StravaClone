@@ -7,6 +7,7 @@ import 'package:mycelium/mycelium.dart';
 import 'package:arcade_health/data/exercise_library.dart';
 import 'package:arcade_health/models/activity.dart';
 import 'package:arcade_health/models/musculation_log.dart';
+import 'package:arcade_health/models/musculation_session.dart';
 import 'package:arcade_health/services/export_service.dart';
 
 void main() {
@@ -167,41 +168,46 @@ void main() {
 
   // Musculation n'avait jusqu'ici aucun export — rien ne remontait dans le
   // vault ni dans la note du jour. Mêmes garanties que pour une course :
-  // fiche par jour (ré-écrite, pas dupliquée) + résumé injecté sous ## Sport.
+  // fiche par SÉANCE (ré-écrite au même id, pas dupliquée) + résumé injecté
+  // sous ## Sport. Chaque bloc = 1 set (comme produit par
+  // live_musculation_screen.dart — sets vaut toujours 1 depuis le passage à
+  // la séance en direct, plus jamais "4 séries" en une seule entrée).
   group('musculation', () {
-    final day = DateTime(2026, 6, 13);
-    List<MusculationLogEntry> pushDay() => [
+    final day = DateTime(2026, 6, 13, 18, 0);
+    MusculationSession sampleSession() =>
+        MusculationSession(date: day, endDate: day.add(const Duration(hours: 1)));
+    List<MusculationLogEntry> pushSession() => [
           MusculationLogEntry(
               date: day,
               exerciseId: 'bench',
               exerciseName: 'Développé couché',
               category: ExerciseCategory.barbell,
-              sets: 4,
-              reps: 8),
+              sets: 1,
+              reps: 8,
+              chargeKg: 60),
           MusculationLogEntry(
-              date: day,
+              date: day.add(const Duration(minutes: 3)),
               exerciseId: 'ohp',
               exerciseName: 'Développé militaire',
               category: ExerciseCategory.dumbbell,
-              sets: 3,
+              sets: 1,
               reps: 10),
         ];
 
     test('écrit la fiche avec un frontmatter unifié (mycelium)', () async {
-      final path =
-          await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
+      final path = await ExportService.saveMusculationSessionAsMarkdown(
+          sampleSession(), pushSession());
       expect(path, isNotNull);
 
       final content = File(path!).readAsStringSync();
       expect(content, contains('type: "[[musculation]]"'));
-      expect(content,
-          contains('id: ${DateTime(2026, 6, 13).millisecondsSinceEpoch}'));
+      expect(content, contains('id: ${day.millisecondsSinceEpoch}'));
       expect(content, contains('exercises: 2'));
-      expect(content, contains('total_sets: 7'));
+      expect(content, contains('blocks: 2'));
       expect(content, contains('Développé couché'));
       expect(content, contains('Développé militaire'));
-      expect(content, contains('4 × 8'));
-      expect(content, contains('3 × 10'));
+      expect(content, contains('8 reps'));
+      expect(content, contains('10 reps'));
     });
 
     test('inclut la charge et le volume quand renseignés', () async {
@@ -211,46 +217,50 @@ void main() {
             exerciseId: 'bench',
             exerciseName: 'Développé couché',
             category: ExerciseCategory.barbell,
-            sets: 4,
+            sets: 1,
             reps: 8,
             chargeKg: 60),
       ];
-      final path = await ExportService.saveMusculationDayAsMarkdown(day, entries);
+      final path = await ExportService.saveMusculationSessionAsMarkdown(
+          sampleSession(), entries);
       final content = File(path!).readAsStringSync();
-      expect(content, contains('total_volume_kg: 1920.0'));
+      expect(content, contains('total_volume_kg: 480.0'));
       expect(content, contains('60.0 kg'));
 
       final daily = File('$vaultRoot/Notes/260613.md').readAsStringSync();
-      expect(daily, contains('1920 kg soulevés'));
+      expect(daily, contains('480 kg soulevés'));
     });
 
     test('injecte un résumé dans la note du jour', () async {
-      await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
+      await ExportService.saveMusculationSessionAsMarkdown(
+          sampleSession(), pushSession());
 
       final daily = File('$vaultRoot/Notes/260613.md');
       expect(daily.existsSync(), isTrue);
       final content = daily.readAsStringSync();
       expect(content, contains('## Sport'));
-      expect(content, contains('[[2026-06-13]]'));
+      expect(content, contains('[[seance-2026-06-13_18h00]]'));
       expect(content, contains('2 exercices'));
-      expect(content, contains('7 séries'));
+      expect(content, contains('2 blocs'));
     });
 
-    test('ré-export du même jour = même fichier écrasé, pas de doublon',
+    test('ré-export de la même séance = même fichier écrasé, pas de doublon',
         () async {
-      await ExportService.saveMusculationDayAsMarkdown(day, pushDay());
-      // Un exercice de plus, réexporté (comme après chaque ajout dans l'app).
+      final session = sampleSession();
+      await ExportService.saveMusculationSessionAsMarkdown(
+          session, pushSession());
+      // Un bloc de plus, réexporté (comme après chaque série dans l'app).
       final updated = [
-        ...pushDay(),
+        ...pushSession(),
         MusculationLogEntry(
-            date: day,
+            date: day.add(const Duration(minutes: 6)),
             exerciseId: 'dips',
             exerciseName: 'Dips lestés',
             category: ExerciseCategory.bodyweight,
-            sets: 3,
+            sets: 1,
             reps: 12),
       ];
-      await ExportService.saveMusculationDayAsMarkdown(day, updated);
+      await ExportService.saveMusculationSessionAsMarkdown(session, updated);
 
       final mdFiles = Directory('$vaultRoot/Sport/Musculation')
           .listSync()
@@ -262,7 +272,8 @@ void main() {
     });
 
     test('liste vide -> rien écrit (pas de fiche "0 exercice")', () async {
-      final path = await ExportService.saveMusculationDayAsMarkdown(day, []);
+      final path = await ExportService.saveMusculationSessionAsMarkdown(
+          sampleSession(), []);
       expect(path, isNull);
     });
   });

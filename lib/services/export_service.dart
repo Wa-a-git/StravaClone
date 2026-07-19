@@ -4,8 +4,11 @@ import '../data/exercise_library.dart' show ExerciseCategoryX;
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
 import '../models/musculation_log.dart';
+import '../models/musculation_session.dart';
 import 'health_store.dart';
 import 'hive_service.dart';
+import 'musculation_session_store.dart';
+import 'musculation_store.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mycelium/mycelium.dart';
@@ -302,13 +305,14 @@ class ExportService {
     return LocalVaultSource(_findVaultRoot(savedPath) ?? savedPath);
   }
 
-  /// Filet de sécurité : ré-exporte TOUTES les courses et journées santé
-  /// locales vers le vault, best-effort. Écriture idempotente (overwrite,
-  /// même chemin à chaque fois) donc sans risque à rappeler souvent — appelé
-  /// au démarrage de l'app pour rattraper tout ce qui n'a pas pu partir la
-  /// dernière fois (hors ligne, Windroid injoignable...), plutôt que de
-  /// compter sur le seul export au moment de la sauvegarde (voir incident du
-  /// 11/07 — une course jamais exportée, perdue lors d'une réinstallation).
+  /// Filet de sécurité : ré-exporte TOUTES les courses, journées santé et
+  /// séances musculation/cardio locales vers le vault, best-effort. Écriture
+  /// idempotente (overwrite, même chemin à chaque fois) donc sans risque à
+  /// rappeler souvent — appelé au démarrage de l'app pour rattraper tout ce
+  /// qui n'a pas pu partir la dernière fois (hors ligne, Windroid
+  /// injoignable...), plutôt que de compter sur le seul export au moment de
+  /// la sauvegarde (voir incident du 11/07 — une course jamais exportée,
+  /// perdue lors d'une réinstallation).
   static Future<void> syncAllToVault() async {
     try {
       final source = await _resolveSource();
@@ -328,36 +332,83 @@ class ExportService {
           // idem
         }
       }
+      for (final session in MusculationSessionStore.all()) {
+        try {
+          final sets = MusculationStore.entriesForSession(session.sessionId)
+              .map((e) => e.value)
+              .toList();
+          await saveMusculationSessionAsMarkdown(session, sets,
+              sourceOverride: source);
+        } catch (_) {
+          // idem
+        }
+      }
     } catch (_) {
       // best-effort total : jamais d'exception remontée à l'appelant.
     }
   }
 
-  /// Écrit la séance de musculation du jour dans `Sport/Musculation/` (une
-  /// fiche par jour, ré-écrite à chaque exercice ajouté/retiré — même
-  /// principe idempotent que `saveHealthDayAsMarkdown`) + injecte un résumé
-  /// sous `## Sport` dans la note du jour. Best-effort, jamais d'exception
-  /// propagée. [entries] doit couvrir tout le jour [day] (voir
-  /// `MusculationStore.entriesFor` côté appelant) ; rien n'est écrit si vide,
-  /// pour ne pas créer de fiche "0 exercice" au premier tap annulé.
-  static Future<String?> saveMusculationDayAsMarkdown(
-      DateTime day, List<MusculationLogEntry> entries) async {
-    if (entries.isEmpty) return null;
+  /// Écrit une fiche PAR SÉANCE (pas par jour — une séance en direct est
+  /// l'unité réelle depuis live_musculation_screen.dart, deux séances le
+  /// même jour ne doivent pas s'écraser) dans `Sport/Musculation/` + injecte
+  /// un résumé sous `## Sport` dans la note du jour. Ré-écriture idempotente
+  /// (même id/chemin à chaque appel : fin de séance, puis toute suppression
+  /// de bloc depuis l'écran détail). Best-effort, jamais d'exception
+  /// propagée. Rien n'est écrit si [sets] est vide, pour ne pas créer de
+  /// fiche "0 exercice" au premier tap annulé.
+  static Future<String?> saveMusculationSessionAsMarkdown(
+    MusculationSession session,
+    List<MusculationLogEntry> sets, {
+    VaultSource? sourceOverride,
+  }) async {
+    if (sets.isEmpty) return null;
     try {
-      final fileBase = MusculationLogEntry.keyFor(day); // yyyy-MM-dd
-      final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
-      final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
+      final dt = session.date;
+      final filenameDate =
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}_${dt.hour.toString().padLeft(2, '0')}h${dt.minute.toString().padLeft(2, '0')}';
+      final fileBase = 'seance-$filenameDate';
+      final strengthSets = sets.where((e) => !e.category.isCardio).toList();
+      final cardioSets = sets.where((e) => e.category.isCardio).toList();
+      final totalVolumeKg = strengthSets.fold<double>(0, (s, e) => s + e.volumeKg);
+      final totalCardioDuration =
+          cardioSets.fold<int>(0, (s, e) => s + e.durationSeconds);
+      final totalCardioDistance =
+          cardioSets.fold<double>(0, (s, e) => s + e.distanceKm);
+
       final fields = <String, Object?>{
-        'exercises': entries.length,
-        'total_sets': totalSets,
-        'total_volume_kg': totalVolumeKg.toStringAsFixed(1),
-        'categories': entries.map((e) => e.category.label).toSet().join(', '),
+        'duration_s': session.durationSeconds,
+        'exercises': sets.map((e) => e.exerciseName).toSet().length,
+        'blocks': sets.length,
+        'categories': sets.map((e) => e.category.label).toSet().join(', '),
+        if (totalVolumeKg > 0) 'total_volume_kg': totalVolumeKg.toStringAsFixed(1),
+        if (totalCardioDuration > 0) 'cardio_duration_s': totalCardioDuration,
+        if (totalCardioDistance > 0)
+          'cardio_distance_km': totalCardioDistance.toStringAsFixed(2),
+        if (session.hasHr) 'avg_hr': session.avgHr.round(),
+        if (session.hasHr) 'max_hr': session.maxHr.round(),
+        if (session.hasHr) 'min_hr': session.minHr.round(),
+        if (session.activeCalories > 0)
+          'active_calories': session.activeCalories.round(),
       };
-      final body = _buildMusculationBody(entries);
-      final dailyLine = _musculationDailyLine(fileBase, entries);
-      // id stable (minuit du jour) : une fiche musculation par jour, comme
-      // les fiches santé.
-      final id = DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
+      final body = _buildMusculationSessionBody(session, sets);
+      final dailyLine = _musculationSessionDailyLine(fileBase, session, sets);
+      // id stable (début de séance) : une fiche par séance, ré-exportée de
+      // façon idempotente au même id/chemin.
+      final id = session.sessionId;
+
+      if (sourceOverride != null) {
+        final path = await writeToVault(sourceOverride,
+            subdir: 'Sport/Musculation',
+            fileBase: fileBase,
+            id: id,
+            date: session.date,
+            myceliumClass: 'musculation',
+            fields: fields,
+            body: body,
+            dailySection: 'Sport',
+            dailyLine: dailyLine);
+        return path;
+      }
 
       final windroidUrl = getWindroidBaseUrl();
       if (windroidUrl.isNotEmpty) {
@@ -365,7 +416,7 @@ class ExportService {
             subdir: 'Sport/Musculation',
             fileBase: fileBase,
             id: id,
-            date: day,
+            date: session.date,
             myceliumClass: 'musculation',
             fields: fields,
             body: body,
@@ -382,7 +433,7 @@ class ExportService {
             subdir: 'Sport/Musculation',
             fileBase: fileBase,
             id: id,
-            date: day,
+            date: session.date,
             myceliumClass: 'musculation',
             fields: fields,
             body: body,
@@ -509,16 +560,17 @@ class ExportService {
         'sommeil ${h}h${m.toString().padLeft(2, '0')}, ${record.steps} pas';
   }
 
-  /// Ligne de résumé musculation injectée dans la note du jour.
-  static String _musculationDailyLine(
-      String fileBase, List<MusculationLogEntry> entries) {
-    final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
-    final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
-    final n = entries.length;
+  /// Ligne de résumé de séance injectée dans la note du jour.
+  static String _musculationSessionDailyLine(String fileBase,
+      MusculationSession session, List<MusculationLogEntry> sets) {
+    final n = sets.map((e) => e.exerciseName).toSet().length;
+    final totalVolumeKg =
+        sets.where((e) => !e.category.isCardio).fold<double>(0, (s, e) => s + e.volumeKg);
     final volumeSuffix =
         totalVolumeKg > 0 ? ', ${totalVolumeKg.toStringAsFixed(0)} kg soulevés' : '';
+    final hrSuffix = session.hasHr ? ', FC moy. ${session.avgHr.round()} bpm' : '';
     return '- 🏋️ [[$fileBase]] — $n exercice${n > 1 ? 's' : ''}, '
-        '$totalSets série${totalSets > 1 ? 's' : ''}$volumeSuffix';
+        '${sets.length} bloc${sets.length > 1 ? 's' : ''}$volumeSuffix$hrSuffix';
   }
 
   /// Remonte depuis [start] jusqu'à trouver un dossier contenant `.obsidian`
@@ -783,16 +835,27 @@ marker: default, $endPt
     return buffer.toString();
   }
 
-  /// Construit le corps markdown de la fiche musculation — même habillage
-  /// néon que les fiches de course/santé, pour rester au même niveau visuel.
-  static String _buildMusculationBody(List<MusculationLogEntry> entries) {
-    final totalSets = entries.fold<int>(0, (s, e) => s + e.sets);
-    final totalVolumeKg = entries.fold<double>(0, (s, e) => s + e.volumeKg);
+  /// Construit le corps markdown de la fiche de séance — même habillage néon
+  /// que les fiches de course/santé, pour rester au même niveau visuel.
+  /// [sets] doit être trié chronologiquement (voir
+  /// `MusculationStore.entriesForSession`).
+  static String _buildMusculationSessionBody(
+      MusculationSession session, List<MusculationLogEntry> sets) {
+    final strengthSets = sets.where((e) => !e.category.isCardio).toList();
+    final cardioSets = sets.where((e) => e.category.isCardio).toList();
+    final totalVolumeKg = strengthSets.fold<double>(0, (s, e) => s + e.volumeKg);
+    final totalCardioDuration =
+        cardioSets.fold<int>(0, (s, e) => s + e.durationSeconds);
+    final totalCardioDistance =
+        cardioSets.fold<double>(0, (s, e) => s + e.distanceKm);
+    final h = session.durationSeconds ~/ 3600;
+    final m = (session.durationSeconds % 3600) ~/ 60;
+    final durationLabel = h > 0 ? '${h}h${m.toString().padLeft(2, '0')}' : '${m}m';
 
     final buffer = StringBuffer();
     buffer.writeln();
     buffer.writeln(
-        '<h1 style="color: #F55CBD; border-bottom: 2px solid #00FFFF; padding-bottom: 10px; text-shadow: 0 0 10px rgba(245, 92, 189, 0.4); margin-bottom: 5px;">🏋️ Séance musculation</h1>');
+        '<h1 style="color: #F55CBD; border-bottom: 2px solid #00FFFF; padding-bottom: 10px; text-shadow: 0 0 10px rgba(245, 92, 189, 0.4); margin-bottom: 5px;">🏋️ Séance</h1>');
     buffer.writeln();
     buffer.writeln('> [!quote] 📋 **Rapport Technique**');
     buffer.writeln('> *Données enregistrées via Arcade Health.*');
@@ -802,30 +865,68 @@ marker: default, $endPt
     buffer.writeln(
         '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-around; background-color: #141419; padding: 20px; border-radius: 12px; border: 1px solid #F55CBD; box-shadow: 0 4px 15px rgba(245, 92, 189, 0.15); text-align: center; margin-bottom: 20px; font-family: sans-serif;">');
     buffer.writeln(
-        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🏋️</span><br/><strong style="color: #00FFFF; font-size: 18px;">${entries.length}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Exercices</span></div>');
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">⏱️</span><br/><strong style="color: #00FFFF; font-size: 18px;">$durationLabel</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Durée</span></div>');
     buffer.writeln(
-        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🔁</span><br/><strong style="color: #F55CBD; font-size: 18px;">$totalSets</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Séries totales</span></div>');
+        '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🔁</span><br/><strong style="color: #F55CBD; font-size: 18px;">${sets.length}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Blocs</span></div>');
     if (totalVolumeKg > 0) {
       buffer.writeln(
           '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">⚖️</span><br/><strong style="color: #FFD23F; font-size: 18px;">${totalVolumeKg.toStringAsFixed(0)}</strong><br/><span style="color: #AAAAAA; font-size: 12px;">kg (volume)</span></div>');
     }
+    if (totalCardioDuration > 0) {
+      final cardioLabel = totalCardioDistance > 0
+          ? '${(totalCardioDuration / 60).round()}m, ${totalCardioDistance.toStringAsFixed(1)} km'
+          : '${(totalCardioDuration / 60).round()}m';
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">🏃</span><br/><strong style="color: #39FF14; font-size: 18px;">$cardioLabel</strong><br/><span style="color: #AAAAAA; font-size: 12px;">Cardio</span></div>');
+    }
+    if (session.hasHr) {
+      buffer.writeln(
+          '  <div style="flex: 1; min-width: 80px;"><span style="font-size: 24px;">❤️</span><br/><strong style="color: #FF2E88; font-size: 18px;">${session.avgHr.round()} bpm</strong><br/><span style="color: #AAAAAA; font-size: 12px;">FC moy. (${session.minHr.round()}-${session.maxHr.round()})</span></div>');
+    }
     buffer.writeln('</div>');
     buffer.writeln();
 
-    buffer.writeln('## 💪 Détail des exercices');
+    if (session.hrBpm.length >= 2) {
+      final labels = [
+        for (final d in session.hrDates)
+          '"${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}"'
+      ];
+      buffer.writeln('### ❤️ Fréquence cardiaque pendant la séance');
+      buffer.writeln();
+      buffer.writeln('```echarts');
+      buffer.writeln('{');
+      buffer.writeln('  "tooltip": { "trigger": "axis", "formatter": "{b}: {c} bpm" },');
+      buffer.writeln('  "xAxis": { "type": "category", "data": [${labels.join(', ')}] },');
+      buffer.writeln(
+          '  "yAxis": { "type": "value", "name": "FC (bpm)", "nameLocation": "middle", "nameGap": 30 },');
+      buffer.writeln(
+          '  "series": [{ "data": [${session.hrBpm.join(', ')}], "type": "line", "smooth": true, "itemStyle": { "color": "#F55CBD" }, "areaStyle": { "color": "rgba(245, 92, 189, 0.2)" } }]');
+      buffer.writeln('}');
+      buffer.writeln('```');
+      buffer.writeln();
+    }
+
+    buffer.writeln('## 💪 Détail des blocs');
     buffer.writeln();
     buffer.writeln(
         '<table style="width: 100%; text-align: center; border-collapse: collapse; margin-bottom: 20px; font-family: sans-serif;">');
     buffer.writeln(
         '  <tr style="background-color: #141419; color: #00FFFF; border-bottom: 2px solid #F55CBD;">');
     buffer.writeln(
-        '    <th style="padding: 12px;">Exercice</th><th style="padding: 12px;">Catégorie</th><th style="padding: 12px;">Séries × Reps</th><th style="padding: 12px;">Charge</th>');
+        '    <th style="padding: 12px;">Exercice</th><th style="padding: 12px;">Catégorie</th><th style="padding: 12px;">Détail</th><th style="padding: 12px;">Repos</th>');
     buffer.writeln('  </tr>');
-    for (final e in entries) {
-      final charge = e.chargeKg > 0 ? '${e.chargeKg.toStringAsFixed(1)} kg' : '—';
+    for (final e in sets) {
+      final detail = e.category.isCardio
+          ? '${(e.durationSeconds / 60).toStringAsFixed(1)} min'
+              '${e.distanceKm > 0 ? ', ${e.distanceKm.toStringAsFixed(1)} km' : ''}'
+              '${e.isInterval ? ' (fractionné)' : ''}'
+          : '${e.reps} reps'
+              '${e.chargeKg > 0 ? ' × ${e.chargeKg.toStringAsFixed(1)} kg' : ''}'
+              '${e.side == 'L' ? ' (gauche)' : (e.side == 'R' ? ' (droite)' : '')}';
+      final rest = e.restSeconds > 0 ? '${e.restSeconds}s' : '—';
       buffer.writeln('  <tr style="border-bottom: 1px solid #333333;">');
       buffer.writeln(
-          '    <td style="padding: 10px; font-weight: bold;">${e.exerciseName}</td><td style="padding: 10px; color: #AAAAAA;">${e.category.label}</td><td style="padding: 10px; color: #F55CBD;">${e.sets} × ${e.reps}</td><td style="padding: 10px; color: #FFD23F;">$charge</td>');
+          '    <td style="padding: 10px; font-weight: bold;">${e.exerciseName}</td><td style="padding: 10px; color: #AAAAAA;">${e.category.label}</td><td style="padding: 10px; color: #F55CBD;">$detail</td><td style="padding: 10px; color: #FFD23F;">$rest</td>');
       buffer.writeln('  </tr>');
     }
     buffer.writeln('</table>');

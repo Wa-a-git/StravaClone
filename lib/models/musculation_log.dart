@@ -31,6 +31,9 @@ class MusculationLogEntry {
   /// "Fractionné" coché lors de la saisie — simple étiquette, ne déclenche
   /// aucun sous-suivi d'intervalles (ça, c'est IntervalGameScreen).
   final bool isInterval;
+  /// Côté pour un exercice unilatéral (Exercise.isUnilateral) : 'L' ou 'R'.
+  /// null = exercice bilatéral, pas de notion de côté.
+  final String? side;
 
   const MusculationLogEntry({
     required this.date,
@@ -45,6 +48,7 @@ class MusculationLogEntry {
     this.durationSeconds = 0,
     this.distanceKm = 0,
     this.isInterval = false,
+    this.side,
   });
 
   /// Volume total de la série : séries × répétitions × charge — mesure
@@ -74,6 +78,7 @@ class MusculationLogEntry {
         'durationSeconds': durationSeconds,
         'distanceKm': distanceKm,
         'isInterval': isInterval,
+        if (side != null) 'side': side,
       };
 
   factory MusculationLogEntry.fromMap(Map<dynamic, dynamic> m) {
@@ -93,6 +98,7 @@ class MusculationLogEntry {
       durationSeconds: (m['durationSeconds'] as num?)?.toInt() ?? 0,
       distanceKm: (m['distanceKm'] as num?)?.toDouble() ?? 0,
       isInterval: m['isInterval'] == true,
+      side: (m['side'] as String?),
     );
   }
 }

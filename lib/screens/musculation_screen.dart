@@ -2,17 +2,16 @@
 // Musculation : bibliothèque d'exercices par catégorie (référence, pas de
 // log direct depuis ici) + lancement d'une séance en direct chronométrée
 // (live_musculation_screen.dart) où se fait tout le log réel.
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/exercise_library.dart';
-import '../models/musculation_log.dart';
-import '../providers/game_provider.dart' show musculationRevisionProvider;
-import '../services/export_service.dart';
-import '../services/musculation_store.dart';
+import '../models/musculation_session.dart';
+import '../services/musculation_session_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'live_musculation_screen.dart';
+import 'musculation_history_screen.dart';
+import 'musculation_session_detail_screen.dart';
 
 /// Lance une séance en direct — appelable depuis le bouton "DÉMARRER UNE
 /// SÉANCE" de cet écran ou depuis le bouton + de lancement rapide du hub
@@ -22,16 +21,6 @@ Future<void> openMusculationQuickLog(BuildContext context) {
     context,
     MaterialPageRoute(builder: (_) => const LiveMusculationScreen()),
   );
-}
-
-/// Réexporte toute la séance du jour vers le vault (mycelium) — appelé après
-/// chaque ajout/suppression d'exercice, best-effort et fire-and-forget comme
-/// le reste des exports (santé, activités). Contrairement à celles-ci, la
-/// musculation n'avait jusqu'ici aucun export : rien ne remontait dans la
-/// note du jour côté Marble.
-void _syncMusculationDayToVault() {
-  final today = MusculationStore.todayEntries().map((e) => e.value).toList();
-  unawaited(ExportService.saveMusculationDayAsMarkdown(DateTime.now(), today));
 }
 
 /// Contenu du sous-onglet "Musculation" du hub Sport.
@@ -51,6 +40,15 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
     if (mounted) setState(() {}); // rafraîchit "Séance du jour"
   }
 
+  Future<void> _openSession(MusculationSession session) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) => MusculationSessionDetailScreen(session: session)),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercises = kExerciseLibrary
@@ -62,7 +60,7 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
       byCategory.putIfAbsent(e.category, () => []).add(e);
     }
 
-    final todayEntries = MusculationStore.todayEntries();
+    final todaySessions = MusculationSessionStore.forDay(DateTime.now());
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
@@ -76,17 +74,30 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
             foreground: Colors.white,
             onPressed: _openQuickLog,
           ),
-          if (todayEntries.isNotEmpty) ...[
+          if (todaySessions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xl),
             const Text('Séance du jour', style: AppText.screenTitle),
             const SizedBox(height: AppSpacing.md),
-            for (final entry in todayEntries)
-              _LoggedEntryTile(
-                logKey: entry.key,
-                entry: entry.value,
-                onDeleted: () => setState(() {}),
+            for (final session in todaySessions)
+              _TodaySessionCard(
+                session: session,
+                onTap: () => _openSession(session),
               ),
           ],
+          const SizedBox(height: AppSpacing.xl),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Historique', style: AppText.screenTitle),
+              TextButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MusculationHistoryScreen()),
+                ),
+                child: const Text('Tout voir →'),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.xl),
           Text('Bibliothèque d\'exercices', style: AppText.screenTitle),
           const SizedBox(height: AppSpacing.md),
@@ -126,51 +137,55 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
   }
 }
 
-// ── Entrée loggée aujourd'hui (avec suppression) ──────────────────────────────
-class _LoggedEntryTile extends ConsumerWidget {
-  final String logKey;
-  final MusculationLogEntry entry;
-  final VoidCallback onDeleted;
-  const _LoggedEntryTile(
-      {required this.logKey, required this.entry, required this.onDeleted});
+// ── Carte "séance du jour" : résumé cliquable vers le détail, plutôt que le
+// flot brut de chaque bloc (illisible dès qu'une séance dépasse 3-4
+// exercices, et une séance peut désormais compter des dizaines de blocs
+// individuels). ───────────────────────────────────────────────────────────
+class _TodaySessionCard extends StatelessWidget {
+  final MusculationSession session;
+  final VoidCallback onTap;
+  const _TodaySessionCard({required this.session, required this.onTap});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: entry.category.color.withOpacity(0.35)),
-      ),
-      child: Row(
-        children: [
-          Icon(entry.category.icon, color: entry.category.color, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(entry.exerciseName, style: AppText.body),
-          ),
-          Text(_entrySummary(entry),
-              style: TextStyle(
-                  fontFamily: kArcadeFont,
-                  color: entry.category.color,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800)),
-          IconButton(
-            icon: const Icon(Icons.close_rounded,
-                color: AppColors.textSecondary, size: 18),
-            onPressed: () async {
-              await MusculationStore.deleteEntry(logKey);
-              _syncMusculationDayToVault();
-              ref.read(musculationRevisionProvider.notifier).state++;
-              onDeleted();
-            },
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final h = session.durationSeconds ~/ 3600;
+    final m = (session.durationSeconds % 3600) ~/ 60;
+    final duration = h > 0 ? '${h}h${m.toString().padLeft(2, '0')}' : '${m}m';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: kNeonViolet.withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.fitness_center_rounded, color: kNeonViolet, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      '${_hour(session.date)} · $duration',
+                      style: AppText.body),
+                  if (session.hasHr)
+                    Text('FC moy. ${session.avgHr.round()} bpm', style: AppText.caption),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: kNeonViolet, size: 20),
+          ],
+        ),
       ),
     );
   }
+
+  String _hour(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}';
 }
 
 class _CategoryChip extends StatelessWidget {
@@ -253,24 +268,3 @@ class _ExerciseTile extends StatelessWidget {
   }
 }
 
-/// Formate une charge sans décimale inutile ("40" plutôt que "40.0", mais
-/// "42.5" reste tel quel).
-String _formatCharge(double kg) =>
-    kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
-
-/// Résumé compact d'une entrée loggée — durée/distance pour le cardio (sets
-/// vaut toujours 1 pour ces entrées-là, sans intérêt à afficher), reps ×
-/// charge sinon.
-String _entrySummary(MusculationLogEntry entry) {
-  if (entry.category.isCardio) {
-    final m = entry.durationSeconds ~/ 60;
-    final s = entry.durationSeconds % 60;
-    final duration = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    return entry.distanceKm > 0
-        ? '$duration · ${entry.distanceKm.toStringAsFixed(1)} km'
-        : duration;
-  }
-  return entry.chargeKg > 0
-      ? '${entry.sets} × ${entry.reps} · ${_formatCharge(entry.chargeKg)} kg'
-      : '${entry.sets} × ${entry.reps}';
-}

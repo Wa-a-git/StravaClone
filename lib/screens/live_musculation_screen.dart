@@ -54,6 +54,9 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
   int _duration = 0;
   double _distance = 0;
   bool _isInterval = false;
+  /// 'L' ou 'R' pour un exercice unilatéral (Exercise.isUnilateral), sinon
+  /// null. Alterné automatiquement après chaque série confirmée.
+  String? _side;
 
   final AudioCoach _coach = AudioCoach();
   bool _finishing = false;
@@ -111,6 +114,10 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
         _reps = source?.reps ?? 10;
         _charge = source?.chargeKg ?? 0;
       }
+      // Unilatéral : on alterne par rapport au dernier côté fait pour CET
+      // exercice (dans la séance, sinon dans l'historique) — gauche puis
+      // droite puis gauche... Sans historique, on démarre à gauche.
+      _side = ex.isUnilateral ? (source?.side == 'L' ? 'R' : 'L') : null;
     });
   }
 
@@ -160,6 +167,7 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
       durationSeconds: cardio ? _duration : 0,
       distanceKm: cardio ? _distance : 0,
       isInterval: cardio ? _isInterval : false,
+      side: ex.isUnilateral ? _side : null,
     ));
     ref.read(musculationRevisionProvider.notifier).state++;
     if (!mounted) return;
@@ -167,6 +175,8 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
     setState(() {
       _phase = _Phase.working;
       _workElapsed = 0;
+      // Alterne automatiquement pour la prochaine série du même exercice.
+      if (ex.isUnilateral) _side = _side == 'L' ? 'R' : 'L';
     });
   }
 
@@ -188,19 +198,20 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
     _ticker?.cancel();
     final end = DateTime.now();
     final vitals = await HealthConnectService().getActivityVitals(_sessionStart, end);
-    await MusculationSessionStore.addEntry(MusculationSession(
+    final session = MusculationSession(
       date: _sessionStart,
       endDate: end,
       avgHr: vitals.avgHr,
       minHr: vitals.minHr,
       maxHr: vitals.maxHr,
       activeCalories: vitals.activeCalories,
-    ));
+      hrTimesMs: [for (final s in vitals.hrSeries) s.$1.millisecondsSinceEpoch],
+      hrBpm: [for (final s in vitals.hrSeries) s.$2],
+    );
+    await MusculationSessionStore.addEntry(session);
     // Best-effort, comme le reste des exports — n'empêche jamais la
     // sauvegarde locale si le vault est injoignable.
-    unawaited(ExportService.saveMusculationDayAsMarkdown(
-        DateTime.now(),
-        MusculationStore.todayEntries().map((e) => e.value).toList()));
+    unawaited(ExportService.saveMusculationSessionAsMarkdown(session, sets));
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -318,6 +329,8 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
                     onEndSet: _exercise != null ? _endSet : null,
                     isCardio: _exercise?.category.isCardio ?? false,
                     workElapsed: _workElapsed,
+                    side: _exercise?.isUnilateral == true ? _side : null,
+                    onSideChanged: (v) => setState(() => _side = v),
                   )
                 : _RestingPanel(
                     isCardio: _exercise!.category.isCardio,
@@ -337,6 +350,8 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
                     onDurationChanged: (v) => setState(() => _duration = v),
                     onDistanceChanged: (v) => setState(() => _distance = v),
                     onIntervalChanged: (v) => setState(() => _isInterval = v),
+                    side: _exercise!.isUnilateral ? _side : null,
+                    onSideChanged: (v) => setState(() => _side = v),
                     onConfirm: _confirmSetAndRest,
                     onDiscard: _discardSet,
                   ),
@@ -363,8 +378,15 @@ class _WorkingPanel extends StatelessWidget {
   final VoidCallback? onEndSet;
   final bool isCardio;
   final int workElapsed;
-  const _WorkingPanel(
-      {required this.onEndSet, required this.isCardio, required this.workElapsed});
+  final String? side;
+  final ValueChanged<String?> onSideChanged;
+  const _WorkingPanel({
+    required this.onEndSet,
+    required this.isCardio,
+    required this.workElapsed,
+    required this.side,
+    required this.onSideChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +400,10 @@ class _WorkingPanel extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1)),
+        if (side != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _SideToggle(side: side, onChanged: onSideChanged),
+        ],
         const SizedBox(height: AppSpacing.md),
         if (isCardio) ...[
           Text(
@@ -428,6 +454,8 @@ class _RestingPanel extends StatelessWidget {
   final ValueChanged<int> onDurationChanged;
   final ValueChanged<double> onDistanceChanged;
   final ValueChanged<bool> onIntervalChanged;
+  final String? side;
+  final ValueChanged<String?> onSideChanged;
   final VoidCallback onConfirm;
   final VoidCallback onDiscard;
 
@@ -446,6 +474,8 @@ class _RestingPanel extends StatelessWidget {
     required this.onDurationChanged,
     required this.onDistanceChanged,
     required this.onIntervalChanged,
+    required this.side,
+    required this.onSideChanged,
     required this.onConfirm,
     required this.onDiscard,
   });
@@ -511,6 +541,13 @@ class _RestingPanel extends StatelessWidget {
                 onTap: () => onIntervalChanged(!isInterval)),
           ),
         ] else ...[
+          if (side != null) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _SideToggle(side: side, onChanged: onSideChanged),
+            ),
+            const SizedBox(height: 10),
+          ],
           _StepperRow(label: 'Répétitions', value: reps, onChanged: onRepsChanged),
           const SizedBox(height: 10),
           _ChargeStepperRow(value: charge, onChanged: onChargeChanged),
@@ -557,6 +594,29 @@ class _TargetChip extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w500)),
       ),
+    );
+  }
+}
+
+/// Sélecteur Gauche/Droite pour un exercice unilatéral — alterné
+/// automatiquement (voir _applyPrefill/_confirmSetAndRest) mais ajustable au
+/// cas où l'alternance devine mal (ex. série ratée refaite du même côté).
+class _SideToggle extends StatelessWidget {
+  final String? side;
+  final ValueChanged<String?> onChanged;
+  const _SideToggle({required this.side, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _TargetChip(
+            label: 'Gauche', selected: side == 'L', onTap: () => onChanged('L')),
+        const SizedBox(width: 8),
+        _TargetChip(
+            label: 'Droite', selected: side == 'R', onTap: () => onChanged('R')),
+      ],
     );
   }
 }
@@ -694,6 +754,7 @@ class _ExercisePickerSheet extends StatefulWidget {
 
 class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
   ExerciseCategory? _filter;
+  String? _muscleFilter;
   String _search = '';
 
   @override
@@ -701,6 +762,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
     final query = _search.trim().toLowerCase();
     final exercises = kExerciseLibrary.where((e) {
       if (_filter != null && e.category != _filter) return false;
+      if (_muscleFilter != null && e.muscleGroup != _muscleFilter) return false;
       if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
         return false;
       }
@@ -729,6 +791,30 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
             ),
           ),
           const SizedBox(height: 10),
+          SizedBox(
+            height: 34,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _FilterChip(
+                  label: 'Tout muscle',
+                  color: kNeonCyan,
+                  selected: _muscleFilter == null,
+                  onTap: () => setState(() => _muscleFilter = null),
+                ),
+                for (final g in kMuscleGroups) ...[
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: g,
+                    color: kNeonCyan,
+                    selected: _muscleFilter == g,
+                    onTap: () => setState(() => _muscleFilter = g),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: 40,
             child: ListView(
@@ -1028,9 +1114,11 @@ String _setSummary(MusculationLogEntry e) {
     if (e.distanceKm > 0) parts.add('${e.distanceKm.toStringAsFixed(1)} km');
     return parts.join(' · ');
   }
-  return e.chargeKg > 0
-      ? '${e.reps} × ${_formatCharge(e.chargeKg)} kg'
-      : '${e.reps} reps';
+  final sideSuffix = e.side == 'L' ? ' (G)' : (e.side == 'R' ? ' (D)' : '');
+  return (e.chargeKg > 0
+          ? '${e.reps} × ${_formatCharge(e.chargeKg)} kg'
+          : '${e.reps} reps') +
+      sideSuffix;
 }
 
 String _fmtClock(int totalSeconds) {

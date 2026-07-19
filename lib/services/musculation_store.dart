@@ -18,6 +18,15 @@ class MusculationStore {
 
   static Future<void> deleteEntry(String key) => _box.delete(key);
 
+  /// Supprime toutes les séries d'une séance (voir MusculationSessionStore
+  /// pour l'enveloppe elle-même) — utilisé quand on supprime une séance
+  /// entière depuis l'historique plutôt qu'un seul bloc.
+  static Future<void> deleteSession(int sessionId) async {
+    for (final e in entriesForSession(sessionId)) {
+      await _box.delete(e.key);
+    }
+  }
+
   /// Entrées d'un jour donné, dans l'ordre d'ajout.
   static List<MapEntry<String, MusculationLogEntry>> entriesFor(DateTime day) {
     final dayKey = MusculationLogEntry.keyFor(day);

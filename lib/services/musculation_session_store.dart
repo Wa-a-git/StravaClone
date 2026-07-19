@@ -2,6 +2,7 @@
 // Persistance des séances de musculation en direct (enveloppe FC/calories),
 // calquée sur MeditationStore.
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/musculation_log.dart' show MusculationLogEntry;
 import '../models/musculation_session.dart';
 
 class MusculationSessionStore {
@@ -19,6 +20,18 @@ class MusculationSessionStore {
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
   }
+
+  /// Séances d'un jour donné, dans l'ordre chronologique — pour le carrousel
+  /// "séance du jour" du Sport tab (une carte par séance, pas un flot brut de
+  /// séries).
+  static List<MusculationSession> forDay(DateTime day) {
+    final key = MusculationLogEntry.keyFor(day);
+    return all().where((s) => MusculationLogEntry.keyFor(s.date) == key).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
+  static Future<void> deleteEntry(int sessionId) =>
+      _box.delete(sessionId.toString());
 
   static Future<void> clearAll() => _box.clear();
 }
