@@ -782,9 +782,10 @@ _MetricMeta _metaFor(HealthMetric m) {
           unit: 'kg',
           fractionDigits: 1,
           explainTitle: 'À PROPOS',
-          explain: 'Dernier relevé connu, lu depuis Health Connect (balance '
-              'connectée). Se met à jour seulement les jours où tu te pèses — '
-              'les autres jours reprennent la dernière valeur connue.');
+          explain: 'Saisie manuelle (aucune balance connectée à Health '
+              'Connect ici) — appuie sur le crayon en haut pour ajouter ta '
+              'pesée du jour. Les jours sans saisie ne comptent pas dans la '
+              'courbe.');
     case HealthMetric.hrvZScore:
       return const _MetricMeta(
           title: 'VFC — écart à ta norme',

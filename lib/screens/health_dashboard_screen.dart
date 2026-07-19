@@ -522,11 +522,6 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
         duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
   }
 
-  Future<void> _editWeight() async {
-    await showAppSheet(context: context, child: const _WeighInSheet());
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = widget.snapshot;
@@ -593,8 +588,7 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
             Icons.monitor_weight_rounded,
             const Color(0xFF5C4A0E),
             const Color(0xFFE3C98F),
-            HealthMetric.weightKg,
-            onTap: _editWeight),
+            HealthMetric.weightKg),
         _HeroPillData(
             'VO2 MAX',
             vo2Estimates.isNotEmpty
@@ -1702,129 +1696,10 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-/// Feuille de saisie rapide du poids — grand champ + pas de ±0,1/±0,5,
-/// écrit via HealthStore.setManualWeightToday (synchronise aussi Profil).
-class _WeighInSheet extends StatefulWidget {
-  const _WeighInSheet();
-
-  @override
-  State<_WeighInSheet> createState() => _WeighInSheetState();
-}
-
-class _WeighInSheetState extends State<_WeighInSheet> {
-  late double _value;
-
-  @override
-  void initState() {
-    super.initState();
-    final today = HealthStore.recordFor(DateTime.now());
-    _value = (today != null && today.weightKg > 0)
-        ? today.weightKg
-        : (HealthProfileStore.weightKg ?? 70.0);
-  }
-
-  void _nudge(double delta) {
-    setState(() => _value = ((_value + delta) * 10).round() / 10);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('AJOUTER MON POIDS',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontFamily: kArcadeFont,
-                color: kNeonAmber,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1)),
-        const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(_value.toStringAsFixed(1).replaceAll('.', ','),
-                style: const TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: Colors.white,
-                    fontSize: 40,
-                    fontWeight: FontWeight.w900)),
-            const SizedBox(width: 8),
-            const Text('kg',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text('Pour aujourd\'hui — ${_todayLabel()}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-        const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _nudgeButton('-0,5', () => _nudge(-0.5)),
-            const SizedBox(width: 8),
-            _nudgeButton('-0,1', () => _nudge(-0.1)),
-            const SizedBox(width: 8),
-            _nudgeButton('+0,1', () => _nudge(0.1)),
-            const SizedBox(width: 8),
-            _nudgeButton('+0,5', () => _nudge(0.5)),
-          ],
-        ),
-        const SizedBox(height: 18),
-        SizedBox(
-          height: 48,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kNeonAmber,
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              await HealthStore.setManualWeightToday(_value);
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('ENREGISTRER',
-                style: TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: Colors.black,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _nudgeButton(String label, VoidCallback onTap) {
-    return Expanded(
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textSecondary,
-          side: const BorderSide(color: AppColors.border),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-
-  String _todayLabel() {
-    const months = [
-      'jan', 'fév', 'mar', 'avr', 'mai', 'juin',
-      'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'
-    ];
-    final d = DateTime.now();
-    return '${d.day} ${months[d.month - 1]}';
-  }
-}
+// (Ancienne feuille de saisie rapide _WeighInSheet retirée : la pilule
+// Poids du carrousel héros ouvre maintenant HealthMetricDetailScreen comme
+// les autres indicateurs, dont l'icône crayon dans l'AppBar sert déjà de
+// saisie — voir health_metric_detail_screen.dart _editWeight()).
 
 // ── Score de Préparation "maison" : composite HRV + FC repos (déjà fusionnés
 // dans recoveryScore) + sommeil. Explicitement PAS le score EDA propriétaire

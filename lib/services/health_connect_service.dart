@@ -388,6 +388,17 @@ class HealthConnectService {
       activityScore: scores.activityScore,
     );
 
+    // Le poids saisi à la main (HealthStore.setManualWeightToday) ne vient
+    // jamais de Health Connect ici (aucune balance connectée) — sans ça,
+    // chaque resynchro (à chaque ouverture de l'app) écraserait la saisie du
+    // jour avec `snapshot.weightKg` = 0 et la ferait disparaître.
+    if (snapshot.weightKg <= 0) {
+      final previous = HealthStore.recordFor(day);
+      if (previous != null && previous.weightKg > 0) {
+        record = record.copyWith(weightKg: previous.weightKg);
+      }
+    }
+
     // Indicateurs dérivés qui ont besoin de l'historique (VFC z-score, dette
     // de sommeil) — fenêtré relativement à [day], jamais à "maintenant" :
     // syncDay est aussi appelé pendant un backfill sur des jours passés, et

@@ -148,19 +148,18 @@ class HealthStore {
   static bool hasDay(DateTime day) =>
       _box.containsKey(DailyHealthRecord.keyFor(day));
 
-  /// Enregistre un poids saisi manuellement (Profil ou carte Santé) : met à
-  /// jour `HealthProfileStore` (source de vérité pour l'IMC) et, seulement
-  /// si aujourd'hui n'a pas déjà un poids Health Connect (balance connectée),
-  /// seed aussi `DailyHealthRecord.weightKg` du jour — pour que le graphique
-  /// de tendance reflète la saisie manuelle quand aucune balance n'a
-  /// synchronisé. Ne réécrit jamais un jour passé déjà synchronisé : seul
-  /// aujourd'hui peut recevoir une saisie manuelle.
+  /// Enregistre un poids saisi manuellement (Profil, carte Santé, carrousel
+  /// héros...) : met à jour `HealthProfileStore` (source de vérité pour
+  /// l'IMC) et écrase toujours `DailyHealthRecord.weightKg` du jour — toutes
+  /// les saisies passent par cette fonction (aucune synchro Health Connect
+  /// automatique ne l'appelle, voir syncDay/fromSnapshot pour ce cas-là), la
+  /// dernière saisie du jour doit donc toujours gagner. Seul aujourd'hui peut
+  /// recevoir une saisie manuelle, jamais un jour passé.
   static Future<void> setManualWeightToday(double kg) async {
     await HealthProfileStore.setWeight(kg);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final existing = recordFor(today);
-    if (existing != null && existing.weightKg > 0) return; // HC déjà à jour
     final updated =
         (existing ?? DailyHealthRecord(date: today)).copyWith(weightKg: kg);
     await upsertDay(updated);
