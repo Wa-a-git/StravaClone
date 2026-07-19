@@ -31,6 +31,10 @@ extension ExerciseCategoryX on ExerciseCategory {
         ExerciseCategory.machine => kNeonViolet,
         ExerciseCategory.cardio => kNeonAmber,
       };
+
+  /// Cardio se loggue en durée/distance (+ fractionné ou non), pas en
+  /// séries/répétitions/charge — voir live_musculation_screen.dart.
+  bool get isCardio => this == ExerciseCategory.cardio;
 }
 
 class Exercise {
@@ -78,8 +82,13 @@ const List<Exercise> kExerciseLibrary = [
   Exercise(id: 'chest_press', name: 'Presse pectoraux', category: ExerciseCategory.machine, muscleGroup: 'Pectoraux'),
   Exercise(id: 'leg_curl', name: 'Leg curl', category: ExerciseCategory.machine, muscleGroup: 'Ischio-jambiers'),
 
-  // Cardio
+  // Cardio — au même titre que les autres catégories : utilisables dans une
+  // séance en direct (ex. un bloc vélo au milieu d'une séance muscu), avec
+  // durée/distance chronométrées au lieu de séries/reps (voir
+  // live_musculation_screen.dart, ExerciseCategoryX.isCardio).
   Exercise(id: 'rowing_erg', name: 'Rameur', category: ExerciseCategory.cardio, muscleGroup: 'Cardio'),
   Exercise(id: 'bike', name: 'Vélo', category: ExerciseCategory.cardio, muscleGroup: 'Cardio'),
   Exercise(id: 'jump_rope', name: 'Corde à sauter', category: ExerciseCategory.cardio, muscleGroup: 'Cardio'),
+  Exercise(id: 'treadmill_run', name: 'Course', category: ExerciseCategory.cardio, muscleGroup: 'Cardio'),
+  Exercise(id: 'stair_climber', name: 'Escalier', category: ExerciseCategory.cardio, muscleGroup: 'Cardio'),
 ];

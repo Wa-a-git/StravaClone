@@ -23,6 +23,14 @@ class MusculationLogEntry {
   /// Repos pris juste après cette série, avant la suivante. 0 = non
   /// chronométré (log rapide classique, ou dernière série d'une séance).
   final int restSeconds;
+  /// Champs cardio (category.isCardio) : durée de l'effort et distance
+  /// parcourue, à la place de reps/chargeKg qui n'ont pas de sens pour un
+  /// bloc vélo/rameur/course/escalier. 0 = non renseigné.
+  final int durationSeconds;
+  final double distanceKm;
+  /// "Fractionné" coché lors de la saisie — simple étiquette, ne déclenche
+  /// aucun sous-suivi d'intervalles (ça, c'est IntervalGameScreen).
+  final bool isInterval;
 
   const MusculationLogEntry({
     required this.date,
@@ -34,10 +42,15 @@ class MusculationLogEntry {
     this.chargeKg = 0,
     this.sessionId = 0,
     this.restSeconds = 0,
+    this.durationSeconds = 0,
+    this.distanceKm = 0,
+    this.isInterval = false,
   });
 
   /// Volume total de la série : séries × répétitions × charge — mesure
   /// standard en musculation pour comparer l'effort d'une séance à l'autre.
+  /// N'a pas de sens pour le cardio (0 par construction : reps/chargeKg n'y
+  /// sont jamais renseignés).
   double get volumeKg => sets * reps * chargeKg;
 
   /// Clé de jour : 'yyyy-MM-dd'.
@@ -58,6 +71,9 @@ class MusculationLogEntry {
         'chargeKg': chargeKg,
         'sessionId': sessionId,
         'restSeconds': restSeconds,
+        'durationSeconds': durationSeconds,
+        'distanceKm': distanceKm,
+        'isInterval': isInterval,
       };
 
   factory MusculationLogEntry.fromMap(Map<dynamic, dynamic> m) {
@@ -74,6 +90,9 @@ class MusculationLogEntry {
       chargeKg: (m['chargeKg'] as num?)?.toDouble() ?? 0,
       sessionId: (m['sessionId'] as num?)?.toInt() ?? 0,
       restSeconds: (m['restSeconds'] as num?)?.toInt() ?? 0,
+      durationSeconds: (m['durationSeconds'] as num?)?.toInt() ?? 0,
+      distanceKm: (m['distanceKm'] as num?)?.toDouble() ?? 0,
+      isInterval: m['isInterval'] == true,
     );
   }
 }

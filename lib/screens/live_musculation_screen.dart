@@ -1,10 +1,12 @@
 // lib/screens/live_musculation_screen.dart
-// Séance de musculation en direct : chrono de séance, bascule simple
-// En exercice / Pause, saisie reps+charge PENDANT le repos qui suit la série
-// (pas avant — on ne connaît le nombre de reps qu'une fois la série faite),
-// et données montre (FC) rattachées à la séance entière une fois terminée
-// (comme les courses/méditation : jamais de polling en direct, une seule
-// lecture Health Connect sur toute la fenêtre à la fin).
+// Séance en direct (muscu ET cardio — même logique, un exercice cardio se
+// choisit comme un autre au milieu d'une séance) : chrono de séance, bascule
+// simple En exercice / Pause, saisie des données PENDANT le repos qui suit
+// (reps+charge, ou durée+distance pour le cardio — jamais avant, puisqu'on ne
+// les connaît qu'une fois le bloc fait), et données montre (FC) rattachées à
+// la séance entière une fois terminée (comme les courses/méditation : jamais
+// de polling en direct, une seule lecture Health Connect sur toute la
+// fenêtre à la fin).
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -41,6 +43,7 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
   int _sessionElapsed = 0;
 
   _Phase _phase = _Phase.working;
+  int _workElapsed = 0;
   int _restElapsed = 0;
   int? _restTarget;
   bool _restAlertFired = false;
@@ -48,6 +51,9 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
   Exercise? _exercise;
   int _reps = 10;
   double _charge = 0;
+  int _duration = 0;
+  double _distance = 0;
+  bool _isInterval = false;
 
   final AudioCoach _coach = AudioCoach();
   bool _finishing = false;
@@ -73,7 +79,9 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
     if (!mounted) return;
     setState(() {
       _sessionElapsed++;
-      if (_phase == _Phase.resting) {
+      if (_phase == _Phase.working) {
+        _workElapsed++;
+      } else {
         _restElapsed++;
         if (_restTarget != null &&
             !_restAlertFired &&
@@ -95,52 +103,78 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
         ? ownSets.last
         : MusculationStore.all().lastWhereOrNull((s) => s.exerciseId == ex.id);
     setState(() {
-      _reps = source?.reps ?? 10;
-      _charge = source?.chargeKg ?? 0;
+      if (ex.category.isCardio) {
+        _duration = source?.durationSeconds ?? 0;
+        _distance = source?.distanceKm ?? 0;
+        _isInterval = source?.isInterval ?? false;
+      } else {
+        _reps = source?.reps ?? 10;
+        _charge = source?.chargeKg ?? 0;
+      }
     });
   }
 
   Future<void> _pickExercise() async {
     final ex = await showAppSheet<Exercise>(
         context: context, child: const _ExercisePickerSheet());
-    if (ex != null) {
-      setState(() => _exercise = ex);
-      _applyPrefill(ex);
-    }
+    if (ex == null) return;
+    // Changer d'exercice repart toujours d'un état "en exercice" propre — si
+    // on était en plein repos (saisie pas encore confirmée), ce changement
+    // d'avis annule implicitement cette saisie en cours.
+    setState(() {
+      _exercise = ex;
+      _phase = _Phase.working;
+      _workElapsed = 0;
+    });
+    _applyPrefill(ex);
   }
 
   void _endSet() {
-    if (_exercise == null) return;
+    final ex = _exercise;
+    if (ex == null) return;
     HapticFeedback.mediumImpact();
     setState(() {
       _phase = _Phase.resting;
       _restElapsed = 0;
       _restAlertFired = false;
+      // Cardio : la durée de l'effort qu'on vient de faire est mesurée, pas
+      // devinée — préremplie ici, encore ajustable pendant le repos.
+      if (ex.category.isCardio) _duration = _workElapsed;
     });
   }
 
   Future<void> _confirmSetAndRest() async {
     final ex = _exercise;
     if (ex == null) return;
+    final cardio = ex.category.isCardio;
     await MusculationStore.addEntry(MusculationLogEntry(
       date: DateTime.now(),
       exerciseId: ex.id,
       exerciseName: ex.name,
       category: ex.category,
       sets: 1,
-      reps: _reps,
-      chargeKg: _charge,
+      reps: cardio ? 0 : _reps,
+      chargeKg: cardio ? 0 : _charge,
       sessionId: _sessionId,
       restSeconds: _restElapsed,
+      durationSeconds: cardio ? _duration : 0,
+      distanceKm: cardio ? _distance : 0,
+      isInterval: cardio ? _isInterval : false,
     ));
     ref.read(musculationRevisionProvider.notifier).state++;
     if (!mounted) return;
     HapticFeedback.mediumImpact();
-    setState(() => _phase = _Phase.working);
+    setState(() {
+      _phase = _Phase.working;
+      _workElapsed = 0;
+    });
   }
 
   void _discardSet() {
-    setState(() => _phase = _Phase.working);
+    setState(() {
+      _phase = _Phase.working;
+      _workElapsed = 0;
+    });
   }
 
   Future<void> _finishSession() async {
@@ -188,8 +222,8 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
             style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
           _sessionSets.isEmpty
-              ? 'Aucune série enregistrée pour l\'instant.'
-              : '${_sessionSets.length} série(s) enregistrée(s) seront gardées.',
+              ? 'Aucun bloc enregistré pour l\'instant.'
+              : '${_sessionSets.length} bloc(s) enregistré(s) seront gardés.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -280,8 +314,13 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
             accent: phaseColor,
             hero: true,
             child: _phase == _Phase.working
-                ? _WorkingPanel(onEndSet: _exercise != null ? _endSet : null)
+                ? _WorkingPanel(
+                    onEndSet: _exercise != null ? _endSet : null,
+                    isCardio: _exercise?.category.isCardio ?? false,
+                    workElapsed: _workElapsed,
+                  )
                 : _RestingPanel(
+                    isCardio: _exercise!.category.isCardio,
                     restElapsed: _restElapsed,
                     restTarget: _restTarget,
                     onTargetChanged: (v) => setState(() {
@@ -292,18 +331,24 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
                     charge: _charge,
                     onRepsChanged: (v) => setState(() => _reps = v),
                     onChargeChanged: (v) => setState(() => _charge = v),
+                    duration: _duration,
+                    distance: _distance,
+                    isInterval: _isInterval,
+                    onDurationChanged: (v) => setState(() => _duration = v),
+                    onDistanceChanged: (v) => setState(() => _distance = v),
+                    onIntervalChanged: (v) => setState(() => _isInterval = v),
                     onConfirm: _confirmSetAndRest,
                     onDiscard: _discardSet,
                   ),
           ),
           const SizedBox(height: AppSpacing.xl),
-          PanelTitle('SÉRIES DE CETTE SÉANCE (${_sessionSets.length})',
+          PanelTitle('BLOCS DE CETTE SÉANCE (${_sessionSets.length})',
               color: kNeonCyan),
           const SizedBox(height: AppSpacing.md),
           if (_sessionSets.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('Aucune série enregistrée pour l\'instant.',
+              child: Text('Aucun bloc enregistré pour l\'instant.',
                   style: AppText.caption),
             )
           else
@@ -316,31 +361,49 @@ class _LiveMusculationScreenState extends ConsumerState<LiveMusculationScreen> {
 
 class _WorkingPanel extends StatelessWidget {
   final VoidCallback? onEndSet;
-  const _WorkingPanel({required this.onEndSet});
+  final bool isCardio;
+  final int workElapsed;
+  const _WorkingPanel(
+      {required this.onEndSet, required this.isCardio, required this.workElapsed});
 
   @override
   Widget build(BuildContext context) {
+    final active = onEndSet != null;
     return Column(
       children: [
-        const Text('EN EXERCICE',
-            style: TextStyle(
+        Text(isCardio ? 'EN EFFORT' : 'EN EXERCICE',
+            style: const TextStyle(
                 fontFamily: kArcadeFont,
                 color: kNeonGreen,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1)),
         const SizedBox(height: AppSpacing.md),
-        Icon(Icons.fitness_center_rounded,
-            color: kNeonGreen.withOpacity(onEndSet == null ? 0.3 : 1), size: 40),
+        if (isCardio) ...[
+          Text(
+            _fmtClock(workElapsed),
+            style: TextStyle(
+                fontFamily: kArcadeFont,
+                color: Colors.white.withOpacity(active ? 1 : 0.3),
+                fontSize: 36,
+                fontWeight: FontWeight.w900),
+          ),
+        ] else ...[
+          Icon(Icons.fitness_center_rounded,
+              color: kNeonGreen.withOpacity(active ? 1 : 0.3), size: 40),
+          const SizedBox(height: 4),
+          Text(_fmtClock(workElapsed),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+        ],
         const SizedBox(height: AppSpacing.lg),
         GlowButton(
-          label: 'TERMINER LA SÉRIE',
+          label: isCardio ? 'TERMINER L\'EFFORT' : 'TERMINER LA SÉRIE',
           icon: Icons.check_rounded,
           color: kNeonGreen,
           foreground: Colors.black,
           onPressed: onEndSet,
         ),
-        if (onEndSet == null) ...[
+        if (!active) ...[
           const SizedBox(height: AppSpacing.sm),
           const Text('Choisis un exercice pour commencer.',
               style: AppText.caption, textAlign: TextAlign.center),
@@ -351,6 +414,7 @@ class _WorkingPanel extends StatelessWidget {
 }
 
 class _RestingPanel extends StatelessWidget {
+  final bool isCardio;
   final int restElapsed;
   final int? restTarget;
   final ValueChanged<int?> onTargetChanged;
@@ -358,10 +422,17 @@ class _RestingPanel extends StatelessWidget {
   final double charge;
   final ValueChanged<int> onRepsChanged;
   final ValueChanged<double> onChargeChanged;
+  final int duration;
+  final double distance;
+  final bool isInterval;
+  final ValueChanged<int> onDurationChanged;
+  final ValueChanged<double> onDistanceChanged;
+  final ValueChanged<bool> onIntervalChanged;
   final VoidCallback onConfirm;
   final VoidCallback onDiscard;
 
   const _RestingPanel({
+    required this.isCardio,
     required this.restElapsed,
     required this.restTarget,
     required this.onTargetChanged,
@@ -369,6 +440,12 @@ class _RestingPanel extends StatelessWidget {
     required this.charge,
     required this.onRepsChanged,
     required this.onChargeChanged,
+    required this.duration,
+    required this.distance,
+    required this.isInterval,
+    required this.onDurationChanged,
+    required this.onDistanceChanged,
+    required this.onIntervalChanged,
     required this.onConfirm,
     required this.onDiscard,
   });
@@ -410,22 +487,37 @@ class _RestingPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
-        const Align(
+        Align(
           alignment: Alignment.centerLeft,
-          child: Text('SÉRIE QUE TU VIENS DE FAIRE',
-              style: TextStyle(
+          child: Text(
+              isCardio ? 'EFFORT QUE TU VIENS DE FAIRE' : 'SÉRIE QUE TU VIENS DE FAIRE',
+              style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.8)),
         ),
         const SizedBox(height: AppSpacing.sm),
-        _StepperRow(label: 'Répétitions', value: reps, onChanged: onRepsChanged),
-        const SizedBox(height: 10),
-        _ChargeStepperRow(value: charge, onChanged: onChargeChanged),
+        if (isCardio) ...[
+          _DurationStepperRow(value: duration, onChanged: onDurationChanged),
+          const SizedBox(height: 10),
+          _DistanceStepperRow(value: distance, onChanged: onDistanceChanged),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _TargetChip(
+                label: 'Fractionné',
+                selected: isInterval,
+                onTap: () => onIntervalChanged(!isInterval)),
+          ),
+        ] else ...[
+          _StepperRow(label: 'Répétitions', value: reps, onChanged: onRepsChanged),
+          const SizedBox(height: 10),
+          _ChargeStepperRow(value: charge, onChanged: onChargeChanged),
+        ],
         const SizedBox(height: AppSpacing.lg),
         GlowButton(
-          label: 'SÉRIE SUIVANTE',
+          label: isCardio ? 'BLOC SUIVANT' : 'SÉRIE SUIVANTE',
           icon: Icons.arrow_forward_rounded,
           color: kNeonCyan,
           foreground: Colors.black,
@@ -434,8 +526,8 @@ class _RestingPanel extends StatelessWidget {
         const SizedBox(height: 6),
         TextButton(
           onPressed: onDiscard,
-          child: const Text('Annuler cette série',
-              style: TextStyle(color: AppColors.textSecondary)),
+          child: Text(isCardio ? 'Annuler ce bloc' : 'Annuler cette série',
+              style: const TextStyle(color: AppColors.textSecondary)),
         ),
       ],
     );
@@ -490,15 +582,16 @@ class _SessionSetTile extends StatelessWidget {
           Expanded(
             child: Text(entry.exerciseName, style: AppText.body),
           ),
-          Text(
-              entry.chargeKg > 0
-                  ? '${entry.reps} × ${_formatCharge(entry.chargeKg)} kg'
-                  : '${entry.reps} reps',
+          Text(_setSummary(entry),
               style: TextStyle(
                   fontFamily: kArcadeFont,
                   color: entry.category.color,
                   fontSize: 13,
                   fontWeight: FontWeight.w800)),
+          if (entry.isInterval) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.bolt_rounded, color: kNeonAmber, size: 14),
+          ],
           if (entry.restSeconds > 0) ...[
             const SizedBox(width: 10),
             Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 13),
@@ -522,7 +615,13 @@ class _SessionRecapDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalVolume = sets.fold<double>(0, (s, e) => s + e.volumeKg);
+    final strengthSets = sets.where((e) => !e.category.isCardio).toList();
+    final cardioSets = sets.where((e) => e.category.isCardio).toList();
+    final totalVolume = strengthSets.fold<double>(0, (s, e) => s + e.volumeKg);
+    final totalCardioDuration =
+        cardioSets.fold<int>(0, (s, e) => s + e.durationSeconds);
+    final totalCardioDistance =
+        cardioSets.fold<double>(0, (s, e) => s + e.distanceKm);
     final avgRest = sets.where((e) => e.restSeconds > 0).isEmpty
         ? 0
         : sets.where((e) => e.restSeconds > 0).map((e) => e.restSeconds).reduce((a, b) => a + b) ~/
@@ -537,8 +636,12 @@ class _SessionRecapDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _RecapRow('Durée', _fmtClock(durationSeconds)),
-          _RecapRow('Séries', '${sets.length}'),
-          _RecapRow('Volume total', '${totalVolume.toStringAsFixed(0)} kg'),
+          _RecapRow('Blocs', '${sets.length}'),
+          if (strengthSets.isNotEmpty)
+            _RecapRow('Volume total', '${totalVolume.toStringAsFixed(0)} kg'),
+          if (cardioSets.isNotEmpty)
+            _RecapRow('Cardio',
+                '${_fmtClock(totalCardioDuration)}${totalCardioDistance > 0 ? ' · ${totalCardioDistance.toStringAsFixed(1)} km' : ''}'),
           if (avgRest > 0) _RecapRow('Repos moyen', _fmtClock(avgRest)),
           if (vitals.hasHr)
             _RecapRow('FC moy. (min-max)',
@@ -780,6 +883,89 @@ class _StepperRow extends StatelessWidget {
   }
 }
 
+class _DurationStepperRow extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _DurationStepperRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Durée', style: TextStyle(color: AppColors.textSecondary)),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: value > 0 ? () => onChanged(max(0, value - 15)) : null,
+            ),
+            SizedBox(
+              width: 56,
+              child: Text(_fmtClock(value),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: () => onChanged(value + 15),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DistanceStepperRow extends StatelessWidget {
+  final double value;
+  final ValueChanged<double> onChanged;
+  const _DistanceStepperRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Distance (km, optionnel)',
+            style: TextStyle(color: AppColors.textSecondary)),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: value > 0 ? () => onChanged(max(0, value - 0.1)) : null,
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                value > 0 ? value.toStringAsFixed(1) : '--',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded,
+                  color: AppColors.textSecondary),
+              onPressed: () => onChanged(value + 0.1),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _ChargeStepperRow extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
@@ -833,6 +1019,19 @@ extension _LastWhereOrNull<T> on List<T> {
 
 String _formatCharge(double kg) =>
     kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
+
+/// Résumé compact d'un bloc loggé — durée/distance pour le cardio,
+/// reps × charge sinon.
+String _setSummary(MusculationLogEntry e) {
+  if (e.category.isCardio) {
+    final parts = <String>[_fmtClock(e.durationSeconds)];
+    if (e.distanceKm > 0) parts.add('${e.distanceKm.toStringAsFixed(1)} km');
+    return parts.join(' · ');
+  }
+  return e.chargeKg > 0
+      ? '${e.reps} × ${_formatCharge(e.chargeKg)} kg'
+      : '${e.reps} reps';
+}
 
 String _fmtClock(int totalSeconds) {
   final m = totalSeconds ~/ 60;

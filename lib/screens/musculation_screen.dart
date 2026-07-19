@@ -13,7 +13,6 @@ import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/ui_kit.dart';
 import 'live_musculation_screen.dart';
-import 'manual_cardio_entry_screen.dart';
 
 /// Lance une séance en direct — appelable depuis le bouton "DÉMARRER UNE
 /// SÉANCE" de cet écran ou depuis le bouton + de lancement rapide du hub
@@ -52,19 +51,6 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
     if (mounted) setState(() {}); // rafraîchit "Séance du jour"
   }
 
-  Future<void> _openWarmup() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ManualCardioEntryScreen(
-          title: 'Échauffement',
-          defaultName: 'Échauffement',
-        ),
-      ),
-    );
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final exercises = kExerciseLibrary
@@ -89,14 +75,6 @@ class _MusculationSectionState extends ConsumerState<MusculationSection> {
             color: kNeonViolet,
             foreground: Colors.white,
             onPressed: _openQuickLog,
-          ),
-          const SizedBox(height: 10),
-          GlowButton(
-            label: 'AJOUTER UN ÉCHAUFFEMENT',
-            icon: Icons.directions_run_rounded,
-            color: kNeonAmber,
-            foreground: Colors.white,
-            onPressed: _openWarmup,
           ),
           if (todayEntries.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xl),
@@ -173,10 +151,7 @@ class _LoggedEntryTile extends ConsumerWidget {
           Expanded(
             child: Text(entry.exerciseName, style: AppText.body),
           ),
-          Text(
-              entry.chargeKg > 0
-                  ? '${entry.sets} × ${entry.reps} · ${_formatCharge(entry.chargeKg)} kg'
-                  : '${entry.sets} × ${entry.reps}',
+          Text(_entrySummary(entry),
               style: TextStyle(
                   fontFamily: kArcadeFont,
                   color: entry.category.color,
@@ -282,3 +257,20 @@ class _ExerciseTile extends StatelessWidget {
 /// "42.5" reste tel quel).
 String _formatCharge(double kg) =>
     kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
+
+/// Résumé compact d'une entrée loggée — durée/distance pour le cardio (sets
+/// vaut toujours 1 pour ces entrées-là, sans intérêt à afficher), reps ×
+/// charge sinon.
+String _entrySummary(MusculationLogEntry entry) {
+  if (entry.category.isCardio) {
+    final m = entry.durationSeconds ~/ 60;
+    final s = entry.durationSeconds % 60;
+    final duration = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return entry.distanceKm > 0
+        ? '$duration · ${entry.distanceKm.toStringAsFixed(1)} km'
+        : duration;
+  }
+  return entry.chargeKg > 0
+      ? '${entry.sets} × ${entry.reps} · ${_formatCharge(entry.chargeKg)} kg'
+      : '${entry.sets} × ${entry.reps}';
+}
