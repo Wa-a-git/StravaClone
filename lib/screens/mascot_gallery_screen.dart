@@ -22,11 +22,11 @@ const _kMoodInfos = [
   _MoodInfo(MascotMood.tired, 'Fatiguée',
       "Sommeil difficile la nuit dernière (score de sommeil < 50)."),
   _MoodInfo(MascotMood.happyTired, 'Contente',
-      "La course du jour est déjà dans la poche."),
+      "Un entraînement (course ou muscu) déjà fait aujourd'hui."),
   _MoodInfo(MascotMood.proud, 'Fierté',
       "3 jours de suite avec au moins une course."),
   _MoodInfo(MascotMood.celebrating, 'Victoire',
-      "Toutes les quêtes du jour sont bouclées."),
+      "Course ET musculation faites toutes les deux aujourd'hui."),
   _MoodInfo(MascotMood.neutral, 'Repos',
       "Pose par défaut, visible sur l'onglet Profil."),
 ];

@@ -145,8 +145,11 @@ class _BottomNav extends StatelessWidget {
 
   const _BottomNav({required this.currentIndex, required this.onTabTap});
 
+  // Pas d'entrée "Mascotte" ici : cet onglet reste accessible uniquement en
+  // swipe tout à gauche du Feed (voir shellIndexProvider, index 0), sans
+  // icône dans la barre du bas. Décalage de +1 entre la position dans cette
+  // liste et l'index réel de l'onglet.
   static const _items = [
-    (icon: Icons.emoji_people_rounded, label: 'Mascotte'),
     (icon: Icons.dynamic_feed_rounded, label: 'Feed'),
     (icon: Icons.health_and_safety_rounded, label: 'Santé'),
     (icon: Icons.directions_run_rounded, label: 'Sport'),
@@ -173,8 +176,8 @@ class _BottomNav extends StatelessWidget {
                   child: _NavItem(
                     icon: _items[i].icon,
                     label: _items[i].label,
-                    isActive: currentIndex == i,
-                    onTap: () => onTabTap(i),
+                    isActive: currentIndex == i + 1,
+                    onTap: () => onTabTap(i + 1),
                   ),
                 ),
             ],

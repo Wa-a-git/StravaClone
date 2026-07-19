@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/daily_health_record.dart';
 import '../models/vo2_estimate.dart';
+import '../services/health_score_service.dart';
 import '../services/health_store.dart';
 import '../services/vo2_estimate_store.dart';
 import '../services/vo2_estimator_service.dart';
@@ -23,6 +24,10 @@ class HealthMetricDetailScreen extends StatefulWidget {
 }
 
 class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
+  // 1 = Jour, 7 = Sem., 30 = Mois, 90 = 3 mois, 365 = Année — même
+  // découpage que Google Health, sur les mêmes données HealthStore
+  // (agrégées par jour ; pas de détail intra-journée disponible, donc
+  // l'onglet Jour n'a pas de courbe, juste une comparaison à hier).
   int _range = 7;
 
   @override
@@ -31,14 +36,16 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
     // VO2 max : source locale (régression FC/allure), pas Health Connect —
     // HealthStore n'a jamais de série pour cette métrique dans notre cas.
     final isVo2Max = widget.metric == HealthMetric.vo2Max;
+    final isJour = _range == 1;
     final vo2Estimates = isVo2Max ? Vo2EstimateStore.all() : const <Vo2Estimate>[];
-    final cutoff = DateTime.now().subtract(Duration(days: _range));
+    final fetchRange = isJour ? 2 : _range;
+    final cutoff = DateTime.now().subtract(Duration(days: fetchRange));
     final series = isVo2Max
         ? [
             for (final e in vo2Estimates)
               if (e.date.isAfter(cutoff)) MapEntry(e.date, e.value)
           ]
-        : HealthStore.series(widget.metric, _range)
+        : HealthStore.series(widget.metric, fetchRange)
             .where((e) => e.value > 0)
             .toList();
     final values = series.map((e) => e.value).toList();
@@ -48,7 +55,7 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
             ? values.sublist(0, values.length - 1).reduce((a, b) => a + b) /
                 (values.length - 1)
             : 0.0)
-        : HealthStore.baseline(widget.metric, window: _range);
+        : HealthStore.baseline(widget.metric, window: isJour ? 7 : _range);
 
     final hasData = values.isNotEmpty;
     final current = hasData ? values.last : 0.0;
@@ -148,7 +155,8 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
           ],
           const SizedBox(height: 20),
 
-          // Sélecteur de plage
+          // Sélecteur de plage — Jour/Sem./Mois/3 mois/Année, même
+          // découpage que Google Health.
           _RangeSelector(
             range: _range,
             accent: widget.accent,
@@ -156,51 +164,84 @@ class _HealthMetricDetailScreenState extends State<HealthMetricDetailScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Graphique
-          _Panel(
-            accent: widget.accent,
-            child: values.length >= 2
-                ? TrendChart(
-                    values: values,
-                    color: widget.accent,
-                    baseline: baseline > 0 ? baseline : null,
-                    height: 200,
-                    dates: dates,
-                    unit: meta.unit,
-                    fractionDigits: meta.fractionDigits,
-                    zone: meta.zone,
-                  )
-                : _SparseState(
-                    value: hasData ? meta.format(current) : null,
-                    unit: meta.unit,
-                    accent: widget.accent,
-                    days: values.length,
-                    customMessage: isVo2Max && hasData
-                        ? 'Ce chiffre est déjà basé sur tes courses des 90 '
-                            'derniers jours. Cette courbe suit son évolution '
-                            'jour après jour — elle s\'enrichira à chaque '
-                            'nouvelle journée où l\'app recalcule l\'estimation.'
-                        : null,
-                  ),
-          ),
-          const SizedBox(height: 16),
-
-          // Stats min / moy / max
-          Row(
-            children: [
-              Expanded(
-                  child: _StatBox(
-                      'MIN', hasData ? meta.format(minV) : '--', widget.accent)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _StatBox(
-                      'MOY', hasData ? meta.format(avgV) : '--', widget.accent)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _StatBox(
-                      'MAX', hasData ? meta.format(maxV) : '--', widget.accent)),
+          if (isJour && !isVo2Max) ...[
+            // Pas de détail intra-journée dans HealthStore (agrégats
+            // quotidiens seulement) — l'onglet Jour compare honnêtement à
+            // hier plutôt que de simuler une courbe horaire qu'on n'a pas.
+            _Panel(
+              accent: widget.accent,
+              child: _YesterdayComparison(
+                metric: widget.metric,
+                meta: meta,
+                values: values,
+                accent: widget.accent,
+              ),
+            ),
+          ] else ...[
+            if (!isJour && dates.length >= 2) ...[
+              Text(
+                '${_shortDate(dates.first)} – ${_shortDate(dates.last)}',
+                style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
             ],
-          ),
+            // Graphique — bandes de zone colorées pour les métriques "état"
+            // (zone définie dans _metaFor), courbe classique sinon.
+            _Panel(
+              accent: widget.accent,
+              child: values.length >= 2
+                  ? (meta.zone != null
+                      ? ZoneTrendChart(
+                          values: values,
+                          zones: _bandsFor(meta.zone!, values),
+                          height: 200,
+                          dates: dates,
+                        )
+                      : TrendChart(
+                          values: values,
+                          color: widget.accent,
+                          baseline: baseline > 0 ? baseline : null,
+                          height: 200,
+                          dates: dates,
+                          unit: meta.unit,
+                          fractionDigits: meta.fractionDigits,
+                          zone: meta.zone,
+                        ))
+                  : _SparseState(
+                      value: hasData ? meta.format(current) : null,
+                      unit: meta.unit,
+                      accent: widget.accent,
+                      days: values.length,
+                      customMessage: isVo2Max && hasData
+                          ? 'Ce chiffre est déjà basé sur tes courses des 90 '
+                              'derniers jours. Cette courbe suit son évolution '
+                              'jour après jour — elle s\'enrichira à chaque '
+                              'nouvelle journée où l\'app recalcule l\'estimation.'
+                          : null,
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Stats min / moy / max
+            Row(
+              children: [
+                Expanded(
+                    child: _StatBox('MIN', hasData ? meta.format(minV) : '--',
+                        widget.accent)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _StatBox('MOY', hasData ? meta.format(avgV) : '--',
+                        widget.accent)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _StatBox('MAX', hasData ? meta.format(maxV) : '--',
+                        widget.accent)),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Détail des données ayant servi au calcul (VO2 max uniquement —
@@ -364,8 +405,8 @@ class _RangeSelector extends StatelessWidget {
         child: GestureDetector(
           onTap: () => onChanged(r),
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(vertical: 9),
             decoration: BoxDecoration(
               color: active ? accent.withOpacity(0.18) : AppColors.surface,
               borderRadius: BorderRadius.circular(10),
@@ -378,7 +419,7 @@ class _RangeSelector extends StatelessWidget {
               style: TextStyle(
                 fontFamily: kArcadeFont,
                 color: active ? accent : AppColors.textSecondary,
-                fontSize: 12,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -389,9 +430,74 @@ class _RangeSelector extends StatelessWidget {
 
     return Row(
       children: [
-        chip(7, '7 J'),
-        chip(30, '30 J'),
-        chip(90, '90 J'),
+        chip(1, 'Jour'),
+        chip(7, 'Sem.'),
+        chip(30, 'Mois'),
+        chip(90, '3 mois'),
+        chip(365, 'Année'),
+      ],
+    );
+  }
+}
+
+String _shortDate(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+/// Construit 3 bandes (sous / dans / au-dessus de la plage saine) à partir
+/// de la zone unique définie dans `_MetricMeta` — pour `ZoneTrendChart`, qui
+/// a besoin de zones couvrant tout l'axe, pas juste la bande centrale.
+List<ChartZone> _bandsFor(ChartZone healthy, List<double> values) {
+  final rawMin = values.isEmpty ? healthy.min : values.reduce(math.min);
+  final rawMax = values.isEmpty ? healthy.max : values.reduce(math.max);
+  final lowFloor = math.min(rawMin, healthy.min) - 1;
+  final highCeil = math.max(rawMax, healthy.max) + 1;
+  return [
+    ChartZone(min: lowFloor, max: healthy.min, color: kNeonPink, label: ''),
+    ChartZone(min: healthy.min, max: healthy.max, color: healthy.color, label: healthy.label),
+    ChartZone(min: healthy.max, max: highCeil, color: kNeonAmber, label: ''),
+  ];
+}
+
+/// Onglet "Jour" : HealthStore n'a que des agrégats quotidiens, donc pas de
+/// courbe intra-journée honnête à montrer — on compare simplement à hier,
+/// même logique que `HealthScoreService.trend` utilisée partout ailleurs.
+class _YesterdayComparison extends StatelessWidget {
+  final HealthMetric metric;
+  final _MetricMeta meta;
+  final List<double> values; // [hier, aujourd'hui] si les deux existent
+  final Color accent;
+  const _YesterdayComparison(
+      {required this.metric,
+      required this.meta,
+      required this.values,
+      required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) {
+      return const Text('Aucune donnée pour aujourd\'hui.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5));
+    }
+    final today = values.last;
+    final yesterday = values.length >= 2 ? values[values.length - 2] : 0.0;
+    if (yesterday <= 0) {
+      return Text(
+        'Pas de valeur hier pour comparer — reviens demain.',
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+      );
+    }
+    final trend = HealthScoreService.trend(metric, today, yesterday,
+        unit: meta.unit, fractionDigits: meta.fractionDigits);
+    return Row(
+      children: [
+        TrendArrow(dir: trend.dir, good: trend.good),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Comparé à hier (${meta.format(yesterday)} ${meta.unit})',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+          ),
+        ),
       ],
     );
   }

@@ -25,19 +25,20 @@ String mascotSpriteAsset(MascotMood mood, int frame) {
   return 'assets/$dir/${prefix}_$frame.png';
 }
 
-/// Même priorité que le HUD du Feed : quêtes bouclées > série de courses >
-/// course déjà faite aujourd'hui > sommeil difficile > récupération élevée
-/// > défaut (course).
+/// Priorité, du plus ponctuel/rare au plus permanent : célébration (course
+/// ET musculation faites aujourd'hui) > fierté (série de jours consécutifs)
+/// > contente-fatiguée (au moins un entraînement fait aujourd'hui) > fatigue
+/// (alerte sommeil, à ne pas masquer) > méditation (récupération élevée) >
+/// course par défaut.
 MascotMood pickMascotMood({
   required HealthScores? scores,
-  required int questsDone,
-  required int questsTotal,
+  required bool todayMusculationDone,
   required int runStreak,
   required double todayRunKm,
 }) {
-  if (questsTotal > 0 && questsDone >= questsTotal) return MascotMood.celebrating;
+  if (todayRunKm > 0 && todayMusculationDone) return MascotMood.celebrating;
   if (runStreak >= 3) return MascotMood.proud;
-  if (todayRunKm > 0) return MascotMood.happyTired;
+  if (todayRunKm > 0 || todayMusculationDone) return MascotMood.happyTired;
   if (scores != null && scores.sleepScore > 0 && scores.sleepScore < 50) {
     return MascotMood.tired;
   }

@@ -137,23 +137,10 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    // ── Court terme : métriques brutes du jour + sparklines
-                    // 7 jours, remonté en premier — ce sont les chiffres
-                    // bruts qu'on vient chercher en premier, les scores
-                    // composites (ci-dessous) restent secondaires. ─────────
-                    FadeSlideIn(
-                      child: _HPanel(
-                        accent: kNeonCyan,
-                        child: _MetricsGrid(snapshot: st.snapshot),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // ── Scores (Bio-Score + sous-scores) + suivi de la
-                    // semaine + XP — volontairement discret (pas de carte
-                    // "hero", rings compacts) : les quêtes réclamables ont
-                    // été déplacées dans le Feed (l'aspect jeu vit dans le
-                    // fil, pas noyé dans l'état du jour). ───────────────────
+                    // ── Héro : Bio-Score + carrousel + équilibre du jour,
+                    // remonté en premier — c'est la vue d'ensemble "comment
+                    // je vais aujourd'hui", avant le détail indicateur par
+                    // indicateur juste en dessous. ───────────────────────────
                     _TodayCard(
                       scores: scores,
                       snapshot: st.snapshot,
@@ -165,6 +152,16 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                             SportTab.progression;
                         ref.read(shellIndexProvider.notifier).state = 3;
                       },
+                    ),
+                    const SizedBox(height: 18),
+
+                    // ── Court terme : métriques brutes non déjà couvertes par
+                    // le héro ci-dessus, avec leur tendance 7 jours. ─────────
+                    FadeSlideIn(
+                      child: _HPanel(
+                        accent: kNeonCyan,
+                        child: _MetricsGrid(snapshot: st.snapshot),
+                      ),
                     ),
 
                     if (st.insights.isNotEmpty) ...[
@@ -414,47 +411,50 @@ class _TodayCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Héro : grand anneau Bio-Score + carrousel de pilules pour les
+          // indicateurs déjà affichés dans le Feed (Pas, FC repos, Sommeil,
+          // HRV, Cal. actives, Respiration) — Santé ne réaffiche plus leur
+          // chiffre du jour en grand ailleurs, seulement leur tendance (voir
+          // _allMetricSpecs, qui ne les liste plus). ──────────────────────
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               HealthRing(
                   score: scores.bioScore,
                   color: tier.color,
-                  size: 56,
-                  centerLabel: 'BIO'),
+                  size: 108,
+                  centerLabel: 'BIO-SCORE'),
               const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          tier.name,
-                          style: TextStyle(
-                            fontFamily: kArcadeFont,
-                            color: tier.color,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        TrendArrow(
-                          dir: bioTrend.dir,
-                          good: bioTrend.good,
-                          label: '${bioTrend.label} vs 7j',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text('Bio-Score ${scores.bioScore}',
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 11)),
-                  ],
+              Expanded(child: _HeroPillCarousel(snapshot: snapshot)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                tier.name,
+                style: TextStyle(
+                  fontFamily: kArcadeFont,
+                  color: tier.color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
                 ),
+              ),
+              const SizedBox(width: 8),
+              TrendArrow(
+                dir: bioTrend.dir,
+                good: bioTrend.good,
+                label: '${bioTrend.label} vs 7j',
               ),
             ],
           ),
           const SizedBox(height: 14),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+          const _HPanelTitle('ÉQUILIBRE DU JOUR', color: kNeonCyan),
+          const SizedBox(height: 10),
+          _BalanceRadar(scores: scores),
+          const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
           _SubScoresRow(scores: scores, snapshot: snapshot),
@@ -473,6 +473,205 @@ class _TodayCard extends StatelessWidget {
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
           _HealthXpBanner(xpToday: xpToday, onTap: onXpTap),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroPillData {
+  final String label;
+  final String value;
+  final String unit;
+  final IconData icon;
+  final Color bg;
+  final Color fg;
+  final HealthMetric metric;
+  const _HeroPillData(this.label, this.value, this.unit, this.icon, this.bg,
+      this.fg, this.metric);
+}
+
+/// Carrousel de pilules à droite du Bio-Score — mêmes indicateurs que les
+/// chips du Feed (Pas, FC repos, Sommeil, HRV, Cal. actives, Respiration),
+/// présentés comme chez Fitbit plutôt qu'en petites cartes. Chaque pilule
+/// ouvre l'écran de détail complet (7 jours → 1 an) de son indicateur.
+class _HeroPillCarousel extends StatefulWidget {
+  final HealthSnapshot snapshot;
+  const _HeroPillCarousel({required this.snapshot});
+
+  @override
+  State<_HeroPillCarousel> createState() => _HeroPillCarouselState();
+}
+
+class _HeroPillCarouselState extends State<_HeroPillCarousel> {
+  int _page = 0;
+
+  String _fmtHm(double minutes) {
+    if (minutes <= 0) return '--';
+    final h = minutes ~/ 60;
+    final m = (minutes % 60).round();
+    return '${h}h${m.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.snapshot;
+    final pages = <List<_HeroPillData>>[
+      [
+        _HeroPillData(
+            'PAS',
+            s.steps > 0 ? s.steps.toString() : '--',
+            '',
+            Icons.directions_walk_rounded,
+            const Color(0xFF0E5C48),
+            const Color(0xFF8FE3C9),
+            HealthMetric.steps),
+        _HeroPillData(
+            'FC REPOS',
+            s.restingHeartRate > 0 ? s.restingHeartRate.toStringAsFixed(0) : '--',
+            'bpm',
+            Icons.favorite_rounded,
+            const Color(0xFF0D4A73),
+            const Color(0xFF8AC4EE),
+            HealthMetric.restingHeartRate),
+        _HeroPillData(
+            'SOMMEIL',
+            _fmtHm(s.sleep.totalAsleepMin),
+            '',
+            Icons.bedtime_rounded,
+            const Color(0xFF4A2A73),
+            const Color(0xFFC9A8E8),
+            HealthMetric.sleepHours),
+      ],
+      [
+        _HeroPillData(
+            'HRV',
+            s.hrv > 0 ? s.hrv.toStringAsFixed(0) : '--',
+            'ms',
+            Icons.monitor_heart_rounded,
+            const Color(0xFF0D4A73),
+            const Color(0xFF8AC4EE),
+            HealthMetric.hrv),
+        _HeroPillData(
+            'CAL. ACTIVES',
+            s.activeCalories > 0 ? s.activeCalories.toStringAsFixed(0) : '--',
+            'kcal',
+            Icons.local_fire_department_rounded,
+            const Color(0xFF5C1E3A),
+            const Color(0xFFF4A6C6),
+            HealthMetric.activeCalories),
+        _HeroPillData(
+            'RESPIRATION',
+            s.respiratoryRate > 0 ? s.respiratoryRate.toStringAsFixed(1) : '--',
+            'rpm',
+            Icons.air_rounded,
+            const Color(0xFF4A2A73),
+            const Color(0xFFC9A8E8),
+            HealthMetric.respiratoryRate),
+      ],
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final pill in pages[_page]) ...[
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HealthMetricDetailScreen(
+                    metric: pill.metric, accent: pill.fg),
+              ),
+            ),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration:
+                  BoxDecoration(color: pill.bg, borderRadius: BorderRadius.circular(14)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(pill.label,
+                            style: TextStyle(
+                                color: pill.fg, fontSize: 10, fontWeight: FontWeight.w600)),
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                  text: pill.value,
+                                  style: const TextStyle(
+                                      fontFamily: kArcadeFont,
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800)),
+                              if (pill.unit.isNotEmpty)
+                                TextSpan(
+                                    text: ' ${pill.unit}',
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 9)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(pill.icon, color: pill.fg, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(pages.length, (i) {
+            return GestureDetector(
+              onTap: () => setState(() => _page = i),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                width: i == _page ? 14 : 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: i == _page ? kNeonCyan : AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+/// Radar Sommeil/Récup/Activité — le déséquilibre du jour (ex. activité très
+/// en retrait alors que sommeil/récup vont bien) saute aux yeux d'un coup
+/// d'œil, alors que les 3 anneaux séparés ci-dessous ne le montrent pas aussi
+/// directement.
+class _BalanceRadar extends StatelessWidget {
+  final HealthScores scores;
+  const _BalanceRadar({required this.scores});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: RadarChart(
+        size: 200,
+        axes: [
+          RadarAxis(
+              label: 'Sommeil',
+              value: scores.sleepScore.toDouble(),
+              color: kNeonViolet),
+          RadarAxis(
+              label: 'Récup',
+              value: scores.recoveryScore.toDouble(),
+              color: kNeonCyan),
+          RadarAxis(
+              label: 'Activité',
+              value: scores.activityScore.toDouble(),
+              color: kNeonGreen),
         ],
       ),
     );
@@ -850,8 +1049,11 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
   final today = HealthStore.recordFor(DateTime.now());
   return [
       // ── Activité générale ────────────────────────────────────────────────
-      _MetricSpec('Pas', HealthMetric.steps, snapshot.steps.toString(), 'pas',
-          Icons.directions_walk_rounded, kNeonGreen, _MetricGroupId.activity),
+      // Pas et Cal. actives ne sont plus des cartes ici : leur chiffre du
+      // jour vit dans le carrousel héros (_HeroPillCarousel), même valeur que
+      // dans le Feed — les répéter en grand ici ferait doublon. Cal. actives
+      // en particulier était systématiquement vide sur cet appareil (Fitbit
+      // Charge 6), tout comme SpO2 en son temps.
       _MetricSpec(
           'Distance',
           HealthMetric.distanceKm,
@@ -859,14 +1061,6 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
           'km',
           Icons.map_rounded,
           kNeonGreen,
-          _MetricGroupId.activity),
-      _MetricSpec(
-          'Cal. actives',
-          HealthMetric.activeCalories,
-          snapshot.activeCalories.toStringAsFixed(0),
-          'kcal',
-          Icons.local_fire_department_rounded,
-          kNeonPink,
           _MetricGroupId.activity),
       _MetricSpec(
           'Étages',
@@ -878,16 +1072,8 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
           _MetricGroupId.activity),
 
       // ── Vitaux & sommeil ─────────────────────────────────────────────────
-      _MetricSpec(
-          'FC repos',
-          HealthMetric.restingHeartRate,
-          snapshot.restingHeartRate > 0
-              ? snapshot.restingHeartRate.toStringAsFixed(0)
-              : '--',
-          'bpm',
-          Icons.favorite_border_rounded,
-          kNeonCyan,
-          _MetricGroupId.vitals),
+      // FC repos et Sommeil : même raison que Pas/Cal. actives ci-dessus,
+      // déjà dans le carrousel héros.
       _MetricSpec(
           'Respiration',
           HealthMetric.respiratoryRate,
@@ -901,30 +1087,13 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
       // Pas de carte SpO2 ici : la Charge 6 ne remonte jamais de SpO2
       // exploitable vers Health Connect (voir VO2 max plus bas) — la case
       // restait en permanence "en attente", sans intérêt à afficher.
-      _MetricSpec(
-          'Sommeil',
-          HealthMetric.sleepHours,
-          snapshot.sleep.totalAsleepMin > 0
-              ? (snapshot.sleep.totalAsleepMin / 60).toStringAsFixed(1)
-              : '--',
-          'h',
-          Icons.bedtime_rounded,
-          kNeonViolet,
-          _MetricGroupId.vitals),
 
       // ── Récupération avancée ────────────────────────────────────────────
       // hrvZScore / deepSleepRatio / sleepDebtHours sont calculés à chaque
       // synchro (health_connect_service.dart) mais n'avaient encore aucune
       // carte sur ce dashboard — seulement accessibles via leur écran de
-      // détail si on savait qu'ils existaient.
-      _MetricSpec(
-          'HRV',
-          HealthMetric.hrv,
-          snapshot.hrv > 0 ? snapshot.hrv.toStringAsFixed(0) : '--',
-          'ms',
-          Icons.monitor_heart_rounded,
-          kNeonCyan,
-          _MetricGroupId.recovery),
+      // détail si on savait qu'ils existaient. HRV brut, lui, est dans le
+      // carrousel héros (page 2) — seule sa version normalisée reste ici.
       _MetricSpec(
           'VFC normalisée',
           HealthMetric.hrvZScore,

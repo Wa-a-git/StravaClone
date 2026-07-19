@@ -945,3 +945,495 @@ class _RingPainter extends CustomPainter {
   bool shouldRepaint(covariant _RingPainter old) =>
       old.progress != progress || old.color != color;
 }
+
+/// Un axe du radar (ex. Sommeil/Récup/Activité) — valeur sur 0-100.
+class RadarAxis {
+  final String label;
+  final double value;
+  final Color color;
+  const RadarAxis(
+      {required this.label, required this.value, required this.color});
+}
+
+/// Diagramme radar (toile d'araignée) : place chaque axe autour d'un cercle,
+/// relie les valeurs en un polygone rempli — le déséquilibre entre axes se
+/// voit d'un coup d'œil (un polygone tiré d'un côté), alors que les mêmes
+/// valeurs en chiffres séparés ne le montrent pas. Fonctionne avec N axes,
+/// mais pensé pour 3 (Sommeil/Récup/Activité).
+class RadarChart extends StatelessWidget {
+  final List<RadarAxis> axes;
+  final double size;
+  /// Polygone de référence plus pâle (ex. la semaine dernière), pour
+  /// comparer deux périodes sur le même radar.
+  final List<double>? compareValues;
+  const RadarChart(
+      {super.key, required this.axes, this.size = 220, this.compareValues});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => CustomPaint(
+          painter: _RadarPainter(
+              axes: axes, progress: t, compareValues: compareValues),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadarPainter extends CustomPainter {
+  final List<RadarAxis> axes;
+  final double progress;
+  final List<double>? compareValues;
+  _RadarPainter(
+      {required this.axes, required this.progress, this.compareValues});
+
+  List<Offset> _vertices(Offset center, double radius, List<double> values) {
+    final n = axes.length;
+    return List.generate(n, (i) {
+      final angle = -math.pi / 2 + (2 * math.pi * i / n);
+      final r = radius * (values[i] / 100).clamp(0.0, 1.0) * progress;
+      return Offset(center.dx + r * math.cos(angle), center.dy + r * math.sin(angle));
+    });
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2 - 6);
+    final radius = math.min(size.width, size.height) / 2 - 34;
+    final n = axes.length;
+
+    final gridPaint = Paint()
+      ..color = AppColors.border.withOpacity(0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    // Anneaux de grille à 50% et 100%.
+    for (final frac in [0.5, 1.0]) {
+      final path = Path();
+      for (int i = 0; i < n; i++) {
+        final angle = -math.pi / 2 + (2 * math.pi * i / n);
+        final p = Offset(center.dx + radius * frac * math.cos(angle),
+            center.dy + radius * frac * math.sin(angle));
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      path.close();
+      canvas.drawPath(path, gridPaint);
+    }
+
+    // Axes (centre → sommet).
+    for (int i = 0; i < n; i++) {
+      final angle = -math.pi / 2 + (2 * math.pi * i / n);
+      final p = Offset(
+          center.dx + radius * math.cos(angle), center.dy + radius * math.sin(angle));
+      canvas.drawLine(center, p, gridPaint);
+    }
+
+    // Polygone de comparaison (référence pâle), s'il y en a un.
+    final cmp = compareValues;
+    if (cmp != null && cmp.length == n) {
+      final pts = _vertices(center, radius, cmp);
+      final path = Path()..moveTo(pts[0].dx, pts[0].dy);
+      for (final p in pts.skip(1)) {
+        path.lineTo(p.dx, p.dy);
+      }
+      path.close();
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = AppColors.textSecondary.withOpacity(0.35)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5);
+    }
+
+    // Polygone de données.
+    final values = axes.map((a) => a.value).toList();
+    final pts = _vertices(center, radius, values);
+    final dataPath = Path()..moveTo(pts[0].dx, pts[0].dy);
+    for (final p in pts.skip(1)) {
+      dataPath.lineTo(p.dx, p.dy);
+    }
+    dataPath.close();
+    canvas.drawPath(dataPath, Paint()..color = kNeonCyan.withOpacity(0.20 * progress));
+    canvas.drawPath(
+        dataPath,
+        Paint()
+          ..color = kNeonCyan.withOpacity(progress)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.4
+          ..strokeJoin = StrokeJoin.round);
+
+    // Points colorés + libellés par axe.
+    for (int i = 0; i < n; i++) {
+      canvas.drawCircle(pts[i], 4, Paint()..color = axes[i].color.withOpacity(progress));
+      final angle = -math.pi / 2 + (2 * math.pi * i / n);
+      final labelAnchor = Offset(center.dx + (radius + 20) * math.cos(angle),
+          center.dy + (radius + 20) * math.sin(angle));
+      final text =
+          '${axes[i].label.toUpperCase()} ${axes[i].value.round()}';
+      final painter = TextPainter(
+        text: TextSpan(
+            text: text,
+            style: TextStyle(
+                color: axes[i].color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700)),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout(maxWidth: 90);
+      canvas.save();
+      canvas.translate(labelAnchor.dx - painter.width / 2, labelAnchor.dy - painter.height / 2);
+      painter.paint(canvas, Offset.zero);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarPainter old) =>
+      old.progress != progress || old.axes != axes;
+}
+
+/// Courbe à bandes de zones colorées (ex. sous tension / normale / élevée) où
+/// la ligne elle-même change de couleur selon la zone du point — contrairement
+/// à `TrendChart` + `ChartZone` qui garde une ligne monochrome sur fond de
+/// bande. Pensée pour les métriques "état" (HRV, VFC normalisée) où ce qui
+/// compte est "dans quelle zone suis-je", pas juste "la valeur a monté".
+class ZoneTrendChart extends StatelessWidget {
+  final List<double> values;
+  final List<ChartZone> zones; // couvrant tout l'axe Y, triées min → max
+  final double height;
+  final List<DateTime>? dates;
+  const ZoneTrendChart({
+    super.key,
+    required this.values,
+    required this.zones,
+    this.height = 170,
+    this.dates,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.length < 2) {
+      return SizedBox(
+        height: height,
+        child: const Center(
+          child: Text('Pas assez de données pour tracer une courbe.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        ),
+      );
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => CustomPaint(
+          painter: _ZoneTrendPainter(
+              values: values, zones: zones, progress: t, dates: dates),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoneTrendPainter extends CustomPainter {
+  final List<double> values;
+  final List<ChartZone> zones;
+  final double progress;
+  final List<DateTime>? dates;
+  _ZoneTrendPainter(
+      {required this.values,
+      required this.zones,
+      required this.progress,
+      this.dates});
+
+  Color _colorFor(double v) {
+    for (final z in zones) {
+      if (v >= z.min && v <= z.max) return z.color;
+    }
+    return zones.isNotEmpty ? zones.last.color : kNeonCyan;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const leftPad = 4.0;
+    const topPad = 10.0;
+    final bottomPad = (dates != null && dates!.length >= 2) ? 24.0 : 10.0;
+    final chartW = size.width - leftPad - 4;
+    final chartH = size.height - topPad - bottomPad;
+
+    final minV = zones.map((z) => z.min).reduce(math.min);
+    final maxV = zones.map((z) => z.max).reduce(math.max);
+    final range = (maxV - minV).abs() < 1e-6 ? 1.0 : (maxV - minV);
+
+    double yFor(double v) => topPad + chartH - ((v - minV) / range) * chartH;
+    double xFor(int i) => leftPad + chartW * (i / (values.length - 1));
+
+    // Bandes de zones en fond.
+    for (final z in zones) {
+      final top = yFor(z.max).clamp(topPad, topPad + chartH);
+      final bottom = yFor(z.min).clamp(topPad, topPad + chartH);
+      canvas.drawRect(Rect.fromLTRB(leftPad, top, leftPad + chartW, bottom),
+          Paint()..color = z.color.withOpacity(0.12));
+    }
+
+    final ds = dates;
+    if (ds != null && ds.length >= 2) {
+      final dateY = topPad + chartH + 12;
+      final fmt = (DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+      final p1 = TextPainter(
+          text: TextSpan(
+              text: fmt(ds.first),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+          textDirection: TextDirection.ltr)
+        ..layout();
+      p1.paint(canvas, Offset(leftPad, dateY));
+      final p2 = TextPainter(
+          text: TextSpan(
+              text: fmt(ds.last),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+          textDirection: TextDirection.ltr)
+        ..layout();
+      p2.paint(canvas, Offset(size.width - p2.width, dateY));
+    }
+
+    final count = values.length;
+    final drawnCount = (count * progress).clamp(2, count).toInt();
+
+    // Un segment de ligne par paire de points consécutifs, coloré selon la
+    // zone du point d'arrivée — la couleur change exactement là où la donnée
+    // franchit une frontière de zone.
+    for (int i = 0; i < drawnCount - 1; i++) {
+      final p1 = Offset(xFor(i), yFor(values[i]));
+      final p2 = Offset(xFor(i + 1), yFor(values[i + 1]));
+      canvas.drawLine(
+          p1,
+          p2,
+          Paint()
+            ..color = _colorFor(values[i + 1])
+            ..strokeWidth = 2.6
+            ..strokeCap = StrokeCap.round);
+    }
+    for (int i = 0; i < drawnCount; i++) {
+      canvas.drawCircle(
+          Offset(xFor(i), yFor(values[i])), 3, Paint()..color = _colorFor(values[i]));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ZoneTrendPainter old) =>
+      old.progress != progress || old.values != values;
+}
+
+/// Un secteur d'un anneau segmenté (ex. un stade de sommeil).
+class RingSegmentData {
+  final double value;
+  final Color color;
+  final String label;
+  const RingSegmentData(
+      {required this.value, required this.color, required this.label});
+}
+
+/// Anneau divisé en plusieurs secteurs proportionnels (donut) — pour une
+/// répartition (ex. stades de sommeil) où la part de chaque catégorie compte
+/// plus que sa valeur isolée. `centerValue`/`centerLabel` optionnels pour un
+/// total au centre (ex. durée totale de la nuit).
+class SegmentedRing extends StatelessWidget {
+  final List<RingSegmentData> segments;
+  final double size;
+  final String? centerValue;
+  final String? centerLabel;
+  const SegmentedRing({
+    super.key,
+    required this.segments,
+    this.size = 100,
+    this.centerValue,
+    this.centerLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => CustomPaint(
+          painter: _SegmentedRingPainter(segments: segments, progress: t),
+          child: (centerValue == null && centerLabel == null)
+              ? null
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (centerValue != null)
+                        Text(centerValue!,
+                            style: TextStyle(
+                                fontFamily: kArcadeFont,
+                                color: AppColors.textPrimary,
+                                fontSize: size * 0.16,
+                                fontWeight: FontWeight.w800)),
+                      if (centerLabel != null)
+                        Text(centerLabel!,
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentedRingPainter extends CustomPainter {
+  final List<RingSegmentData> segments;
+  final double progress;
+  _SegmentedRingPainter({required this.segments, required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = segments.fold<double>(0, (s, e) => s + e.value);
+    if (total <= 0) return;
+    final center = size.center(Offset.zero);
+    final radius = size.width / 2 - 8;
+    final stroke = size.width * 0.14;
+    const startAngle = -math.pi / 2;
+
+    var angle = startAngle;
+    for (final seg in segments) {
+      final sweep = 2 * math.pi * (seg.value / total) * progress;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        angle,
+        sweep,
+        false,
+        Paint()
+          ..color = seg.color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+      angle += 2 * math.pi * (seg.value / total);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SegmentedRingPainter old) =>
+      old.progress != progress || old.segments != segments;
+}
+
+/// Un point du nuage (ex. une course : allure × FC moyenne).
+class ScatterPoint {
+  final double x;
+  final double y;
+  final bool highlighted;
+  const ScatterPoint({required this.x, required this.y, this.highlighted = false});
+}
+
+/// Nuage de points — pour une donnée qui vient d'un ensemble d'observations
+/// (ex. VO2 max estimé à partir de plusieurs courses) plutôt que d'une série
+/// temporelle : montre d'où vient l'estimation, pas juste son évolution.
+class ScatterChart extends StatelessWidget {
+  final List<ScatterPoint> points;
+  final Color color;
+  final double height;
+  final String xLabel;
+  final String yLabel;
+  const ScatterChart({
+    super.key,
+    required this.points,
+    required this.color,
+    this.height = 140,
+    this.xLabel = '',
+    this.yLabel = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.isEmpty) {
+      return SizedBox(
+        height: height,
+        child: const Center(
+          child: Text('Pas encore assez de courses pour ce graphique.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        ),
+      );
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, _) => CustomPaint(
+          painter: _ScatterPainter(points: points, color: color, progress: t),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScatterPainter extends CustomPainter {
+  final List<ScatterPoint> points;
+  final Color color;
+  final double progress;
+  _ScatterPainter(
+      {required this.points, required this.color, required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const leftPad = 18.0;
+    const bottomPad = 16.0;
+    final chartW = size.width - leftPad - 8;
+    final chartH = size.height - bottomPad - 8;
+
+    final xs = points.map((p) => p.x).toList();
+    final ys = points.map((p) => p.y).toList();
+    final minX = xs.reduce(math.min), maxX = xs.reduce(math.max);
+    final minY = ys.reduce(math.min), maxY = ys.reduce(math.max);
+    final rangeX = (maxX - minX).abs() < 1e-6 ? 1.0 : (maxX - minX);
+    final rangeY = (maxY - minY).abs() < 1e-6 ? 1.0 : (maxY - minY);
+
+    final axisPaint = Paint()
+      ..color = AppColors.border
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(leftPad, 8), Offset(leftPad, 8 + chartH), axisPaint);
+    canvas.drawLine(Offset(leftPad, 8 + chartH),
+        Offset(leftPad + chartW, 8 + chartH), axisPaint);
+
+    for (final p in points) {
+      final x = leftPad + chartW * ((p.x - minX) / rangeX);
+      final y = 8 + chartH - chartH * ((p.y - minY) / rangeY);
+      final r = (p.highlighted ? 5.5 : 4.0) * progress;
+      if (p.highlighted) {
+        canvas.drawCircle(Offset(x, y), r + 3, Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+      }
+      canvas.drawCircle(Offset(x, y), r,
+          Paint()..color = color.withOpacity((p.highlighted ? 1.0 : 0.72) * progress));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScatterPainter old) =>
+      old.progress != progress || old.points != points;
+}

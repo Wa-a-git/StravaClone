@@ -4,10 +4,7 @@
 // bas de l'onglet Santé — extrait dans son propre onglet pour que Santé se
 // concentre sur "aujourd'hui" et que le Feed soit "ce qui s'est passé",
 // comme un vrai fil d'activité plutôt qu'un journal.
-import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
 import '../models/daily_health_record.dart';
@@ -15,25 +12,57 @@ import '../models/health_snapshot.dart';
 import '../providers/activity_provider.dart';
 import '../providers/game_provider.dart';
 import '../providers/health_provider.dart';
-import '../services/export_service.dart';
-import '../services/game_service.dart';
 import '../services/health_game_service.dart';
-import '../services/health_score_service.dart';
 import '../services/health_store.dart';
+import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
 import '../widgets/mascot_sprites.dart';
-import '../widgets/system_window.dart';
 import '../widgets/ui_kit.dart';
 import 'detail_screen.dart';
 import 'health_dashboard_screen.dart' show RawStatsRow;
 import 'health_history_screen.dart' show HealthDayDetailScreen;
+import 'sleep_detail_screen.dart';
 
-class FeedScreen extends ConsumerWidget {
+class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends ConsumerState<FeedScreen> {
+  // Une clé stable par entrée (id = type + jour + horodatage exact), pour
+  // que le calendrier puisse faire défiler la liste jusqu'au bon post au
+  // lieu de se contenter d'un simple affichage visuel. Conservées d'un
+  // build à l'autre (contrairement à des GlobalKey créées à la volée dans
+  // build(), qui casseraient le rattachement des éléments).
+  final Map<String, GlobalKey> _entryKeys = {};
+
+  GlobalKey _keyFor(_HistoryEntry e) {
+    final id = '${e.kind.name}_${e.date.year}-${e.date.month}-${e.date.day}'
+        '_${e.sortTime.millisecondsSinceEpoch}';
+    return _entryKeys.putIfAbsent(id, () => GlobalKey());
+  }
+
+  void _scrollToDay(DateTime day, List<_HistoryEntry> entries) {
+    for (final e in entries) {
+      if (e.date != day) continue;
+      final ctx = _keyFor(e).currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          alignment: 0.08,
+        );
+      }
+      return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final activities = ref.watch(activityListProvider);
     final days = HealthStore.all();
     final entries = _buildHistoryEntries(activities, days);
@@ -70,8 +99,18 @@ class FeedScreen extends ConsumerWidget {
           ),
           SliverToBoxAdapter(
             child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: const _WeighInCard(),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: _FeedCalendar(activities: activities, days: days),
+              child: _FeedCalendar(
+                activities: activities,
+                days: days,
+                onDayTap: (day) => _scrollToDay(day, entries),
+              ),
             ),
           ),
           if (entries.isEmpty)
@@ -89,13 +128,23 @@ class FeedScreen extends ConsumerWidget {
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _historyEntryPost(context, entries[i]),
-                  ),
-                  childCount: entries.length,
+              // Colonne non-virtualisée plutôt qu'un SliverList paresseux :
+              // le calendrier doit pouvoir faire défiler jusqu'à une entrée
+              // même très bas dans l'historique, ce qui exige que son
+              // BuildContext existe déjà (Scrollable.ensureVisible ne peut
+              // rien faire sur un item jamais construit hors viewport).
+              // Volume raisonnable pour un journal personnel — pas de souci
+              // de perf attendu.
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    for (final e in entries)
+                      Padding(
+                        key: _keyFor(e),
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _historyEntryPost(context, e),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -127,7 +176,8 @@ class FeedScreen extends ConsumerWidget {
           title: 'Sommeil',
           accent: kNeonViolet,
           onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => HealthDayDetailScreen(record: d))),
+              MaterialPageRoute(
+                  builder: (_) => SleepDetailScreen(initialDay: d.date))),
           child: _SleepFeedContent(record: d),
         );
       case _FeedKind.dayStats:
@@ -172,6 +222,126 @@ class FeedScreen extends ConsumerWidget {
     if (diff == 0) return "AUJOURD'HUI";
     if (diff == 1) return 'HIER';
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+  }
+}
+
+// ── Carte de pesée : point d'entrée pour saisir le poids depuis le Feed, et
+// rappel visuel qui devient de plus en plus pressant plus la dernière pesée
+// est ancienne — sans notification système (juste un état bien visible dès
+// l'ouverture du Feed, l'onglet par défaut au lancement de l'app). ─────────
+class _WeighInCard extends StatefulWidget {
+  const _WeighInCard();
+
+  @override
+  State<_WeighInCard> createState() => _WeighInCardState();
+}
+
+class _WeighInCardState extends State<_WeighInCard> {
+  DailyHealthRecord? _lastWeightRecord() {
+    final days = HealthStore.all(); // trié du plus ancien au plus récent
+    for (var i = days.length - 1; i >= 0; i--) {
+      if (days[i].weightKg > 0) return days[i];
+    }
+    return null;
+  }
+
+  Future<void> _enterWeight() async {
+    final ctrl = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Pesée du jour',
+            style: TextStyle(
+                fontFamily: kArcadeFont, color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(labelText: 'Poids', suffixText: 'kg'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kNeonGreen),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final kg = double.tryParse(ctrl.text.replaceAll(',', '.'));
+    if (kg == null || kg <= 0) return;
+    await HealthStore.setManualWeightToday(kg);
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final last = _lastWeightRecord();
+    final daysSince = last == null ? null : today.difference(last.date).inDays;
+
+    final urgent = daysSince == null || daysSince >= 2;
+    final accent = urgent ? kNeonAmber : kNeonGreen;
+
+    String message;
+    if (last == null) {
+      message = 'Aucun poids enregistré — pèse-toi pour démarrer le suivi.';
+    } else if (daysSince == 0) {
+      message = 'Poids du jour enregistré : ${last.weightKg.toStringAsFixed(1)} kg';
+    } else if (daysSince == 1) {
+      message = 'Dernière pesée hier (${last.weightKg.toStringAsFixed(1)} kg).';
+    } else {
+      message =
+          'Pas pesé(e) depuis $daysSince jours — pèse-toi ce matin !';
+    }
+
+    return GestureDetector(
+      onTap: _enterWeight,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withOpacity(urgent ? 0.7 : 0.35),
+              width: urgent ? 1.6 : 1),
+          boxShadow: urgent
+              ? [
+                  BoxShadow(
+                    color: accent.withOpacity(0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.monitor_weight_rounded, color: accent, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: urgent ? FontWeight.w700 : FontWeight.w600,
+                  color: urgent ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: accent, size: 20),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -227,32 +397,13 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
     final bioScore = scores?.bioScore ?? 0;
     final steps = snapshot.steps;
 
-    final todayRecord = HealthStore.recordFor(now);
-    final dailyQuests = HealthQuestService.daily(now);
-    final questsDone = dailyQuests
-        .where((q) =>
-            HealthQuestService.current(q, todayRecord, const []) >= q.target)
-        .length;
-
-    // Quêtes hebdo : mêmes données que l'ancienne _QuestsCard, calculées ici
-    // directement puisque les quêtes vivent dans ce HUD, pas dans une carte
-    // séparée du Feed.
-    final weekStart = GameService.startOfWeek(now);
-    final weekRecords =
-        HealthStore.all().where((r) => !r.date.isBefore(weekStart)).toList();
     final todayRunKm = activities
         .where((a) =>
             a.date.year == now.year &&
             a.date.month == now.month &&
             a.date.day == now.day)
         .fold<double>(0, (s, a) => s + a.distanceKmValue);
-    final weekIntervalCount = activities
-        .where((a) =>
-            a.workoutType == 'interval' && !a.date.isBefore(weekStart))
-        .length;
-    final dayKey = GameService.dayKey(now);
-    final weekKey = GameService.weekKey(now);
-    final weeklyQuests = HealthQuestService.weekly(now);
+    final todayMusculationDone = MusculationStore.todayEntries().isNotEmpty;
 
     final lastRun = activities.isNotEmpty ? activities.first : null;
     final runStreak = _hudRunStreak(activities);
@@ -300,13 +451,10 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
               _topBar(
                 healthXpToday: health.healthXpToday,
                 level: profile.level,
-                questsDone: questsDone,
-                questsTotal: dailyQuests.length,
               ),
               _scene(pickMascotMood(
                 scores: scores,
-                questsDone: questsDone,
-                questsTotal: dailyQuests.length,
+                todayMusculationDone: todayMusculationDone,
                 runStreak: runStreak,
                 todayRunKm: todayRunKm,
               )),
@@ -399,34 +547,8 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
               _divider(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const PanelTitle('QUÊTES DU JOUR', color: kNeonGreen),
-                    const SizedBox(height: 10),
-                    _QuestsList(
-                      quests: dailyQuests,
-                      accent: kNeonGreen,
-                      today: todayRecord,
-                      weekRecords: const [],
-                      keyPrefix: dayKey,
-                      todayRunKm: todayRunKm,
-                      onClaim: (q) => _claimQuest(context, ref, dayKey, q),
-                    ),
-                    const SizedBox(height: 4),
-                    const Divider(color: AppColors.border, height: 20),
-                    const PanelTitle('QUÊTES DE LA SEMAINE', color: kNeonPink),
-                    const SizedBox(height: 10),
-                    _QuestsList(
-                      quests: weeklyQuests,
-                      accent: kNeonPink,
-                      today: todayRecord,
-                      weekRecords: weekRecords,
-                      weekIntervalCount: weekIntervalCount,
-                      keyPrefix: weekKey,
-                      onClaim: (q) => _claimQuest(context, ref, weekKey, q),
-                    ),
-                  ],
+                child: _TrainingTodayRow(
+                  done: todayRunKm > 0 || todayMusculationDone,
                 ),
               ),
               const SizedBox(height: 14),
@@ -440,8 +562,6 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
   Widget _topBar({
     required int healthXpToday,
     required int level,
-    required int questsDone,
-    required int questsTotal,
   }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -490,28 +610,6 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
                     color: AppColors.textSecondary)),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.28),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: kNeonAmber.withOpacity(0.35)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.emoji_events_rounded, size: 13, color: kNeonAmber),
-                const SizedBox(width: 4),
-                Text('$questsDone/$questsTotal',
-                    style: const TextStyle(
-                        fontFamily: kArcadeFont,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: kNeonAmber)),
-              ],
-            ),
           ),
         ],
       ),
@@ -720,6 +818,37 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
   }
 }
 
+// ── Entraînement du jour : simple indicateur fait/pas fait (course ou
+// musculation), sans mécanique de quête/réclamation — juste la question
+// "j'ai bougé aujourd'hui ?". ────────────────────────────────────────────────
+class _TrainingTodayRow extends StatelessWidget {
+  final bool done;
+  const _TrainingTodayRow({required this.done});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = done ? kNeonGreen : AppColors.textSecondary;
+    return Row(
+      children: [
+        Icon(
+          done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          size: 18,
+          color: color,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          done ? 'Entraînement du jour fait' : 'Pas encore d\'entraînement aujourd\'hui',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: done ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _HudChipData {
   final IconData icon;
   final Color iconColor;
@@ -789,7 +918,9 @@ int _hudRunStreak(List<Activity> activities) {
 class _FeedCalendar extends StatefulWidget {
   final List<Activity> activities;
   final List<DailyHealthRecord> days;
-  const _FeedCalendar({required this.activities, required this.days});
+  final ValueChanged<DateTime> onDayTap;
+  const _FeedCalendar(
+      {required this.activities, required this.days, required this.onDayTap});
 
   @override
   State<_FeedCalendar> createState() => _FeedCalendarState();
@@ -888,38 +1019,42 @@ class _FeedCalendarState extends State<_FeedCalendar> {
               final isToday = date == today;
               final act = hasActivity[date] ?? false;
               final health = hasHealth[date] ?? false;
-              return Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: isToday ? kNeonCyan.withOpacity(0.16) : null,
-                  border: isToday
-                      ? Border.all(color: kNeonCyan, width: 1.2)
-                      : null,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '$dayNum',
-                      style: TextStyle(
-                        color: isToday ? kNeonCyan : AppColors.textSecondary,
-                        fontSize: 11,
-                        fontWeight:
-                            isToday ? FontWeight.w800 : FontWeight.w500,
+              return GestureDetector(
+                onTap: () => widget.onDayTap(date),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isToday ? kNeonCyan.withOpacity(0.16) : null,
+                    border: isToday
+                        ? Border.all(color: kNeonCyan, width: 1.2)
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '$dayNum',
+                        style: TextStyle(
+                          color: isToday ? kNeonCyan : AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight:
+                              isToday ? FontWeight.w800 : FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    if (act || health) ...[
-                      const SizedBox(height: 2),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (act) _dot(kNeonPink),
-                          if (act && health) const SizedBox(width: 2),
-                          if (health) _dot(kNeonViolet),
-                        ],
-                      ),
+                      if (act || health) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (act) _dot(kNeonPink),
+                            if (act && health) const SizedBox(width: 2),
+                            if (health) _dot(kNeonViolet),
+                          ],
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               );
             },
@@ -1158,296 +1293,6 @@ class _FeedPost extends StatelessWidget {
   }
 }
 
-// ── Quêtes santé (jour + semaine), réclamables → XP pool commun ───────────────
-/// Réclame une quête (jour ou semaine) : crédite l'XP, notifie via
-/// showSystemWindow, et logue dans la note quotidienne du vault. Utilisée
-/// par _ArcadeHudCard, seul endroit du Feed où les quêtes sont affichées.
-Future<void> _claimQuest(BuildContext context, WidgetRef ref,
-    String keyPrefix, HealthQuestDef q) async {
-  final uid = 'hq:$keyPrefix:${q.id}';
-  final added = await GameStore.claim(uid, q.reward);
-  if (added <= 0) return;
-  ref.read(questBonusProvider.notifier).state = GameStore.questBonusXp;
-  HapticFeedback.mediumImpact();
-  if (context.mounted) {
-    await showSystemWindow(
-      context,
-      heading: 'QUÊTE SANTÉ',
-      lines: [q.title, '+$added XP'],
-      accent: kNeonGreen,
-    );
-  }
-
-  // Note quotidienne (vault) : l'aspect "jeu" de l'app remonte ici — XP
-  // gagnée à chaque quête réclamée, passage de niveau si franchi depuis
-  // la dernière réclamation. Fire-and-forget, best-effort (voir
-  // ExportService.appendDailyNoteLine) : ne bloque jamais le claim déjà
-  // confirmé à l'utilisateur ci-dessus.
-  unawaited(ExportService.appendDailyNoteLine(
-    section: 'Progression',
-    line: '- 🎮 Quête réclamée : ${q.title} (+$added XP)',
-  ));
-  final profile = GameService.profileFor(ref.read(activityListProvider),
-      bonusXp: GameStore.questBonusXp);
-  if (await GameStore.checkLevelUp(profile.level)) {
-    unawaited(ExportService.appendDailyNoteLine(
-      section: 'Progression',
-      line: '- 🎉 Passage au niveau ${profile.level} (${profile.tier.name}) !',
-    ));
-  }
-}
-
-// ── Liste de quêtes réutilisable, sans carte englobante — appelée deux fois
-// depuis _ArcadeHudCard (quêtes du jour, quêtes de la semaine), qui fournit
-// déjà sa propre carte/titre pour chaque section. ──────────────────────────
-class _QuestsList extends StatelessWidget {
-  final List<HealthQuestDef> quests;
-  final Color accent;
-  final DailyHealthRecord? today;
-  final List<DailyHealthRecord> weekRecords;
-  final String keyPrefix;
-  final double todayRunKm;
-  final int weekIntervalCount;
-  final void Function(HealthQuestDef) onClaim;
-
-  const _QuestsList({
-    required this.quests,
-    required this.accent,
-    required this.today,
-    required this.weekRecords,
-    required this.keyPrefix,
-    this.todayRunKm = 0,
-    this.weekIntervalCount = 0,
-    required this.onClaim,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ...quests.map((q) {
-          final current = HealthQuestService.current(q, today, weekRecords,
-              todayRunKm: todayRunKm, weekIntervalCount: weekIntervalCount);
-          final claimed = GameStore.isClaimed('hq:$keyPrefix:${q.id}');
-          final progress = HealthQuestProgress(
-              def: q, current: current, claimed: claimed);
-          return _HealthQuestTile(
-              progress: progress,
-              accent: accent,
-              weekRecords: weekRecords,
-              onClaim: () => onClaim(q));
-        }),
-      ],
-    );
-  }
-}
-
-class _HealthQuestTile extends StatelessWidget {
-  final HealthQuestProgress progress;
-  final Color accent;
-  final List<DailyHealthRecord> weekRecords;
-  final VoidCallback onClaim;
-  const _HealthQuestTile({
-    required this.progress,
-    required this.accent,
-    required this.weekRecords,
-    required this.onClaim,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final q = progress.def;
-    final fmt = q.unit == 'h'
-        ? progress.current.toStringAsFixed(1)
-        : progress.current.toStringAsFixed(0);
-    final tgt = q.target.toStringAsFixed(0);
-    final canClaim = progress.completed && !progress.claimed;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: progress.claimed
-              ? AppColors.border
-              : (progress.completed ? accent : AppColors.border),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                progress.claimed
-                    ? Icons.check_circle_rounded
-                    : (progress.completed
-                        ? Icons.emoji_events_rounded
-                        : Icons.radio_button_unchecked_rounded),
-                color: progress.claimed
-                    ? kNeonGreen
-                    : (progress.completed
-                        ? kNeonAmber
-                        : AppColors.textSecondary),
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  q.title,
-                  style: TextStyle(
-                    color:
-                        progress.claimed ? AppColors.textSecondary : Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    decoration:
-                        progress.claimed ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-              ),
-              Text('+${q.reward}',
-                  style: TextStyle(
-                      fontFamily: kArcadeFont,
-                      color: accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Stack(
-                    children: [
-                      Container(height: 8, color: AppColors.surfaceLight),
-                      FractionallySizedBox(
-                        widthFactor: progress.ratio,
-                        child: Container(height: 8, color: accent),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text('$fmt / $tgt ${q.unit}',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 11)),
-            ],
-          ),
-          if (q.isWeekly) ...[
-            const SizedBox(height: 12),
-            _WeeklyQuestBars(quest: q, weekRecords: weekRecords, color: accent),
-          ],
-          if (canClaim) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 38,
-              child: ElevatedButton(
-                onPressed: onClaim,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'RÉCLAMER LA RÉCOMPENSE',
-                  style: TextStyle(
-                    fontFamily: kArcadeFont,
-                    color: Colors.black,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// ── Barres quotidiennes d'une quête hebdo : 7 barres (L-D) + coche sur les
-// jours où le seuil journalier de référence est atteint. Chaque barre porte
-// la valeur réelle du jour (via sa hauteur) — pas d'interprétation, juste la
-// progression jour par jour vers l'objectif de la semaine. ──────────────────
-class _WeeklyQuestBars extends StatelessWidget {
-  final HealthQuestDef quest;
-  final List<DailyHealthRecord> weekRecords;
-  final Color color;
-  const _WeeklyQuestBars(
-      {required this.quest, required this.weekRecords, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final weekStart = GameService.startOfWeek(DateTime.now());
-    final byKey = {for (final r in weekRecords) r.key: r};
-    const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-
-    final values = <double>[];
-    final met = <bool>[];
-    for (int i = 0; i < 7; i++) {
-      final day = weekStart.add(Duration(days: i));
-      final rec = byKey[DailyHealthRecord.keyFor(day)];
-      switch (quest.metric) {
-        case HealthQuestMetric.weekSteps:
-          final steps = rec?.steps ?? 0;
-          values.add(steps.toDouble());
-          met.add(steps >= HealthGameService.stepsGoal);
-          break;
-        case HealthQuestMetric.weekSleepNights:
-          final hours = (rec?.totalSleepMin ?? 0) / 60.0;
-          values.add(hours);
-          met.add(hours >= 7);
-          break;
-        default:
-          values.add(0);
-          met.add(false);
-      }
-    }
-    final maxV = values.fold<double>(1, math.max);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(7, (i) {
-        final barH = (values[i] / maxV * 32).clamp(3.0, 32.0);
-        return Expanded(
-          child: Column(
-            children: [
-              SizedBox(
-                height: 14,
-                child: met[i]
-                    ? Icon(Icons.check_circle_rounded, size: 13, color: color)
-                    : null,
-              ),
-              const SizedBox(height: 3),
-              Container(
-                height: barH,
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: met[i] ? color : AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(labels[i],
-                  style:
-                      const TextStyle(color: AppColors.textSecondary, fontSize: 9)),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-}
 
 // ── Carte d'activité dans le feed ───────────────────────────────────────────
 class _ActivityFeedCard extends StatelessWidget {
