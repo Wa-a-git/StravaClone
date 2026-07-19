@@ -14,6 +14,7 @@ import '../providers/game_provider.dart';
 import '../providers/health_provider.dart';
 import '../services/health_game_service.dart';
 import '../services/health_store.dart';
+import '../services/meditation_store.dart';
 import '../services/musculation_store.dart';
 import '../theme.dart';
 import '../widgets/health_charts.dart';
@@ -22,6 +23,7 @@ import '../widgets/ui_kit.dart';
 import 'detail_screen.dart';
 import 'health_dashboard_screen.dart' show RawStatsRow;
 import 'health_history_screen.dart' show HealthDayDetailScreen;
+import 'meditation_screen.dart';
 import 'sleep_detail_screen.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
@@ -404,6 +406,8 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
             a.date.day == now.day)
         .fold<double>(0, (s, a) => s + a.distanceKmValue);
     final todayMusculationDone = MusculationStore.todayEntries().isNotEmpty;
+    final todayMeditationSeconds = MeditationStore.todayEntries()
+        .fold<int>(0, (s, e) => s + e.value.durationSeconds);
 
     final lastRun = activities.isNotEmpty ? activities.first : null;
     final runStreak = _hudRunStreak(activities);
@@ -491,14 +495,17 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
                     value: _hudFmtDuration(snapshot.sleep.totalAsleepMin),
                     label: 'Sommeil',
                   ),
-                  // Méditation : pas encore de source de données (ni Health
-                  // Connect, ni flux de log) — affiché en attente jusqu'à
-                  // décision sur l'origine de la donnée.
-                  const _HudChipData(
+                  _HudChipData(
                     icon: Icons.self_improvement_rounded,
                     iconColor: kNeonCyan,
-                    value: '--',
+                    value: _hudFmtMeditation(todayMeditationSeconds),
                     label: 'Méditation',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const MeditationScreen()),
+                    ).then((_) {
+                      if (mounted) setState(() {});
+                    }),
                   ),
                   _HudChipData(
                     icon: Icons.favorite_rounded,
@@ -776,7 +783,7 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
 
   Widget _chip(_HudChipData c) {
     final noData = c.value == '--';
-    return Container(
+    final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.26),
@@ -815,6 +822,8 @@ class _ArcadeHudCardState extends ConsumerState<_ArcadeHudCard>
         ],
       ),
     );
+    if (c.onTap == null) return chip;
+    return GestureDetector(onTap: c.onTap, child: chip);
   }
 }
 
@@ -854,11 +863,13 @@ class _HudChipData {
   final Color iconColor;
   final String value;
   final String label;
+  final VoidCallback? onTap;
   const _HudChipData({
     required this.icon,
     required this.iconColor,
     required this.value,
     required this.label,
+    this.onTap,
   });
 }
 
@@ -873,6 +884,17 @@ String _hudFmtDuration(double minutes) {
   if (minutes <= 0) return '--';
   final h = minutes ~/ 60;
   final m = (minutes % 60).round();
+  return '${h}h${m.toString().padLeft(2, '0')}';
+}
+
+/// Format court pour la chip Méditation : minutes en dessous d'une heure
+/// (la plupart des séances), sinon même format Xh0Y que Sommeil.
+String _hudFmtMeditation(int totalSeconds) {
+  if (totalSeconds <= 0) return '--';
+  final totalMinutes = totalSeconds ~/ 60;
+  if (totalMinutes < 60) return '${totalMinutes}min';
+  final h = totalMinutes ~/ 60;
+  final m = totalMinutes % 60;
   return '${h}h${m.toString().padLeft(2, '0')}';
 }
 
