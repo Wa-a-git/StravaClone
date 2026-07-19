@@ -462,10 +462,6 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          const _WeightCard(),
-          const SizedBox(height: 16),
-          const Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 14),
           _HealthXpBanner(xpToday: xpToday, onTap: onXpTap),
         ],
       ),
@@ -526,9 +522,15 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
         duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
   }
 
+  Future<void> _editWeight() async {
+    await showAppSheet(context: context, child: const _WeighInSheet());
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.snapshot;
+    final weightKg = HealthStore.recordFor(DateTime.now())?.weightKg ?? 0;
     final vo2Estimates = Vo2EstimateStore.all();
     final pages = <List<_HeroPillData>>[
       [
@@ -584,6 +586,15 @@ class _HeroPillCarouselState extends State<_HeroPillCarousel> {
             const Color(0xFF0E5C48),
             const Color(0xFF8FE3C9),
             HealthMetric.distanceKm),
+        _HeroPillData(
+            'POIDS',
+            weightKg > 0 ? weightKg.toStringAsFixed(1) : '--',
+            'kg',
+            Icons.monitor_weight_rounded,
+            const Color(0xFF5C4A0E),
+            const Color(0xFFE3C98F),
+            HealthMetric.weightKg,
+            onTap: _editWeight),
         _HeroPillData(
             'VO2 MAX',
             vo2Estimates.isNotEmpty
@@ -1141,97 +1152,6 @@ class _MeditationCardState extends State<_MeditationCard> {
                   '$windowMinutes min · ${_windowDays == 7 ? 'cette semaine' : 'ce mois-ci'}',
                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Carte Poids : dernière valeur + tendance sur une période au choix
-// (semaine/mois/3 mois), remplace l'ancien panneau "LONG TERME · 90 JOURS"
-// fixe — tap n'importe où pour saisir le poids du jour (_WeighInSheet), la
-// seule façon d'entrer cette donnée puisqu'aucune montre ne la mesure.
-class _WeightCard extends StatefulWidget {
-  const _WeightCard();
-
-  @override
-  State<_WeightCard> createState() => _WeightCardState();
-}
-
-class _WeightCardState extends State<_WeightCard> {
-  int _windowDays = 7;
-
-  Future<void> _editWeight() async {
-    await showAppSheet(context: context, child: const _WeighInSheet());
-    if (mounted) setState(() {});
-  }
-
-  String _windowLabel(int d) => switch (d) {
-        7 => 'Semaine',
-        30 => 'Mois',
-        _ => '3 mois',
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final todayWeight = HealthStore.recordFor(DateTime.now())?.weightKg ?? 0;
-    final windowSeries = HealthStore.series(HealthMetric.weightKg, _windowDays);
-    final values = windowSeries.map((e) => e.value).where((v) => v > 0).toList();
-
-    return GestureDetector(
-      onTap: _editWeight,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: kNeonAmber.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.monitor_weight_rounded, color: kNeonAmber, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text('POIDS',
-                        style: TextStyle(
-                            fontFamily: kArcadeFont,
-                            color: kNeonAmber,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6)),
-                    const SizedBox(width: 8),
-                    Text(todayWeight > 0 ? '${todayWeight.toStringAsFixed(1)} kg' : '--',
-                        style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                    const Icon(Icons.edit_rounded, color: AppColors.textSecondary, size: 14),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SegmentedTabs<int>(
-                  values: const [7, 30, 90],
-                  selected: _windowDays,
-                  labelOf: _windowLabel,
-                  onChanged: (d) => setState(() => _windowDays = d),
-                ),
-                const SizedBox(height: 8),
-                if (values.length >= 2)
-                  Sparkline(values: values, color: kNeonAmber, height: 30)
-                else
-                  Text('Pas assez de données sur ${_windowLabel(_windowDays).toLowerCase()}',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
               ],
             ),
           ),
