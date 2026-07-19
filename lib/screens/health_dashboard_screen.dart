@@ -1062,14 +1062,9 @@ List<_MetricSpec> _allMetricSpecs(HealthSnapshot snapshot) {
           Icons.map_rounded,
           kNeonGreen,
           _MetricGroupId.activity),
-      _MetricSpec(
-          'Étages',
-          HealthMetric.flightsClimbed,
-          snapshot.flightsClimbed.toString(),
-          'étages',
-          Icons.stairs_rounded,
-          kNeonAmber,
-          _MetricGroupId.activity),
+      // Pas de carte Étages ici : même symptôme que Cal. actives ci-dessus,
+      // vide en permanence sur cet appareil (Fitbit Charge 6 ne remonte pas
+      // les étages vers Health Connect de façon fiable).
 
       // ── Vitaux & sommeil ─────────────────────────────────────────────────
       // FC repos et Sommeil : même raison que Pas/Cal. actives ci-dessus,
