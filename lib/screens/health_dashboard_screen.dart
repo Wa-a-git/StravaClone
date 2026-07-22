@@ -21,8 +21,7 @@ import 'shell_screen.dart';
 import 'sport_screen.dart' show sportTabProvider, SportTab;
 import 'health_metric_detail_screen.dart';
 import 'meditation_screen.dart';
-import 'score_breakdown_screen.dart';
-import 'sleep_detail_screen.dart';
+
 import '../main.dart' show routeObserver;
 
 class HealthDashboardScreen extends ConsumerStatefulWidget {
@@ -162,7 +161,7 @@ class _HealthDashboardScreenState extends ConsumerState<HealthDashboardScreen>
                     FadeSlideIn(
                       child: _HPanel(
                         accent: kNeonCyan,
-                        child: _MetricsGrid(snapshot: st.snapshot),
+                        child: const _AdvancedDashboard(),
                       ),
                     ),
 
@@ -443,7 +442,7 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
-          _SubScoresRow(scores: scores, snapshot: snapshot),
+          _TriadRow(scores: scores, snapshot: snapshot),
           const SizedBox(height: 16),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 14),
@@ -723,13 +722,13 @@ class _BalanceRadarState extends State<_BalanceRadar> {
           value: widget.scores.sleepScore.toDouble(),
           color: kNeonViolet),
       RadarAxis(
-          label: 'Récup',
-          value: widget.scores.recoveryScore.toDouble(),
+          label: 'Nerveux',
+          value: widget.scores.nervousScore.toDouble(),
           color: kNeonCyan),
       RadarAxis(
-          label: 'Activité',
-          value: widget.scores.activityScore.toDouble(),
-          color: kNeonGreen),
+          label: 'Cardio',
+          value: widget.scores.cardioScore.toDouble(),
+          color: kNeonPink),
     ];
 
     return Column(
@@ -972,42 +971,42 @@ class _WeekDotsStrip extends StatelessWidget {
   }
 }
 
-// ── Sous-scores (tappables) ───────────────────────────────────────────────────
-class _SubScoresRow extends StatelessWidget {
+// ── Triade de Récupération (Remplace les anciens sous-scores) ────────────────
+class _TriadRow extends StatelessWidget {
   final HealthScores scores;
   final HealthSnapshot snapshot;
-  const _SubScoresRow({required this.scores, required this.snapshot});
+  const _TriadRow({required this.scores, required this.snapshot});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: _SubScoreCard(
+          child: _TriadCard(
             label: 'SOMMEIL',
             score: scores.sleepScore,
             color: kNeonViolet,
-            metric: HealthMetric.sleepScore,
+            type: _TriadType.sleep,
             snapshot: snapshot,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _SubScoreCard(
-            label: 'RÉCUP',
-            score: scores.recoveryScore,
+          child: _TriadCard(
+            label: 'NERVEUX',
+            score: scores.nervousScore,
             color: kNeonCyan,
-            metric: HealthMetric.recoveryScore,
+            type: _TriadType.nervous,
             snapshot: snapshot,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _SubScoreCard(
-            label: 'ACTIVITÉ',
-            score: scores.activityScore,
-            color: kNeonGreen,
-            metric: HealthMetric.activityScore,
+          child: _TriadCard(
+            label: 'CARDIO',
+            score: scores.cardioScore,
+            color: kNeonPink,
+            type: _TriadType.cardio,
             snapshot: snapshot,
           ),
         ),
@@ -1016,40 +1015,42 @@ class _SubScoresRow extends StatelessWidget {
   }
 }
 
-class _SubScoreCard extends StatelessWidget {
+enum _TriadType { sleep, nervous, cardio }
+
+class _TriadCard extends StatelessWidget {
   final String label;
   final int score;
   final Color color;
-  final HealthMetric metric;
+  final _TriadType type;
   final HealthSnapshot snapshot;
-  const _SubScoreCard({
+
+  const _TriadCard({
     required this.label,
     required this.score,
     required this.color,
-    required this.metric,
+    required this.type,
     required this.snapshot,
   });
+
+  void _showAnalysis(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _TriadBottomSheet(
+        score: score,
+        color: color,
+        type: type,
+        snapshot: snapshot,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // Le sommeil a son propre écran de détail (hypnogramme, nuit par
-      // nuit) — les autres sous-scores restent sur le détail générique.
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => metric == HealthMetric.sleepScore
-              ? const SleepDetailScreen()
-              : ScoreBreakdownScreen(
-                  scoreMetric: metric,
-                  accent: color,
-                  scoreValue: score,
-                  snapshot: snapshot,
-                ),
-        ),
-      ),
+      onTap: () => _showAnalysis(context),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
@@ -1057,18 +1058,154 @@ class _SubScoreCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            HealthRing(score: score, color: color, size: 56),
-            const SizedBox(height: 8),
+            Text(
+              score.toString(),
+              style: TextStyle(
+                fontFamily: kArcadeFont,
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                shadows: [Shadow(color: color, blurRadius: 10)],
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.textSecondary,
-                fontSize: 9,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TriadBottomSheet extends StatelessWidget {
+  final int score;
+  final Color color;
+  final _TriadType type;
+  final HealthSnapshot snapshot;
+
+  const _TriadBottomSheet({
+    required this.score,
+    required this.color,
+    required this.type,
+    required this.snapshot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    String title = '';
+    String icon = '';
+    String explanation = '';
+    
+    final rhrBase = snapshot.restingHeartRateBaseline;
+    final hrvBase = snapshot.hrvBaseline;
+    final rhr = snapshot.restingHeartRate;
+    final hrv = snapshot.hrv;
+
+    if (type == _TriadType.nervous) {
+      title = 'SYSTÈME NERVEUX';
+      icon = '⚡';
+      if (hrvBase > 0 && hrv > 0) {
+        if (hrv >= hrvBase) {
+          explanation = 'Ce score compare votre VFC du jour (${hrv.toStringAsFixed(0)} ms) à votre moyenne de base (${hrvBase.toStringAsFixed(0)} ms).\n\nÉtant donné que vous êtes au-dessus de votre moyenne, votre système nerveux parasympathique est très bien récupéré. Vous avez une grande réserve d\'adaptation face au stress aujourd\'hui.';
+        } else {
+          explanation = 'Ce score compare votre VFC du jour (${hrv.toStringAsFixed(0)} ms) à votre moyenne de base (${hrvBase.toStringAsFixed(0)} ms).\n\nVotre VFC est en baisse, ce qui indique une dominance du système sympathique (fatigue nerveuse ou stress). Privilégiez le repos mental et physique.';
+        }
+      } else {
+        explanation = 'Mesures VFC manquantes pour une analyse comparative complète. Continuez à porter votre montre la nuit.';
+      }
+    } else if (type == _TriadType.cardio) {
+      title = 'CARDIO-MÉTABOLIQUE';
+      icon = '❤️';
+      if (rhrBase > 0 && rhr > 0) {
+        if (rhr <= rhrBase) {
+          explanation = 'Votre score cardio compare votre FC Repos (${rhr.toStringAsFixed(0)} bpm) à votre moyenne de base (${rhrBase.toStringAsFixed(0)} bpm).\n\nVotre cœur est apaisé. Il n\'est soumis à aucun stress métabolique ou inflammatoire majeur, signe d\'une excellente récupération physique.';
+        } else {
+          explanation = 'Votre FC Repos (${rhr.toStringAsFixed(0)} bpm) est supérieure à votre moyenne de base (${rhrBase.toStringAsFixed(0)} bpm).\n\nCela peut indiquer une mauvaise digestion nocturne, une récupération physique incomplète ou que votre corps lutte contre un virus.';
+        }
+      } else {
+        explanation = 'Mesures de FC Repos manquantes pour une analyse comparative complète.';
+      }
+    } else {
+      title = 'SOMMEIL';
+      icon = '☾';
+      final h = snapshot.sleep.totalAsleepMin ~/ 60;
+      final m = (snapshot.sleep.totalAsleepMin % 60).round();
+      explanation = 'Votre score prend en compte votre nuit de ${h}h${m.toString().padLeft(2, '0')}.\n\nIl est composé à 50% de la durée absolue, à 30% de la qualité des cycles (phases profondes et paradoxales), et à 20% de l\'efficacité (peu d\'interruptions et d\'éveil).';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: color, width: 2)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Text(icon, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    fontSize: 16,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  score.toString(),
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    fontSize: 32,
+                    color: Colors.white,
+                    shadows: [Shadow(color: color, blurRadius: 15)],
+                  ),
+                ),
+                const Text(' /100', style: TextStyle(fontSize: 16, color: AppColors.muted)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border(left: BorderSide(color: color, width: 3)),
+              ),
+              child: Text(
+                explanation,
+                style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 10),
           ],
         ),
       ),
@@ -2174,4 +2311,762 @@ class _HPanel extends AppPanel {
 
 class _HPanelTitle extends PanelTitle {
   const _HPanelTitle(super.text, {super.color = kNeonCyan, super.trailing});
+}
+
+// ── Dashboard Avancé : analyses croisées sous le héro ─────────────────────────
+// Règle : aucune donnée brute présente dans le carrousel héros n'est répétée
+// seule ici. Chaque carte croise au moins 2 indicateurs pour produire un
+// insight que le héros ne montre pas.
+class _AdvancedDashboard extends StatelessWidget {
+  const _AdvancedDashboard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: const [
+        _HPanelTitle('SANTÉ PROFONDE', color: kNeonCyan),
+        SizedBox(height: 16),
+        _StressRecoveryMatrix(),
+        SizedBox(height: 20),
+        _SleepArchitectureChart(),
+      ],
+    );
+  }
+}
+
+// ── Matrice Stress vs Repos ───────────────────────────────────────────────────
+// Scatter plot VFC (Y) vs FC Repos (X) sur 14 jours. La position du point
+// d'aujourd'hui dans les quadrants indique l'état du système nerveux autonome.
+class _StressRecoveryMatrix extends StatelessWidget {
+  const _StressRecoveryMatrix();
+
+  @override
+  Widget build(BuildContext context) {
+    final records = HealthStore.lastNDays(14);
+    // On ne garde que les jours ayant à la fois une VFC et une FC repos > 0.
+    final points = <_ScatterPoint>[];
+    for (final r in records) {
+      if (r.hrv > 0 && r.restingHeartRate > 0) {
+        points.add(_ScatterPoint(
+          rhr: r.restingHeartRate,
+          hrv: r.hrv,
+          date: r.date,
+        ));
+      }
+    }
+
+    // Insight textuel basé sur le point du jour (le dernier de la liste).
+    String insight;
+    Color insightColor;
+    if (points.length < 2) {
+      insight = 'En attente de données. Portez votre montre au moins 2 nuits '
+          'pour activer cette analyse.';
+      insightColor = AppColors.muted;
+    } else {
+      final today = points.last;
+      final avgRhr =
+          points.map((p) => p.rhr).reduce((a, b) => a + b) / points.length;
+      final avgHrv =
+          points.map((p) => p.hrv).reduce((a, b) => a + b) / points.length;
+      final rhrHigh = today.rhr > avgRhr + 2;
+      final hrvLow = today.hrv < avgHrv - 5;
+      final hrvHigh = today.hrv > avgHrv + 5;
+
+      if (hrvLow && rhrHigh) {
+        insight = 'Fatigue nerveuse : votre VFC baisse et votre FC Repos '
+            'augmente. Privilégiez la récupération.';
+        insightColor = kNeonPink;
+      } else if (hrvHigh && !rhrHigh) {
+        insight = 'Zone optimale : votre système nerveux est frais. '
+            'Bon moment pour un entraînement intense.';
+        insightColor = kNeonGreen;
+      } else if (rhrHigh && !hrvLow) {
+        insight = 'FC Repos élevée, VFC normale — possiblement un stress '
+            'passager ou une digestion tardive.';
+        insightColor = kNeonAmber;
+      } else {
+        insight = 'Équilibre stable : votre récupération nerveuse est dans '
+            'la norme des 14 derniers jours.';
+        insightColor = kNeonCyan;
+      }
+    }
+
+    return GestureDetector(
+      onTap: () {
+        if (points.length >= 2) {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (context) => _MatrixBottomSheet(
+              insight: insight,
+              insightColor: insightColor,
+              today: points.last,
+              avgRhr: points.map((p) => p.rhr).reduce((a, b) => a + b) / points.length,
+              avgHrv: points.map((p) => p.hrv).reduce((a, b) => a + b) / points.length,
+            ),
+          );
+        }
+      },
+      child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.scatter_plot_rounded,
+                  color: kNeonPink, size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'MATRICE STRESS vs REPOS',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    color: kNeonPink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'VFC / FC Repos — 14 derniers jours',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 200,
+            child: points.length >= 2
+                ? CustomPaint(
+                    size: Size.infinite,
+                    painter: _ScatterPainter(points: points),
+                  )
+                : const Center(
+                    child: Text('Pas assez de données',
+                        style:
+                            TextStyle(color: AppColors.muted, fontSize: 12)),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: insightColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: insightColor.withOpacity(0.3)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded,
+                    color: insightColor, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    insight,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 11,
+                        height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ));
+  }
+}
+
+class _MatrixBottomSheet extends StatelessWidget {
+  final String insight;
+  final Color insightColor;
+  final _ScatterPoint today;
+  final double avgRhr;
+  final double avgHrv;
+
+  const _MatrixBottomSheet({
+    required this.insight,
+    required this.insightColor,
+    required this.today,
+    required this.avgRhr,
+    required this.avgHrv,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: insightColor, width: 2)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Icon(Icons.scatter_plot_rounded, color: insightColor, size: 24),
+                const SizedBox(width: 10),
+                Text(
+                  'BILAN PHYSIOLOGIQUE',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    fontSize: 16,
+                    color: insightColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              insight,
+              style: const TextStyle(fontSize: 14, height: 1.5, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: insightColor.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border(left: BorderSide(color: insightColor, width: 3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('VFC Aujourd\'hui : ${today.hrv.toStringAsFixed(0)} ms (Moy. 14j : ${avgHrv.toStringAsFixed(0)} ms)', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Text('FCR Aujourd\'hui : ${today.rhr.toStringAsFixed(0)} bpm (Moy. 14j : ${avgRhr.toStringAsFixed(0)} bpm)', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScatterPoint {
+  final double rhr;
+  final double hrv;
+  final DateTime date;
+  const _ScatterPoint(
+      {required this.rhr, required this.hrv, required this.date});
+}
+
+class _ScatterPainter extends CustomPainter {
+  final List<_ScatterPoint> points;
+  const _ScatterPainter({required this.points});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+
+    const labelPad = 28.0;
+    const topPad = 8.0;
+    const rightPad = 8.0;
+    final plotW = size.width - labelPad - rightPad;
+    final plotH = size.height - labelPad - topPad;
+
+    // Compute data bounds with a margin.
+    final rhrMin = points.map((p) => p.rhr).reduce((a, b) => a < b ? a : b) - 3;
+    final rhrMax = points.map((p) => p.rhr).reduce((a, b) => a > b ? a : b) + 3;
+    final hrvMin = points.map((p) => p.hrv).reduce((a, b) => a < b ? a : b) - 5;
+    final hrvMax = points.map((p) => p.hrv).reduce((a, b) => a > b ? a : b) + 5;
+    final rhrRange = (rhrMax - rhrMin).clamp(1.0, double.infinity);
+    final hrvRange = (hrvMax - hrvMin).clamp(1.0, double.infinity);
+
+    double xOf(double rhr) => labelPad + (rhr - rhrMin) / rhrRange * plotW;
+    double yOf(double hrv) => topPad + (1 - (hrv - hrvMin) / hrvRange) * plotH;
+
+    // Axes.
+    final axisPaint = Paint()
+      ..color = const Color(0xFF4A2A73)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+        Offset(labelPad, topPad), Offset(labelPad, topPad + plotH), axisPaint);
+    canvas.drawLine(Offset(labelPad, topPad + plotH),
+        Offset(labelPad + plotW, topPad + plotH), axisPaint);
+
+    // Grid lines (3 each).
+    final gridPaint = Paint()
+      ..color = const Color(0xFF4A2A73).withOpacity(0.3)
+      ..strokeWidth = 0.5;
+    for (int i = 1; i <= 3; i++) {
+      final y = topPad + plotH * i / 4;
+      canvas.drawLine(Offset(labelPad, y), Offset(labelPad + plotW, y), gridPaint);
+      final x = labelPad + plotW * i / 4;
+      canvas.drawLine(Offset(x, topPad), Offset(x, topPad + plotH), gridPaint);
+    }
+
+    // Axis labels.
+    final labelStyle = TextStyle(
+        color: const Color(0xFF8A6BB0), fontSize: 8, fontWeight: FontWeight.bold);
+    _drawText(canvas, 'VFC', Offset(0, topPad), labelStyle);
+    _drawText(canvas, 'FC REPOS', Offset(size.width - 46, topPad + plotH + 10),
+        labelStyle);
+
+    // Quadrant average lines (dashed feel via thin low-opacity line).
+    final avgRhr = points.map((p) => p.rhr).reduce((a, b) => a + b) / points.length;
+    final avgHrv = points.map((p) => p.hrv).reduce((a, b) => a + b) / points.length;
+    final avgLinePaint = Paint()
+      ..color = const Color(0xFF8A6BB0).withOpacity(0.3)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(xOf(avgRhr), topPad),
+        Offset(xOf(avgRhr), topPad + plotH), avgLinePaint);
+    canvas.drawLine(Offset(labelPad, yOf(avgHrv)),
+        Offset(labelPad + plotW, yOf(avgHrv)), avgLinePaint);
+
+    // Historical dots (all except last).
+    final histPaint = Paint()..color = const Color(0xFF8A6BB0);
+    for (int i = 0; i < points.length - 1; i++) {
+      final p = points[i];
+      canvas.drawCircle(Offset(xOf(p.rhr), yOf(p.hrv)), 4, histPaint);
+    }
+
+    // Today dot (last point) with glow.
+    final today = points.last;
+    final todayCenter = Offset(xOf(today.rhr), yOf(today.hrv));
+    final glowPaint = Paint()
+      ..color = kNeonPink.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawCircle(todayCenter, 9, glowPaint);
+    canvas.drawCircle(todayCenter, 6, Paint()..color = kNeonPink);
+    canvas.drawCircle(todayCenter, 3, Paint()..color = Colors.white);
+  }
+
+  void _drawText(Canvas canvas, String text, Offset offset, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, offset);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScatterPainter old) =>
+      old.points.length != points.length;
+}
+
+// ── Architecture du Sommeil & Dette ───────────────────────────────────────────
+// Barres empilées (phases de sommeil) + ligne superposée (dette cumulée) sur 7j.
+class _SleepArchitectureChart extends StatelessWidget {
+  const _SleepArchitectureChart();
+
+  @override
+  Widget build(BuildContext context) {
+    final records = HealthStore.lastNDays(7);
+    final days = <_SleepDay>[];
+    const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+    for (final r in records) {
+      days.add(_SleepDay(
+        label: labels[r.date.weekday - 1],
+        deepH: r.sleepDeepMin / 60,
+        remH: r.sleepRemMin / 60,
+        lightH: r.sleepLightMin / 60,
+        debtH: r.sleepDebtHours,
+      ));
+    }
+
+    if (days.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: const Center(
+          child: Text('Pas assez de données de sommeil',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        final lastNight = days.last;
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (context) => _SleepBottomSheet(lastNight: lastNight, records: records),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bedtime_rounded,
+                    color: kNeonViolet, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'ARCHITECTURE & DETTE',
+                    style: TextStyle(
+                      fontFamily: kArcadeFont,
+                      color: kNeonViolet,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          const SizedBox(height: 4),
+          const Text(
+            'Phases de sommeil vs Dette accumulée',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 180,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _SleepBarPainter(days: days),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _legendDot(kNeonViolet, 'Profond'),
+              const SizedBox(width: 12),
+              _legendDot(kNeonCyan, 'Paradoxal'),
+              const SizedBox(width: 12),
+              _legendDot(const Color(0xFF6E8BFF), 'Léger'),
+              const SizedBox(width: 12),
+              _legendLine(kNeonAmber, 'Dette'),
+            ],
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+
+  Widget _legendDot(Color c, String t) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: c,
+              borderRadius: BorderRadius.circular(3),
+              boxShadow: [BoxShadow(color: c, blurRadius: 4)],
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(t,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 10)),
+        ],
+      );
+
+  Widget _legendLine(Color c, String t) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 3,
+            decoration: BoxDecoration(
+              color: c,
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: [BoxShadow(color: c, blurRadius: 4)],
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(t,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 10)),
+        ],
+      );
+}
+
+class _SleepDay {
+  final String label;
+  final double deepH;
+  final double remH;
+  final double lightH;
+  final double debtH;
+  const _SleepDay({
+    required this.label,
+    required this.deepH,
+    required this.remH,
+    required this.lightH,
+    required this.debtH,
+  });
+  double get totalH => deepH + remH + lightH;
+}
+
+class _SleepBarPainter extends CustomPainter {
+  final List<_SleepDay> days;
+  const _SleepBarPainter({required this.days});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (days.isEmpty) return;
+
+    const leftPad = 28.0;
+    const bottomPad = 24.0;
+    const topPad = 4.0;
+    final plotW = size.width - leftPad - 8;
+    final plotH = size.height - bottomPad - topPad;
+
+    // Max height = max total sleep or 10h, whichever is greater.
+    final maxH = days.map((d) => d.totalH).reduce((a, b) => a > b ? a : b);
+    final yMax = maxH.clamp(6.0, 12.0);
+
+    double yOf(double h) => topPad + plotH * (1 - h / yMax);
+
+    // Horizontal guide lines.
+    final gridPaint = Paint()
+      ..color = const Color(0xFF4A2A73).withOpacity(0.4)
+      ..strokeWidth = 0.5;
+    final labelStyle = TextStyle(
+        color: const Color(0xFF8A6BB0), fontSize: 8, fontWeight: FontWeight.w600);
+    for (int h = 2; h <= yMax.ceil(); h += 2) {
+      final y = yOf(h.toDouble());
+      canvas.drawLine(Offset(leftPad, y), Offset(leftPad + plotW, y), gridPaint);
+      _drawText(canvas, '${h}h', Offset(0, y - 5), labelStyle);
+    }
+
+    // Bottom axis.
+    final axisPaint = Paint()
+      ..color = const Color(0xFF4A2A73)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+        Offset(leftPad, topPad + plotH),
+        Offset(leftPad + plotW, topPad + plotH),
+        axisPaint);
+
+    // Bars and day labels.
+    final barW = (plotW / days.length).clamp(10.0, 32.0);
+    final gap = (plotW - barW * days.length) / (days.length + 1);
+
+    final debtPoints = <Offset>[];
+
+    for (int i = 0; i < days.length; i++) {
+      final d = days[i];
+      final cx = leftPad + gap * (i + 1) + barW * i + barW / 2;
+      final barLeft = cx - barW / 2 + 2;
+      final barRight = cx + barW / 2 - 2;
+      final bw = barRight - barLeft;
+
+      var y = yOf(0);
+
+      // Deep (bottom).
+      if (d.deepH > 0) {
+        final segH = plotH * d.deepH / yMax;
+        final rr = RRect.fromLTRBAndCorners(
+          barLeft, y - segH, barRight, y,
+          bottomLeft: const Radius.circular(4),
+          bottomRight: const Radius.circular(4),
+        );
+        canvas.drawRRect(rr, Paint()..color = kNeonViolet);
+        y -= segH;
+      }
+
+      // REM (middle).
+      if (d.remH > 0) {
+        final segH = plotH * d.remH / yMax;
+        canvas.drawRect(
+            Rect.fromLTWH(barLeft, y - segH, bw, segH),
+            Paint()..color = kNeonCyan);
+        y -= segH;
+      }
+
+      // Light (top).
+      if (d.lightH > 0) {
+        final segH = plotH * d.lightH / yMax;
+        final rr = RRect.fromLTRBAndCorners(
+          barLeft, y - segH, barRight, y,
+          topLeft: const Radius.circular(4),
+          topRight: const Radius.circular(4),
+        );
+        canvas.drawRRect(rr, Paint()..color = const Color(0xFF6E8BFF));
+      }
+
+      // Day label.
+      _drawText(
+        canvas,
+        d.label,
+        Offset(cx - 4, topPad + plotH + 6),
+        TextStyle(color: const Color(0xFFC9A8E8), fontSize: 10),
+      );
+
+      // Debt point — scale: 0h debt at bottom of chart, map to plot area.
+      // Debt is typically 0-5h. We normalise on a 0..yMax axis.
+      final debtMapped = d.debtH.abs().clamp(0.0, yMax).toDouble();
+      debtPoints.add(Offset(cx, yOf(debtMapped)));
+    }
+
+    // Debt trendline — neon amber glow.
+    if (debtPoints.length >= 2) {
+      final path = Path()..moveTo(debtPoints[0].dx, debtPoints[0].dy);
+      for (int i = 1; i < debtPoints.length; i++) {
+        path.lineTo(debtPoints[i].dx, debtPoints[i].dy);
+      }
+
+      final glowPaint = Paint()
+        ..color = kNeonAmber.withOpacity(0.45)
+        ..strokeWidth = 7
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawPath(path, glowPaint);
+
+      final linePaint = Paint()
+        ..color = kNeonAmber
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      canvas.drawPath(path, linePaint);
+
+      // White center dots.
+      for (final p in debtPoints) {
+        canvas.drawCircle(
+            p, 4, Paint()..color = kNeonAmber.withOpacity(0.5));
+        canvas.drawCircle(p, 2.5, Paint()..color = Colors.white);
+      }
+    }
+  }
+
+  void _drawText(Canvas canvas, String text, Offset offset, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, offset);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SleepBarPainter old) =>
+      old.days.length != days.length;
+}
+
+class _SleepBottomSheet extends StatelessWidget {
+  final _SleepDay lastNight;
+  final List<DailyHealthRecord> records;
+
+  const _SleepBottomSheet({required this.lastNight, required this.records});
+
+  @override
+  Widget build(BuildContext context) {
+    final deepM = (lastNight.deepH * 60).round();
+    final remM = (lastNight.remH * 60).round();
+    final lightM = (lastNight.lightH * 60).round();
+    final totalM = deepM + remM + lightM;
+    final h = totalM ~/ 60;
+    final m = totalM % 60;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: kNeonViolet, width: 2)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Row(
+              children: [
+                Icon(Icons.bedtime_rounded, color: kNeonViolet, size: 24),
+                SizedBox(width: 10),
+                Text(
+                  'RÉPARTITION DU SOMMEIL',
+                  style: TextStyle(
+                    fontFamily: kArcadeFont,
+                    fontSize: 16,
+                    color: kNeonViolet,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Nuit passée : ${h}h${m.toString().padLeft(2, '0')}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            _buildPhaseRow('Profond', deepM, kNeonViolet),
+            const SizedBox(height: 8),
+            _buildPhaseRow('Paradoxal (REM)', remM, kNeonCyan),
+            const SizedBox(height: 8),
+            _buildPhaseRow('Léger', lightM, const Color(0xFF6E8BFF)),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kNeonAmber.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: const Border(left: BorderSide(color: kNeonAmber, width: 3)),
+              ),
+              child: Text(
+                'Dette de sommeil actuelle : ${lastNight.debtH.toStringAsFixed(1)} h\n\n'
+                'La courbe ambre indique les heures de sommeil qu\'il vous manque par rapport à votre besoin idéal (8h). '
+                'Remboursez cette dette en vous couchant plus tôt ce soir.',
+                style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhaseRow(String label, int minutes, Color color) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return Row(
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label, style: const TextStyle(color: AppColors.textSecondary))),
+        Text(h > 0 ? '${h}h${m.toString().padLeft(2, '0')}' : '${m} min', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+      ],
+    );
+  }
 }

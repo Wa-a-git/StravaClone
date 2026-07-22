@@ -58,6 +58,8 @@ const List<HealthTier> kHealthTiers = [
 class HealthScores {
   final int sleepScore;
   final int recoveryScore;
+  final int nervousScore;
+  final int cardioScore;
   final int activityScore;
   final int bioScore;
   final HealthTier tier;
@@ -65,6 +67,8 @@ class HealthScores {
   const HealthScores({
     required this.sleepScore,
     required this.recoveryScore,
+    required this.nervousScore,
+    required this.cardioScore,
     required this.activityScore,
     required this.bioScore,
     required this.tier,
@@ -114,8 +118,8 @@ class HealthScoreService {
         .round();
   }
 
-  // ── Score de récupération (FC repos + HRV vs moyenne des 7 derniers jours) ──
-  static int recoveryScore(HealthSnapshot s) {
+  // ── Score Cardio-Métabolique (FC repos vs moyenne des 7 derniers jours) ──
+  static int cardioScore(HealthSnapshot s) {
     double hrScore = 60; // valeur neutre si pas de baseline
     if (s.restingHeartRateBaseline > 0 && s.restingHeartRate > 0) {
       final delta = s.restingHeartRate - s.restingHeartRateBaseline;
@@ -124,15 +128,23 @@ class HealthScoreService {
       // Pas de baseline : on juge sur une échelle absolue (40-80 bpm).
       hrScore = _clamp(100 - (s.restingHeartRate - 55).clamp(0, 40) * 2.5);
     }
+    return hrScore.round();
+  }
 
+  // ── Score Système Nerveux (HRV vs moyenne des 7 derniers jours) ──
+  static int nervousScore(HealthSnapshot s) {
     double hrvScore = 60;
     if (s.hrvBaseline > 0 && s.hrv > 0) {
       hrvScore = _clamp((s.hrv / s.hrvBaseline) * 100);
     } else if (s.hrv > 0) {
       hrvScore = _clamp((s.hrv / 50.0) * 100);
     }
+    return hrvScore.round();
+  }
 
-    return (hrScore * 0.5 + hrvScore * 0.5).round();
+  // ── Score de récupération (Composite Cardio + Nerveux) ──
+  static int recoveryScore(HealthSnapshot s) {
+    return (cardioScore(s) * 0.5 + nervousScore(s) * 0.5).round();
   }
 
   // ── Score d'activité ───────────────────────────────────────────────────────
@@ -165,12 +177,16 @@ class HealthScoreService {
       {double musculationMinutes = 0}) {
     final sleep = sleepScore(s.sleep);
     final recovery = recoveryScore(s);
+    final nervous = nervousScore(s);
+    final cardio = cardioScore(s);
     final activity = activityScore(s, musculationMinutes: musculationMinutes);
     final bio = (sleep * 0.35 + recovery * 0.35 + activity * 0.30).round();
 
     return HealthScores(
       sleepScore: sleep,
       recoveryScore: recovery,
+      nervousScore: nervous,
+      cardioScore: cardio,
       activityScore: activity,
       bioScore: bio,
       tier: tierFor(bio),

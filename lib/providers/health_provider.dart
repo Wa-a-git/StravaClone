@@ -114,6 +114,8 @@ class HealthDataNotifier extends StateNotifier<HealthDataState> {
         ? HealthScores(
             sleepScore: record.sleepScore,
             recoveryScore: record.recoveryScore,
+            nervousScore: HealthScoreService.nervousScore(snapshot),
+            cardioScore: HealthScoreService.cardioScore(snapshot),
             activityScore: record.activityScore,
             bioScore: record.bioScore,
             tier: HealthScoreService.tierFor(record.bioScore),
